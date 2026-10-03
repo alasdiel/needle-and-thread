@@ -34,6 +34,8 @@ Needle and Thread is a structure-first writing app for long fiction and long-for
 | Spellcheck | Our own, not the webview's: spellbook (Rust, Hunspell-compatible) with the installed US English (`en_US`) dictionary. Underlines everything as soon as a scene opens, accepts names used in `[[links]]`, right-click for suggestions or "Add to dictionary" (`.needle/dictionary.txt`) |
 | Phone app | PWA on GitHub Pages, sharing Rust UI code with the desktop |
 | Storage & sync | One private GitHub "vault" repo for all writing; any project can be moved out to its own repo later |
+| Vault location | Chosen with a folder picker on first launch; the app remembers it |
+| File headers | TOML between `+++` lines, edited in place so untouched fields keep their formatting |
 | Snapshots | Automatic and debounced like Google Docs version history, plus named versions |
 | Revision safety nets | Snapshots, cut bin, status labels |
 | Sharing | View-and-comment links that always show the latest snapshot, one shared discussion per link, end-to-end encrypted |
@@ -79,6 +81,7 @@ needle-and-thread/
 ├── crates/
 │   ├── core/         model, Markdown + metadata, links, timeline & calendars,
 │   │                 share encryption, comment anchoring. No I/O; builds native and wasm32
+│   ├── vault/        reads and writes the vault: projects, outline, scenes, notes, cut bin
 │   ├── index/        SQLite cache: full-text search, backlinks, mentions, timeline
 │   ├── vcs/          git2: snapshots, history, diffs, sync, move-out
 │   ├── export/       PDF (Typst), EPUB, DOCX, HTML for Medium
@@ -127,16 +130,15 @@ vault/
 
 ### The outline is one file, and scene files never move
 
-Reading order lives in `outline.toml`. A scene file keeps the name it was created with, even after you retitle it or move it to another chapter. The exact format gets settled in phase 0.
+Reading order lives in `outline.toml`, a list of chapters. A part is a label on chapters: consecutive chapters with the same `part` form it. A scene file keeps the name it was created with, even after you retitle it or move it to another chapter. The app rewrites this file whenever the outline changes.
 
 ```toml
-[[part]]
-title = "Part One: Landfall"
-
-[[part.chapter]]
+[[chapter]]
+id = "ol_a1rr4v4l2x"
 title = "Arrival"
+part = "Part One: Landfall"
 summary = "Mara reaches Tidewater and hears about the ledger."
-scenes = ["the-harbour", "night-market"]
+scenes = ["the-harbor", "night-market"]
 ```
 
 This way, moving a scene changes one line of the outline instead of renaming a chain of files. Because a scene's path never changes, its history, links and anchored comments stay attached to it.
@@ -144,35 +146,39 @@ This way, moving a scene changes one line of the outline instead of renaming a c
 ### A scene
 
 ```markdown
----
-id: sc_7f3k9q              # stable id, survives any rename
-title: The night market
-status: draft              # idea | draft | revised | done
-summary: Mara trades the compass and learns the ledger has left port.
-pov: Mara Venn
-cast: [Mara Venn, Old Teodor]
-places: [Night Market]
-threads: [The missing ledger]
-when: { from: The harbour, offset: +6h }
----
++++
+id = "sc_7f3k9qa2mx"       # stable id, survives any rename
+title = "The night market"
+status = "draft"           # idea | draft | revised | done
+summary = "Mara trades the compass and learns the ledger has left port."
+pov = "Mara Venn"
+cast = ["Mara Venn", "Old Teodor"]
+places = ["Night Market"]
+threads = ["The missing ledger"]
+when = { from = "The harbor", offset = "+6h" }
++++
 
 The market opened at dusk, as it always had…
 ```
+
+The header is TOML between `+++` lines. When the app changes a field, everything else in the header (formatting, comments, fields it doesn't know) stays exactly as written. `+++` also can't be confused with a `---` scene break.
 
 The body holds only prose, which is exactly what gets exported. Who appears in the scene, where it happens and which threads it advances all go in the header, so the prose never fills up with link syntax. The app also detects character and place names, including their aliases, in the text and suggests adding them to the header.
 
 ### A note
 
 ```markdown
----
-id: ch_2m8x1a
-type: character
-title: Mara Venn
-aliases: [Mara, the Captain]
----
++++
+id = "nt_2m8x1a9kqe"
+type = "character"
+title = "Mara Venn"
+aliases = ["Mara", "the Captain"]
++++
 
-Harbour pilot, thirty-four. Lost her ship in [[The Drowning]]…
+Harbor pilot, thirty-four. Lost her ship in [[The Drowning]]…
 ```
+
+Ids start with `sc_` for scenes, `nt_` for notes and `ol_` for chapters.
 
 Note types:
 - **character**
@@ -202,7 +208,7 @@ Each type has its own template. Labels depend on the project's kind: fiction use
 ### Cut bin
 
 - Select text and choose **Cut to bin** (or use its shortcut). The passage moves into `cut/` as its own file, which records the scene it came from and the sentence around it.
-- Deleted scenes go into the bin whole.
+- Deleted scenes go into the bin whole, with `cut_at`, `cut_from_scene` and `cut_from_chapter` added to their header. Merging two scenes bins the second one, so its header survives.
 - The bin is searchable. **Restore** puts a passage back where it came from if that spot still exists, or at the cursor if it doesn't.
 
 ### Status labels
@@ -296,15 +302,15 @@ A map of a project's characters, places and plot points, and how they connect. Y
 ### A plot point
 
 ```markdown
----
-id: ev_8d1c2e
-type: event
-title: The ledger leaves port
-when: { after: The night market }
-involves: [Mara Venn, Old Teodor]
-threads: [The missing ledger]
-scenes: [night-market]          # where it happens on the page, if anywhere
----
++++
+id = "nt_8d1c2e5fqa"
+type = "event"
+title = "The ledger leaves port"
+when = { after = "The night market" }
+involves = ["Mara Venn", "Old Teodor"]
+threads = ["The missing ledger"]
+scenes = ["night-market"]       # where it happens on the page, if anywhere
++++
 
 Teodor ships the ledger out disguised as candles.
 ```
@@ -314,18 +320,18 @@ Teodor ships the ledger out disguised as candles.
 Each relationship is its own small note in `relationships/`, so a relationship between two people doesn't belong to either of them.
 
 ```markdown
----
-id: rl_4k2m9a
-type: relationship
-between: [Mara Venn, Old Teodor]
-label: trusts
-directed: true                  # reads Mara → Teodor; leave out for mutual ones
-begins: The harbour             # optional: doesn't exist before this
-changes:
-  - at: The ledger leaves port
-    label: distrusts
-ends: The Drowning              # optional
----
++++
+id = "nt_4k2m9a7x1q"
+type = "relationship"
+between = ["Mara Venn", "Old Teodor"]
+label = "trusts"
+directed = true                 # reads Mara → Teodor; leave out for mutual ones
+begins = "The harbor"           # optional: doesn't exist before this
+ends = "The Drowning"           # optional
+changes = [
+  { at = "The ledger leaves port", label = "distrusts" },
+]
++++
 
 She owes him for the berth, and both of them know it.
 ```

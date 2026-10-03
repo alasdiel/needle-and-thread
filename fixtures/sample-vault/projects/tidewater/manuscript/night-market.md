@@ -1,14 +1,14 @@
----
-id: sc_7f3k9q
-title: The night market
-status: draft
-summary: Mara trades the compass and learns the ledger has left port.
-pov: Mara Venn
-cast: [Mara Venn, Old Teodor]
-places: [Night Market]
-threads: [The missing ledger]
-when: { from: The harbor, offset: +6h }
----
++++
+id = "sc_7f3k9qa2mx"
+title = "The night market"
+status = "draft"
+summary = "Mara trades the compass and learns the ledger has left port."
+pov = "Mara Venn"
+cast = ["Mara Venn", "Old Teodor"]
+places = ["Night Market"]
+threads = ["The missing ledger"]
+when = { from = "The harbor", offset = "+6h" }
++++
 
 The market opened at dusk, as it always had, and nobody asked why the lanterns were lit before the bells. [[Mara Venn|Mara]] walked the length of it twice, counting stalls, and once more because her feet would not stop.
 

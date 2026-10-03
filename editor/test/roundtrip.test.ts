@@ -29,7 +29,7 @@ for (const name of list("markdown/normalize/").filter((n) => n.endsWith(".in.md"
 const manuscript = "sample-vault/projects/tidewater/manuscript/";
 for (const name of list(manuscript)) {
   test(`sample scene ${name} is already canonical`, () => {
-    const body = read(manuscript + name).replace(/^---\n[\s\S]*?\n---\n\n/, "");
+    const body = read(manuscript + name).replace(/^\+\+\+\n[\s\S]*?\n\+\+\+\n\n/, "");
     assert.equal(roundTrip(body), body);
   });
 }

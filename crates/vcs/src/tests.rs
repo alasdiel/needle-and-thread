@@ -15,7 +15,7 @@ fn vault() -> (TempDir, Vault) {
 }
 
 fn write(dir: &TempDir, name: &str, body: &str) {
-    fs::write(dir.path().join(name), format!("---\nid: sc_1\n---\n\n{body}\n")).unwrap();
+    fs::write(dir.path().join(name), format!("+++\nid = \"sc_1\"\n+++\n\n{body}\n")).unwrap();
 }
 
 fn messages(vault: &Vault, path: &str) -> Vec<String> {

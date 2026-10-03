@@ -1,0 +1,13 @@
+# Reading order. Written by Needle and Thread; scene names refer to files in manuscript/.
+
+[[chapter]]
+id = "ol_a1rr4v4l2x"
+title = "Arrival"
+part = "Part One: Landfall"
+scenes = ["night-market"]
+
+[[chapter]]
+id = "ol_n1ghtw4tch"
+title = "The long night"
+part = "Part One: Landfall"
+scenes = ["long-chapter"]

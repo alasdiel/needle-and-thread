@@ -39,7 +39,7 @@
 
 ## Known limits, for phase 1
 
-- **Front matter on every scene:** a scene file with no front matter that starts with a `---` scene break would be read as front matter, so every scene must have some (at least `id`).
+- **Front matter vs. scene breaks:** resolved in phase 1, since headers now use `+++`.
 - **Adjacent lists:** two lists of the same kind directly after each other merge on reload.
 - **Leading spaces:** leading spaces in a paragraph are dropped.
 - **Saving on close:** closing the window within 1 s of typing can lose that second; flush on close.

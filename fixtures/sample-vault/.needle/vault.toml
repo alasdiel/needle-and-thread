@@ -1,0 +1,13 @@
+# Needle and Thread vault settings.
+version = 1
+statuses = ["idea", "draft", "revised", "done"]
+
+[snapshots]
+idle_minutes = 2
+max_minutes = 10
+
+[typography]
+double_quotes = true
+single_quotes = true
+em_dash = true
+ellipsis = true

@@ -1,0 +1,13 @@
+[package]
+name = "needle-vault"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+fastrand = "2"
+needle-core = { workspace = true }
+tempfile = "3"
+
+[dev-dependencies]
+tempfile = "3"
