@@ -24,6 +24,8 @@ Needle and Thread is a structure-first writing app for long fiction and long-for
 | Reference material | Characters, places & world, research & sources, threads & arguments |
 | Time | Real dates, relative times, invented calendars and order-only placement, mixed within one project |
 | Shared material | Series sharing a world; self-contained projects too |
+| Network | A map you build: automatic links plus named relationships you draw, changing over story time. One per project, can include notes from the world and other projects (§7) |
+| Plot points | One note type with events (backstory included); can sit on the timeline |
 | Devices | One Linux desktop now. Phone for capture, tagging and lookup. More computers, including Windows, later |
 | Desktop app | Tauri 2 + Leptos, in Rust |
 | Editor | ProseMirror as a small JavaScript island (Rust has no mature rich-text editor) |
@@ -109,16 +111,17 @@ vault/
 ├── worlds/
 │   └── glass-coast/
 │       ├── world.toml           name, calendar
-│       └── characters/ places/ threads/ sources/ events/
+│       └── characters/ places/ threads/ sources/ events/ relationships/
 └── projects/
     └── tidewater/
         ├── project.toml         title, kind (fiction | nonfiction), world, calendar
         ├── outline.toml         reading order
+        ├── network.toml         where you've placed things on the network map
         ├── manuscript/          one file per scene or section
         │   ├── the-harbour.md
         │   └── night-market.md
         ├── notes/
-        │   └── characters/ places/ threads/ sources/ events/
+        │   └── characters/ places/ threads/ sources/ events/ relationships/
         └── cut/                 cut bin
 ```
 
@@ -176,15 +179,17 @@ Note types:
 - **place**
 - **thread**: a plot thread, or a line of argument in nonfiction
 - **source**: author, title, year, URL, pages, quotes
-- **event**: something that's on the timeline but isn't a scene, such as backstory
+- **event**: anything that happens, backstory included; can sit on the timeline and the network
+- **relationship**: a named line between two notes on the network (§7)
 - **note**: anything else
 
-Each type has its own template. Labels depend on the project's kind: fiction uses Scene and Thread, nonfiction uses Section and Argument.
+Each type has its own template. Labels depend on the project's kind: fiction uses Scene, Thread and Plot point; nonfiction uses Section, Argument and Event.
 
 ### Links and shared worlds
 
 - `[[Name]]` or `[[Name|shown text]]` links to any note, and typing `[[` brings up autocomplete.
 - A name is looked up in the project first, then in the project's world. Self-contained projects have no world.
+- A note in another project is linked with its project's folder name: `[[tidewater/Mara Venn]]`.
 - Renaming a note updates every link that points to it.
 - Each note shows three lists:
   - **backlinks**: what links to it
@@ -277,12 +282,77 @@ Each scene or event gets a place in time through the `when:` field in its header
 - Shows order-only items between their neighbours with dashed spacing.
 - Times are edited in the side panel. Order-only items can also be dragged.
 
-## 7. Desktop app
+## 7. Network
+
+A map of a project's characters, places and plot points, and how they connect. You build it by hand, and it can show any moment in the story.
+
+### What's on it
+
+- **Nodes:** characters, places, plot points and threads (sources and arguments in nonfiction). Scenes stay off the map; plot points stand in for them.
+- **Links** (thin, automatic): drawn from `[[links]]` and headers, e.g. a plot point that involves Mara.
+- **Relationships** (labelled): lines you draw, like "mentor of", "betrays" or "causes".
+- **Scope:** one network per project. World notes and notes from other projects can be added, and are marked with where they come from.
+
+### A plot point
+
+```markdown
+---
+id: ev_8d1c2e
+type: event
+title: The ledger leaves port
+when: { after: The night market }
+involves: [Mara Venn, Old Teodor]
+threads: [The missing ledger]
+scenes: [night-market]          # where it happens on the page, if anywhere
+---
+
+Teodor ships the ledger out disguised as candles.
+```
+
+### A relationship
+
+Each relationship is its own small note in `relationships/`, so a relationship between two people doesn't belong to either of them.
+
+```markdown
+---
+id: rl_4k2m9a
+type: relationship
+between: [Mara Venn, Old Teodor]
+label: trusts
+directed: true                  # reads Mara → Teodor; leave out for mutual ones
+begins: The harbour             # optional: doesn't exist before this
+changes:
+  - at: The ledger leaves port
+    label: distrusts
+ends: The Drowning              # optional
+---
+
+She owes him for the berth, and both of them know it.
+```
+
+- `begins`, `changes` and `ends` point to plot points or scenes, and take effect at their time in the story.
+- A relationship between two world notes can be promoted to the world, so every book in the series shows it.
+
+### Moving through the story
+
+- A slider along the bottom follows story time (the timeline's order).
+- At each point, relationships show their state then, plot points still to come are dimmed, and characters are dimmed until they first appear.
+- Relationships that point at unplaced items are flagged, since they can't be placed in time.
+
+### Building on it
+
+- Drag nodes to arrange them. Positions are saved in `network.toml`, and new nodes are placed automatically.
+- Drag from one node to another to draw a relationship, then type its label (autocompleted from labels used before).
+- Double-click empty space to add a plot point.
+- Click a node or line to edit it in the side panel.
+- Filter by note type or thread, and hide automatic links.
+
+## 8. Desktop app
 
 ```
 ┌─────────────┬────────────────────────────────┬──────────────┐
 │ Outline     │                                │ Scene        │
-│ Notes       │     Editor  /  Timeline        │ Links        │
+│ Notes       │ Editor / Timeline / Network    │ Links        │
 │ Inbox       │                                │ Comments     │
 │ Cut bin     │                                │ History      │
 └─────────────┴────────────────────────────────┴──────────────┘
@@ -312,7 +382,7 @@ ProseMirror runs inside the Leptos UI, with a thin `wasm-bindgen` layer between 
 
 ProseMirror owns the text while you type, and Rust owns the files. The editor opens one scene at a time, so documents stay small and fast.
 
-## 8. Phone app
+## 9. Phone app
 
 The phone app is a PWA built from `crates/phone` and published to GitHub Pages by GitHub Actions. Added to the home screen, it behaves like an installed app.
 
@@ -321,7 +391,7 @@ The phone app is a PWA built from `crates/phone` and published to GitHub Pages b
 - **Tagging:** tap to tag the idea with a project, characters, places, threads or scenes. Names autocomplete from `.needle/index.json`, a small list the desktop app keeps current, so the phone never has to crawl the repo.
 - **Lookup:** browse and search notes, read-only. Notes are fetched when opened and cached for offline use, and pinned notes stay available offline.
 
-## 9. Sharing and comments
+## 10. Sharing and comments
 
 ### How a link works
 
@@ -373,7 +443,7 @@ Written in Rust (`workers-rs`). It stores share text in KV and comments in D1, a
 | `PATCH` / `DELETE /s/{id}/comments/{cid}` | Author: resolve, delete |
 | `DELETE /s/{id}` | Author: revoke (deletes the text and its comments) |
 
-## 10. Export
+## 11. Export
 
 Each project has **compile** settings that control:
 - what's included (parts, chapters, statuses)
@@ -390,26 +460,26 @@ Each project has **compile** settings that control:
 
 The app ships its own fonts, so a PDF comes out the same on every machine.
 
-## 11. Security and privacy
+## 12. Security and privacy
 
 - **Your writing on GitHub is private but not encrypted.** GitHub could technically read it, just as with Google Docs. Encrypting the vault would break phone lookup, so this can be revisited if it matters.
 - **Shared text and comments are end-to-end encrypted.** Cloudflare only stores scrambled data. Anyone with a link can read and comment, so forwarding a link forwards access. Revoke the link to cut that off.
 - **The phone's GitHub token is kept in browser storage on `<you>.github.io`.** Every Pages site under your account shares that storage. Either keep other Pages sites off that domain, or give Needle and Thread its own custom subdomain.
 - **Posting a comment requires a token derived from the link key.** Someone who only knows a share's id can't post to it.
 
-## 12. Build plan
+## 13. Build plan
 
 | Phase | Scope |
 |---|---|
 | 0 · Spikes | Short experiments, each answering "will this work?" before anything is built on it: ProseMirror island in Tauri + Leptos with a Markdown round-trip; spellcheck in WebKitGTK; git2 commit and push with a token; a Typst PDF from Rust |
 | 1 · Core | Vault and projects, outline tree, editor, notes, links, backlinks and mentions, worlds, status and word counts, cut bin, autosave, snapshots and history, search, backup push to GitHub |
 | 2 · Exports | Compile settings, PDF, EPUB, .docx, copy for Medium |
-| 3 · Timeline | Calendars, resolver, timeline view, events |
+| 3 · Timeline + network | Calendars, resolver, timeline view, plot points, relationships, network map with story-time slider |
 | 4 · Sync + phone | Two-way sync, Pages deploy, phone capture, tagging and lookup, inbox filing, QR setup |
 | 5 · Sharing | Worker, encryption, reader page, comments and anchoring, author tools, desktop comments panel |
 | Later | Windows builds; moving a project out of the vault; a chapter as one continuous document; citations for nonfiction; notes-to-self inside the prose |
 
-## 13. Risks
+## 14. Risks
 
 | Risk | Mitigation |
 |---|---|
@@ -419,7 +489,7 @@ The app ships its own fonts, so a PDF comes out the same on every machine.
 | Good book typography in Typst takes iteration | Start with one solid template per preset |
 | The Pages origin is shared by all your Pages sites | Use a custom subdomain if you publish other sites |
 
-## 14. Open questions
+## 15. Open questions
 
 - What should the vault repo be called?
 - Are 2 min idle / 10 min max the right snapshot timings?
@@ -427,13 +497,4 @@ The app ships its own fonts, so a PDF comes out the same on every machine.
 - Should you be able to pause a link's updates during a big rewrite?
 - Do you want notes-to-self inside the prose that never appear in exports?
 - Should the Pages site use a custom domain?
-
-### To design together: a network of characters and plot points
-
-You asked for this on 2026-10-03 and want it to be a major feature. It goes beyond the small per-note graph in §7. Settle these before phase 1 locks the note format:
-
-- **What the lines mean.** Plain links, or named relationships ("sister of", "betrays", "causes", "foreshadows")? Should a relationship carry its own notes, or change over the story (allies in Part One, enemies by Part Three)?
-- **What a plot point is.** Its own note type, an event on the timeline, a scene, or any of these?
-- **Viewing or shaping.** A map you read, or one you build on: drag characters around, draw a line to create a relationship, add a plot point from the canvas?
-- **Scope.** One project, or a whole world, so a series shares one cast map?
-- **Tie-ins.** Filtering the network by thread, or seeing it at a given point in the timeline.
+- Network canvas: draw it in Rust (Leptos + SVG), or use a JavaScript graph library as a second island like the editor? Decide with a short spike before building it.
