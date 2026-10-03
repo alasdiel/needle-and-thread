@@ -27,7 +27,8 @@
 - **Toolchain:**
   - `cargo install --locked trunk` fails under GCC 16 (libdeflate-sys 1.23). Build it from source with `libdeflate-sys` bumped to 1.26.
   - tauri-cli 2.12 needs rustc ≥ 1.90.
-- **Disk:** dependency debug info made `target/` 5+ GB. The dev profile now skips it (about 1.9 GB).
+- **Disk:** dependency debug info made `target/` 5+ GB. The dev profile now skips it (about 2 GB). On this machine, a git-ignored `.cargo/config.toml` puts `target/` on another drive.
+- **Release size:** 11.1 MB binary with the frontend embedded. Frontend: 576 KB wasm (after `wasm-opt -Oz`, 204 KB gzipped), 380 KB minified editor JS, 7 KB CSS. WebKitGTK comes from the system.
 
 ## Changes from testing
 
@@ -42,4 +43,3 @@
 - **Adjacent lists:** two lists of the same kind directly after each other merge on reload.
 - **Leading spaces:** leading spaces in a paragraph are dropped.
 - **Saving on close:** closing the window within 1 s of typing can lose that second; flush on close.
-- **Release build:** not measured yet. Low disk space.

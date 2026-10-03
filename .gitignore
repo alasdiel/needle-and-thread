@@ -3,3 +3,5 @@
 /crates/desktop/src-tauri/gen/schemas
 /editor/node_modules
 /editor/dist
+/.cargo/config.toml
+/crates/desktop/dist-release
