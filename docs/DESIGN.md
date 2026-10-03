@@ -218,6 +218,8 @@ Each type has its own template. Labels depend on the project's kind: fiction use
 
 The default statuses are idea → draft → revised → done, and you can change them per vault. The outline shows each scene's status and word count, with totals for each chapter and part (e.g. "Ch. 3: 4/6 drafted · 8,240 words").
 
+Each status is drawn as a ring that fills as a scene moves along the list: empty for the first status, full for the last. Any number of statuses works, and there are no colours to tell apart. A status that isn't in the list is drawn dashed.
+
 ### Inbox
 
 Each idea from the phone becomes its own file in `inbox/`, with its tags in the header. Because filenames are unique, the phone and the desktop never edit the same file, so these files can't cause sync conflicts. In the desktop's Inbox panel you can turn an idea into a note, add it to an existing note or scene summary, or make it a new scene in the outline. Filed ideas are removed from the inbox.

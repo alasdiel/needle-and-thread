@@ -1,5 +1,5 @@
-//! The main screen: projects and the outline on the left, the open scene in the middle,
-//! History and Markdown panels on the right.
+//! The main screen: projects and the outline on the left, the open scene in the middle drawn as
+//! a pattern piece, and the History or Markdown panel on the right.
 
 use leptos::{prelude::*, task::spawn_local};
 use needle_core::spell::Speller;
@@ -7,9 +7,11 @@ use needle_core::spell::Speller;
 use crate::editor::{Editor, EditorHandle, Typography};
 use crate::history::HistoryPanel;
 use crate::icons::{Glyph, Icon};
-use crate::outline::OutlineTree;
-use crate::settings::SettingsPanel;
+use crate::outline::{self, OutlineTree};
+use crate::pattern::{Grainline, Notches};
+use crate::settings::{Prefs, SettingsPanel};
 use crate::spell::SpellBridge;
+use crate::status::{self, StatusMark};
 use crate::tauri::{self, OutlineView, ProjectView, SceneView, VaultView};
 use crate::typography::TypographySettings;
 
@@ -42,8 +44,41 @@ fn neighbour(outline: &OutlineView, slug: &str) -> Option<String> {
     order.get(i + 1).or_else(|| i.checked_sub(1).and_then(|j| order.get(j))).map(|s| s.slug.clone())
 }
 
+/// Where a scene sits, for the breadcrumb and the piece's label.
+struct Place {
+    part: Option<String>,
+    /// None for a scene that isn't in the outline.
+    chapter: Option<String>,
+    /// The scene's number in reading order, from 1.
+    number: usize,
+}
+
+fn place(outline: &OutlineView, slug: &str) -> Option<Place> {
+    let mut number = 0;
+    for (index, chapter) in outline.chapters.iter().enumerate() {
+        for scene in &chapter.scenes {
+            number += 1;
+            if scene.slug == slug {
+                let title = outline::chapter_title(chapter, index);
+                return Some(Place { part: chapter.part.clone(), chapter: Some(title), number });
+            }
+        }
+    }
+    let i = outline.unplaced.iter().position(|s| s.slug == slug)?;
+    Some(Place { part: None, chapter: None, number: number + i + 1 })
+}
+
+fn kind_label(kind: &str) -> &str {
+    match kind {
+        "fiction" => "Fiction",
+        "nonfiction" => "Nonfiction",
+        other => other,
+    }
+}
+
 #[component]
 pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Send + Sync + 'static) -> impl IntoView {
+    let prefs = expect_context::<Prefs>();
     let editor = StoredValue::new_local(None::<EditorHandle>);
     let spell_bridge = StoredValue::new_local(None::<SpellBridge>);
     let projects = RwSignal::new(vault.projects.clone());
@@ -58,6 +93,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let typography = RwSignal::new(Typography::default());
     let show_typography = RwSignal::new(false);
     let show_settings = RwSignal::new(false);
+    let show_scene_menu = RwSignal::new(false);
     let panel = RwSignal::new(None::<Panel>);
     let revision = RwSignal::new(0u32);
     let new_project = RwSignal::new(None::<String>);
@@ -136,22 +172,23 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     };
 
     // After any outline change: refresh the open scene's title and status, and move on if
-    // the open scene is gone.
+    // the open scene is gone. The outline is set first, so views of the scene see the new one.
     let apply = move |view: OutlineView| {
         let open = current();
-        match open.as_deref().and_then(|s| find(&view, s)) {
+        let info = open.as_deref().and_then(|s| find(&view, s));
+        let first = reading_order(&view).first().map(|s| s.slug.clone());
+        outline.set(Some(view));
+        match info {
             Some(info) => scene.set(Some(info)),
             None if open.is_some() => {
-                let next = reading_order(&view).first().map(|s| s.slug.clone());
                 scene.set(None);
-                match next {
-                    Some(next) => open_scene(next),
+                match first {
+                    Some(first) => open_scene(first),
                     None => close_scene(),
                 }
             }
             None => {}
         }
-        outline.set(Some(view));
     };
 
     let load_project = move |slug: String| {
@@ -210,7 +247,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         }
     };
 
-    // --- Scene bar actions -----------------------------------------------------------------
+    // --- Scene actions ---------------------------------------------------------------------
 
     let with_scene = move |action: &dyn Fn(String, String)| {
         if let (Some(p), Some(s)) = (project.get_untracked(), current()) {
@@ -243,7 +280,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         });
     };
 
-    let split = move |_| {
+    let split = move || {
         with_scene(&move |p, s| {
             let (before, after) = editor.with_value(|h| h.as_ref().map(EditorHandle::split_parts)).unwrap_or_default();
             spawn_local(async move {
@@ -260,7 +297,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         });
     };
 
-    let merge = move |_| {
+    let merge = move || {
         with_scene(&move |p, s| {
             spawn_local(async move {
                 match tauri::merge_scene(&p, &s).await {
@@ -275,7 +312,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         });
     };
 
-    let cut = move |_| {
+    let cut = move || {
         with_scene(&move |p, s| {
             let next = outline.with_untracked(|o| o.as_ref().and_then(|o| neighbour(o, &s)));
             spawn_local(async move {
@@ -340,28 +377,123 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         });
     };
 
+    // --- What the views show ---------------------------------------------------------------
+
     let toggle = move |which: Panel| panel.update(|p| *p = if *p == Some(which) { None } else { Some(which) });
     let target = Signal::derive(move || project.get().zip(scene.get().map(|s| s.slug)));
     let current_slug = Signal::derive(move || scene.get().map(|s| s.slug));
+    let has_scene = move || scene.with(Option::is_some);
+    let current_place = move || {
+        let slug = scene.with(|s| s.as_ref().map(|s| s.slug.clone()))?;
+        outline.with(|o| o.as_ref().and_then(|o| place(o, &slug)))
+    };
+
+    let project_title = move || {
+        let slug = project.get();
+        projects.with(|list| list.iter().find(|p| Some(&p.slug) == slug.as_ref()).map(|p| p.title.clone()))
+    };
+    let project_meta = move || {
+        outline.with(|o| {
+            o.as_ref().map(|o| {
+                let total: usize = o.chapters.iter().map(|c| outline::words(&c.scenes)).sum();
+                format!("{} · {}", kind_label(&o.project.kind), outline::format_words(total))
+            })
+        })
+    };
+    let vault_name = vault.path.rsplit(['/', '\\']).find(|s| !s.is_empty()).unwrap_or(&vault.path).to_owned();
+    let vault_title = format!("{}\nOpen another vault…", vault.path);
+
+    let breadcrumb = move || {
+        current_place().map(|place| match place.chapter {
+            None => view! { <span>"Not in the outline"</span> }.into_any(),
+            Some(chapter) => view! {
+                {place.part.map(|part| view! {
+                    <span>{part}</span>
+                    <Icon glyph=Glyph::ChevronRight size=12 />
+                })}
+                <span>{chapter}</span>
+            }
+            .into_any(),
+        })
+    };
+
+    let piece_label = move || {
+        current_place().map(|place| match place.chapter {
+            Some(chapter) => format!("Piece {} · {chapter}", place.number),
+            None => format!("Piece {} · not in the outline", place.number),
+        })
+    };
+
+    // Rebuilt only when the scene changes, so typing in the title isn't interrupted.
+    let piece_head = move || {
+        scene.get().map(|s| {
+            let statuses = outline.with_untracked(|o| o.as_ref().map(|o| o.statuses.clone()).unwrap_or_default());
+            let progress = status::progress(&s.status, &statuses);
+            view! {
+                <header class="piece-head">
+                    <div class="piece-label">{piece_label}</div>
+                    <input
+                        class="scene-name"
+                        aria-label="Scene title"
+                        prop:value=s.title.clone()
+                        on:change=move |ev| rename(event_target_value(&ev))
+                    />
+                    <div class="piece-meta">
+                        <label class="status-pill" title="Status">
+                            <StatusMark progress=progress />
+                            <span>{s.status.clone()}</span>
+                            <Icon glyph=Glyph::ChevronDown size=12 />
+                            <select aria-label="Status" prop:value=s.status.clone() on:change=move |ev| set_status(event_target_value(&ev))>
+                                {statuses.into_iter().map(|st| view! { <option value=st.clone()>{st.clone()}</option> }).collect_view()}
+                            </select>
+                        </label>
+                        <span>{move || outline::format_words(words.get())}</span>
+                    </div>
+                </header>
+            }
+        })
+    };
 
     view! {
         <div class="workspace-grid">
             <aside class="sidebar">
                 <div class="sidebar-head">
-                    <select
-                        class="project-picker"
-                        prop:value=move || project.get().unwrap_or_default()
-                        on:change=move |ev| choose_project(event_target_value(&ev))
-                    >
-                        <For each=move || projects.get() key=|p| p.slug.clone() let(p)>
-                            <option value=p.slug.clone()>{p.title.clone()}</option>
-                        </For>
-                    </select>
-                    <button title="New project" on:click=move |_| new_project.set(Some(String::new()))>"+"</button>
+                    <span class="spool">
+                        <Icon glyph=Glyph::Spool size=24 />
+                    </span>
+                    <div class="project">
+                        <div class="project-row">
+                            <div class="project-picker">
+                                <span class="project-title">{project_title}</span>
+                                <Icon glyph=Glyph::ChevronDown size=14 />
+                                <select
+                                    aria-label="Project"
+                                    prop:value=move || project.get().unwrap_or_default()
+                                    on:change=move |ev| choose_project(event_target_value(&ev))
+                                >
+                                    <For each=move || projects.get() key=|p| p.slug.clone() let(p)>
+                                        <option value=p.slug.clone()>{p.title.clone()}</option>
+                                    </For>
+                                </select>
+                            </div>
+                            <button
+                                class="icon-button"
+                                title="New project"
+                                aria-label="New project"
+                                on:click=move |_| new_project.set(Some(String::new()))
+                            >
+                                <Icon glyph=Glyph::Plus />
+                            </button>
+                        </div>
+                        <span class="project-meta">{project_meta}</span>
+                    </div>
                 </div>
                 <Show when=move || new_project.get().is_some()>
                     <NewProjectForm on_create=create_project on_cancel=move || new_project.set(None) />
                 </Show>
+                <div class="cut-rule" aria-hidden="true">
+                    <Icon glyph=Glyph::Scissors size=14 />
+                </div>
                 <OutlineTree
                     project=project
                     outline=outline
@@ -370,11 +502,17 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                     on_outline=apply
                     on_error=report
                 />
+                <div class="cut-rule" aria-hidden="true">
+                    <Icon glyph=Glyph::Scissors size=14 />
+                </div>
                 <div class="sidebar-foot">
-                    <button class="quiet" title=vault.path.clone() on:click=open_other_vault>"Open another vault…"</button>
+                    <button class="quiet vault-button" title=vault_title on:click=open_other_vault>
+                        <Icon glyph=Glyph::Folder size=15 />
+                        <span>{vault_name}</span>
+                    </button>
                     <div class="popover-anchor">
                         <button
-                            class="quiet icon-button"
+                            class="icon-button"
                             title="Settings"
                             aria-label="Settings"
                             class:active=move || show_settings.get()
@@ -389,52 +527,90 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                     </div>
                 </div>
             </aside>
+
             <section class="main">
                 <header class="topbar">
-                    <div class="scene-bar">
-                        {move || scene.get().map(|s| {
-                            let statuses = outline.with(|o| o.as_ref().map(|o| o.statuses.clone()).unwrap_or_default());
-                            view! {
-                                <input
-                                    class="scene-name"
-                                    prop:value=s.title.clone()
-                                    on:change=move |ev| rename(event_target_value(&ev))
-                                />
-                                <select prop:value=s.status.clone() on:change=move |ev| set_status(event_target_value(&ev))>
-                                    {statuses.into_iter().map(|st| view! { <option value=st.clone()>{st.clone()}</option> }).collect_view()}
-                                </select>
-                                <button title="Split this scene at the cursor" on:click=split>"Split"</button>
-                                <button title="Add the next scene in this chapter to the end of this one" on:click=merge>"Merge next"</button>
-                                <button title="Move this scene to the cut bin" on:click=cut>"Cut"</button>
-                            }
-                        })}
-                    </div>
-                    <div class="status-area">
-                        {move || spell_error.get().map(|e| view! { <span class="error">{format!("Spellcheck unavailable: {e}")}</span> })}
-                        <span>{move || format!("{} words", words.get())}</span>
-                        <span class="save" class:error=move || matches!(save_state.get(), SaveState::Failed(_))>
+                    <nav class="breadcrumb" aria-label="Where this scene is">{breadcrumb}</nav>
+                    <Show when=has_scene>
+                        <span class="save-state" class:error=move || matches!(save_state.get(), SaveState::Failed(_))>
                             {move || match save_state.get() {
-                                SaveState::Saved => "Saved".to_owned(),
-                                SaveState::Saving => "Saving…".to_owned(),
-                                SaveState::Failed(e) => format!("Error: {e}"),
+                                SaveState::Saved => view! { <Icon glyph=Glyph::Check size=14 /> "Saved" }.into_any(),
+                                SaveState::Saving => "Saving…".into_any(),
+                                SaveState::Failed(e) => format!("Couldn't save: {e}").into_any(),
                             }}
                         </span>
                         <div class="popover-anchor">
-                            <button class:active=move || show_typography.get() on:click=move |_| show_typography.update(|v| *v = !*v)>
-                                "Typography"
+                            <button
+                                class="icon-button typography-button"
+                                title="Typography"
+                                aria-label="Typography"
+                                class:active=move || show_typography.get()
+                                on:click=move |_| show_typography.update(|v| *v = !*v)
+                            >
+                                "Aa"
                             </button>
                             <Show when=move || show_typography.get()>
                                 <div class="backdrop" on:click=move |_| show_typography.set(false)></div>
                                 <TypographySettings typography=typography />
                             </Show>
                         </div>
-                        <button class:active=move || panel.get() == Some(Panel::History) on:click=move |_| toggle(Panel::History)>
-                            "History"
+                        <button
+                            class="icon-button"
+                            title="History"
+                            aria-label="History"
+                            class:active=move || panel.get() == Some(Panel::History)
+                            on:click=move |_| toggle(Panel::History)
+                        >
+                            <Icon glyph=Glyph::History size=17 />
                         </button>
-                        <button class:active=move || panel.get() == Some(Panel::Markdown) on:click=move |_| toggle(Panel::Markdown)>
-                            "Markdown"
-                        </button>
-                    </div>
+                        <div class="popover-anchor">
+                            <button
+                                class="icon-button"
+                                title="Scene actions"
+                                aria-label="Scene actions"
+                                class:active=move || show_scene_menu.get()
+                                on:click=move |_| show_scene_menu.update(|v| *v = !*v)
+                            >
+                                <Icon glyph=Glyph::More size=17 />
+                            </button>
+                            <Show when=move || show_scene_menu.get()>
+                                <div class="backdrop" on:click=move |_| show_scene_menu.set(false)></div>
+                                <div class="menu" role="menu" aria-label="Scene actions">
+                                    <button role="menuitem" title="Split this scene at the cursor" on:click=move |_| {
+                                        show_scene_menu.set(false);
+                                        split();
+                                    }>
+                                        <Icon glyph=Glyph::Scissors />
+                                        "Split at the cursor"
+                                    </button>
+                                    <button role="menuitem" title="Add the next scene in this chapter to the end of this one" on:click=move |_| {
+                                        show_scene_menu.set(false);
+                                        merge();
+                                    }>
+                                        <Icon glyph=Glyph::Needle />
+                                        "Merge with the next scene"
+                                    </button>
+                                    <hr />
+                                    <button role="menuitem" on:click=move |_| {
+                                        show_scene_menu.set(false);
+                                        cut();
+                                    }>
+                                        <Icon glyph=Glyph::Basket />
+                                        "Move to the cut bin"
+                                    </button>
+                                    <Show when=move || prefs.markdown_panel.get()>
+                                        <hr />
+                                        <button role="menuitem" on:click=move |_| {
+                                            show_scene_menu.set(false);
+                                            toggle(Panel::Markdown);
+                                        }>
+                                            {move || if panel.get() == Some(Panel::Markdown) { "Hide Markdown" } else { "Show Markdown" }}
+                                        </button>
+                                    </Show>
+                                </div>
+                            </Show>
+                        </div>
+                    </Show>
                 </header>
                 {move || error.get().map(|e| view! {
                     <div class="banner error">
@@ -442,26 +618,42 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                         <button class="quiet" on:click=move |_| error.set(None)>"Dismiss"</button>
                     </div>
                 })}
-                <div class="workspace">
-                    <div class="page" class:empty=move || scene.with(Option::is_none)>
-                        <Editor handle=editor typography=typography on_change=on_change on_ready=on_ready />
-                        <Show when=move || scene.with(Option::is_none)>
-                            <p class="empty-note muted">"No scene open. Pick one in the outline, or add one with “+ New scene”."</p>
-                        </Show>
+                {move || spell_error.get().map(|e| view! {
+                    <div class="banner error">
+                        <span>{format!("Spellcheck unavailable: {e}")}</span>
                     </div>
-                    {move || match panel.get() {
-                        None => None,
-                        Some(Panel::Markdown) => Some(view! {
-                            <aside class="side-panel markdown-panel">
-                                <pre>{move || markdown.get()}</pre>
-                            </aside>
-                        }.into_any()),
-                        Some(Panel::History) => Some(view! {
-                            <HistoryPanel target=target revision=revision editor=editor on_restore=on_restore />
-                        }.into_any()),
-                    }}
+                })}
+                <div class="page" class:empty=move || !has_scene()>
+                    // The editor stays mounted while no scene is open; the piece is only hidden.
+                    <article class="pattern-piece piece">
+                        <Notches />
+                        <Grainline />
+                        {piece_head}
+                        <Editor handle=editor typography=typography on_change=on_change on_ready=on_ready />
+                    </article>
+                    <Show when=move || !has_scene()>
+                        <p class="empty-note">"No scene open. Pick one in the outline, or add one with the + on a chapter."</p>
+                    </Show>
                 </div>
             </section>
+
+            {move || match panel.get() {
+                Some(Panel::History) => Some(view! {
+                    <HistoryPanel target=target revision=revision editor=editor on_restore=on_restore on_close=move || panel.set(None) />
+                }.into_any()),
+                Some(Panel::Markdown) if prefs.markdown_panel.get() => Some(view! {
+                    <aside class="side-panel markdown-panel">
+                        <div class="panel-head">
+                            <h2>"Markdown"</h2>
+                            <button class="icon-button" title="Close" aria-label="Close Markdown" on:click=move |_| panel.set(None)>
+                                <Icon glyph=Glyph::Close />
+                            </button>
+                        </div>
+                        <pre>{move || markdown.get()}</pre>
+                    </aside>
+                }.into_any()),
+                _ => None,
+            }}
         </div>
     }
 }
@@ -488,7 +680,7 @@ fn NewProjectForm(
                 <option value="nonfiction">"Nonfiction"</option>
             </select>
             <div class="actions">
-                <button type="submit">"Create"</button>
+                <button type="submit" class="primary">"Create"</button>
                 <button type="button" class="quiet" on:click=move |_| on_cancel()>"Cancel"</button>
             </div>
         </form>

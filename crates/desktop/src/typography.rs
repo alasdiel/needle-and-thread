@@ -51,16 +51,17 @@ pub fn TypographySettings(typography: RwSignal<Typography>) -> impl IntoView {
         .map(|rule| {
             view! {
                 <label class="setting">
-                    <input
-                        type="checkbox"
-                        prop:checked=move || (rule.get)(&typography.get())
-                        on:change=move |ev| typography.update(|t| (rule.set)(t, event_target_checked(&ev)))
-                    />
-                    <span>
+                    <span class="setting-text">
                         <span class="setting-label">{rule.label}</span>
                         <code class="setting-example">{rule.example}</code>
                         {rule.note.map(|note| view! { <span class="setting-description">{note}</span> })}
                     </span>
+                    <input
+                        type="checkbox"
+                        class="switch"
+                        prop:checked=move || (rule.get)(&typography.get())
+                        on:change=move |ev| typography.update(|t| (rule.set)(t, event_target_checked(&ev)))
+                    />
                 </label>
             }
         })

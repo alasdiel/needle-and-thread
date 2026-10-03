@@ -5,6 +5,8 @@ use needle_core::diff::{self, Kind, Segment};
 use wasm_bindgen::JsValue;
 
 use crate::editor::EditorHandle;
+use crate::icons::{Glyph, Icon};
+use crate::outline::format_words;
 use crate::tauri::{self, VersionInfo};
 
 #[component]
@@ -16,6 +18,7 @@ pub fn HistoryPanel(
     editor: StoredValue<Option<EditorHandle>, LocalStorage>,
     /// Receives the restored text.
     on_restore: impl Fn(String) + Copy + Send + Sync + 'static,
+    on_close: impl Fn() + Copy + Send + Sync + 'static,
 ) -> impl IntoView {
     let versions = RwSignal::new(Vec::<VersionInfo>::new());
     let selected = RwSignal::new(None::<VersionInfo>);
@@ -106,15 +109,25 @@ pub fn HistoryPanel(
         });
     };
 
+    let close_button = move || {
+        view! {
+            <button class="icon-button" title="Close" aria-label="Close history" on:click=move |_| on_close()>
+                <Icon glyph=Glyph::Close />
+            </button>
+        }
+    };
+
+    // Each version is a stop on a thread: the newest filled in, named ones ringed.
     let row = move |version: VersionInfo| {
         let shown = version.clone();
         view! {
-            <li>
+            <li class="version-item" class:named=shown.name.is_some()>
                 <button class="version" on:click=move |_| select(version.clone())>
+                    <span class="version-dot" aria-hidden="true"></span>
                     <span class="version-time">{time_label(shown.time)}</span>
+                    <span class="version-words">{format_words(shown.words)}</span>
                     {shown.name.clone().map(|name| view! { <span class="version-name">{name}</span> })}
                     <span class="version-message">{shown.message.clone()}</span>
-                    <span class="version-words">{format!("{} words", shown.words)}</span>
                 </button>
             </li>
         }
@@ -122,66 +135,83 @@ pub fn HistoryPanel(
 
     let list = move || {
         view! {
-            <div class="history-header">
+            <div class="panel-head">
                 <h2>"History"</h2>
-                <button on:click=snapshot_now>"Snapshot now"</button>
+                <button class="small" on:click=snapshot_now>"Snapshot now"</button>
+                {close_button()}
             </div>
-            <Show when=move || versions.with(Vec::is_empty)>
-                <p class="muted">"No snapshots of this scene yet."</p>
-            </Show>
-            <ul class="versions">
-                <For each=move || versions.get() key=|v| (v.id.clone(), v.name.clone()) children=row />
-            </ul>
+            <div class="panel-body">
+                <Show when=move || versions.with(Vec::is_empty)>
+                    <p class="muted">"No snapshots of this scene yet."</p>
+                </Show>
+                <ol class="versions">
+                    <For each=move || versions.get() key=|v| (v.id.clone(), v.name.clone()) children=row />
+                </ol>
+            </div>
         }
     };
 
     let detail = move |version: VersionInfo| {
         view! {
-            <div class="history-header">
-                <button on:click=move |_| selected.set(None)>"← All versions"</button>
+            <div class="panel-head">
+                <button class="quiet back" on:click=move |_| selected.set(None)>
+                    <Icon glyph=Glyph::Back size=15 />
+                    "All versions"
+                </button>
+                <span class="spacer"></span>
+                {close_button()}
             </div>
-            <h2>
-                {time_label(version.time)}
+            <div class="panel-body">
+                <div class="version-heading">
+                    <h3>{time_label(version.time)}</h3>
+                    <span class="muted">{format_words(version.words)}</span>
+                </div>
                 {move || selected.get().and_then(|v| v.name).map(|name| view! { <span class="version-name">{name}</span> })}
-            </h2>
-            <p class="muted">{version.message.clone()}</p>
-            <div class="actions">
-                <button on:click=restore>"Restore this version"</button>
-                <button on:click=move |_| naming.update(|n| *n = !*n)>"Name…"</button>
-            </div>
-            <Show when=move || naming.get()>
-                <form class="name-form" on:submit=move |ev| {
-                    ev.prevent_default();
-                    save_name();
-                }>
-                    <input
-                        type="text"
-                        placeholder="e.g. Sent to beta readers"
-                        prop:value=move || name_input.get()
-                        on:input=move |ev| name_input.set(event_target_value(&ev))
-                    />
-                    <button type="submit">"Save"</button>
-                </form>
-            </Show>
-            <p class="legend">
-                "Since this version: " <ins>"added"</ins> " " <del>"removed"</del>
-            </p>
-            <div class="diff">
-                {move || match changes.get() {
-                    None => view! { <p class="muted">"Loading…"</p> }.into_any(),
-                    Some(segments) => segments.into_iter().map(render_segment).collect_view().into_any(),
-                }}
+                <p class="muted">{version.message.clone()}</p>
+                <div class="actions">
+                    <button class="primary" on:click=restore>
+                        <Icon glyph=Glyph::Restore size=15 />
+                        "Restore this version"
+                    </button>
+                    <button on:click=move |_| naming.update(|n| *n = !*n)>
+                        <Icon glyph=Glyph::Bookmark size=15 />
+                        "Name…"
+                    </button>
+                </div>
+                <Show when=move || naming.get()>
+                    <form class="name-form" on:submit=move |ev| {
+                        ev.prevent_default();
+                        save_name();
+                    }>
+                        <input
+                            type="text"
+                            placeholder="e.g. Sent to beta readers"
+                            prop:value=move || name_input.get()
+                            on:input=move |ev| name_input.set(event_target_value(&ev))
+                        />
+                        <button type="submit">"Save"</button>
+                    </form>
+                </Show>
+                <p class="legend">
+                    "Since this version: " <ins>"added"</ins> " " <del>"removed"</del>
+                </p>
+                <div class="diff">
+                    {move || match changes.get() {
+                        None => view! { <p class="muted">"Loading…"</p> }.into_any(),
+                        Some(segments) => segments.into_iter().map(render_segment).collect_view().into_any(),
+                    }}
+                </div>
             </div>
         }
     };
 
     view! {
         <aside class="side-panel history-panel">
-            {move || error.get().map(|e| view! { <p class="error">{e}</p> })}
             {move || match selected.get() {
                 None => list().into_any(),
                 Some(version) => detail(version).into_any(),
             }}
+            {move || error.get().map(|e| view! { <p class="error panel-error">{e}</p> })}
         </aside>
     }
 }

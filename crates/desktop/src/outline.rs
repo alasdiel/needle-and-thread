@@ -3,6 +3,8 @@
 
 use leptos::{ev, html, prelude::*, task::spawn_local};
 
+use crate::icons::{Glyph, Icon};
+use crate::status::{self, StatusMark};
 use crate::tauri::{self, ChapterView, LocalFuture, OutlineView, SceneView};
 
 /// An outline command, given the project's name.
@@ -42,16 +44,33 @@ fn groups(chapters: Vec<ChapterView>) -> Vec<Group> {
     groups
 }
 
-fn words(scenes: &[SceneView]) -> usize {
+pub fn words(scenes: &[SceneView]) -> usize {
     scenes.iter().map(|s| s.words).sum()
 }
 
-fn format_words(n: usize) -> String {
+/// "9,984", "1,234,567".
+pub fn format_count(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, digit) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(digit);
+    }
+    out
+}
+
+pub fn format_words(n: usize) -> String {
     match n {
         1 => "1 word".to_owned(),
-        n if n < 1000 => format!("{n} words"),
-        n => format!("{},{:03} words", n / 1000, n % 1000),
+        n => format!("{} words", format_count(n)),
     }
+}
+
+/// A chapter's title, or "Chapter 3" for one without a title. `index` counts from 0.
+pub fn chapter_title(chapter: &ChapterView, index: usize) -> String {
+    if chapter.title.is_empty() { format!("Chapter {}", index + 1) } else { chapter.title.clone() }
 }
 
 #[component]
@@ -67,6 +86,8 @@ pub fn OutlineTree(
     let dragging = RwSignal::new(None::<Drag>);
     let drop_target = RwSignal::new(None::<String>);
     let editing = RwSignal::new(None::<Editing>);
+    // The chapter whose ⋯ menu is open.
+    let chapter_menu = RwSignal::new(None::<String>);
 
     // Runs an outline command for the current project and hands the result on.
     let run = move |command: Command| {
@@ -116,10 +137,8 @@ pub fn OutlineTree(
     let scene_row = move |chapter: Option<(String, usize)>, scene: SceneView, statuses: Vec<String>| {
         let slug = scene.slug.clone();
         let key = format!("scene:{slug}");
-        let status_class = match statuses.iter().position(|s| *s == scene.status) {
-            Some(i) => format!("status-dot status-{}", i.min(3)),
-            None => "status-dot".to_owned(),
-        };
+        let progress = status::progress(&scene.status, &statuses);
+        let tooltip = format!("Status: {}", scene.status);
         let is_current = {
             let slug = slug.clone();
             move || current.get().as_deref() == Some(slug.as_str())
@@ -182,11 +201,12 @@ pub fn OutlineTree(
                             view! {
                                 <button
                                     class="scene-title"
+                                    title=tooltip.clone()
                                     on:click=move |_| on_open(open.clone())
                                     on:dblclick=move |_| editing.set(Some(Editing::Scene(rename.clone())))
                                 >
-                                    <span class=status_class.clone() title="Status"></span>
-                                    {title.clone()}
+                                    <StatusMark progress=progress />
+                                    <span class="scene-label">{title.clone()}</span>
                                 </button>
                             }
                         }
@@ -209,7 +229,7 @@ pub fn OutlineTree(
                         }
                     />
                 </Show>
-                <span class="count">{scene.words}</span>
+                <span class="count">{format_count(scene.words)}</span>
             </li>
         }
     };
@@ -219,12 +239,18 @@ pub fn OutlineTree(
         let header_key = format!("chapter:{id}");
         let end_key = format!("end:{id}");
         let count = chapter.scenes.len();
-        let title = if chapter.title.is_empty() { format!("Chapter {}", index + 1) } else { chapter.title.clone() };
+        let title = chapter_title(&chapter, index);
+        let in_part = chapter.part.is_some();
         let is_editing = {
             let id = id.clone();
             move || editing.get() == Some(Editing::Chapter(id.clone()))
         };
-        let (edit_id, edit_title, remove_id) = (id.clone(), chapter.title.clone(), id.clone());
+        let menu_open = {
+            let id = id.clone();
+            move || chapter_menu.get().as_deref() == Some(id.as_str())
+        };
+        let show_menu = menu_open.clone();
+        let (edit_id, edit_title, menu_id) = (id.clone(), chapter.title.clone(), id.clone());
         let scenes = chapter
             .scenes
             .iter()
@@ -236,6 +262,7 @@ pub fn OutlineTree(
             <li class="chapter">
                 <div
                     class="chapter-head"
+                    class:menu-open=menu_open
                     class:drop-before={
                         let key = header_key.clone();
                         move || drop_target.get().as_deref() == Some(key.as_str())
@@ -271,6 +298,7 @@ pub fn OutlineTree(
                         }
                     }
                 >
+                    <span class="chapter-number">{index + 1}</span>
                     <Show
                         when=is_editing
                         fallback={
@@ -303,26 +331,65 @@ pub fn OutlineTree(
                             }
                         />
                     </Show>
-                    <span class="count">{total}</span>
+                    <span class="count">{format_count(total)}</span>
                     <span class="row-actions">
-                        <button title="New scene at the end of this chapter" on:click={
-                            let id = id.clone();
-                            move |_| new_scene(id.clone())
-                        }>"+"</button>
-                        <button title="Put this chapter in a part" on:click={
-                            let id = id.clone();
-                            move |_| editing.set(Some(Editing::Part(id.clone())))
-                        }>"Part"</button>
-                        <Show when=move || count == 0>
-                            <button title="Remove this empty chapter" on:click={
-                                let id = remove_id.clone();
+                        <button
+                            class="icon-button"
+                            title="New scene at the end of this chapter"
+                            aria-label="New scene"
+                            on:click={
+                                let id = id.clone();
+                                move |_| new_scene(id.clone())
+                            }
+                        >
+                            <Icon glyph=Glyph::Plus size=15 />
+                        </button>
+                        <button
+                            class="icon-button"
+                            title="More for this chapter"
+                            aria-label="More for this chapter"
+                            on:click={
+                                let id = id.clone();
+                                move |_| chapter_menu.set(Some(id.clone()))
+                            }
+                        >
+                            <Icon glyph=Glyph::More size=15 />
+                        </button>
+                    </span>
+                    <Show when=show_menu>
+                        <div class="backdrop" on:click=move |_| chapter_menu.set(None)></div>
+                        <div class="menu" role="menu" aria-label="Chapter">
+                            <button role="menuitem" on:click={
+                                let id = menu_id.clone();
                                 move |_| {
+                                    chapter_menu.set(None);
+                                    editing.set(Some(Editing::Chapter(id.clone())));
+                                }
+                            }>"Rename"</button>
+                            // A chapter already in a part changes part by renaming the part.
+                            {(!in_part).then(|| {
+                                let id = menu_id.clone();
+                                view! {
+                                    <button role="menuitem" on:click=move |_| {
+                                        chapter_menu.set(None);
+                                        editing.set(Some(Editing::Part(id.clone())));
+                                    }>"Put in a part…"</button>
+                                }
+                            })}
+                            <hr />
+                            <button role="menuitem" class="with-note" disabled={count > 0} on:click={
+                                let id = menu_id.clone();
+                                move |_| {
+                                    chapter_menu.set(None);
                                     let chapter = id.clone();
                                     run(Box::new(move |p| Box::pin(async move { tauri::remove_chapter(&p, &chapter).await })));
                                 }
-                            }>"×"</button>
-                        </Show>
-                    </span>
+                            }>
+                                "Remove chapter"
+                                <span class="menu-note">"Only when it has no scenes"</span>
+                            </button>
+                        </div>
+                    </Show>
                 </div>
                 <ul class="scenes">
                     {scenes}
@@ -350,10 +417,7 @@ pub fn OutlineTree(
                             }
                         }
                     >
-                        <button class="add" on:click={
-                            let id = id.clone();
-                            move |_| new_scene(id.clone())
-                        }>"+ New scene"</button>
+                        {(count == 0).then_some("No scenes yet")}
                     </li>
                 </ul>
             </li>
@@ -381,7 +445,6 @@ pub fn OutlineTree(
         let statuses = view.statuses.clone();
         let chapter_count = view.chapters.len();
         let last_chapter = view.chapters.last().map(|c| c.id.clone());
-        let total: usize = view.chapters.iter().map(|c| words(&c.scenes)).sum();
         let unplaced = view.unplaced.clone();
 
         let blocks = groups(view.chapters)
@@ -412,7 +475,7 @@ pub fn OutlineTree(
                             view! {
                                 <div class="part-head" on:dblclick=move |_| editing.set(Some(Editing::Part(first.clone())))>
                                     <span>{title}</span>
-                                    <span class="count">{format_words(group_words)}</span>
+                                    <span class="count">{format_count(group_words)}</span>
                                 </div>
                             }
                         })
@@ -455,7 +518,6 @@ pub fn OutlineTree(
         let has_unplaced = !view.unplaced.is_empty();
 
         Some(view! {
-            <div class="outline-total">{format_words(total)}</div>
             <ul class="outline">{blocks}</ul>
             <div
                 class="add-chapter"
@@ -475,7 +537,10 @@ pub fn OutlineTree(
                 <button class="add" on:click=move |_| {
                     let after = last_chapter.clone();
                     run(Box::new(move |p| Box::pin(async move { tauri::add_chapter(&p, "", after.as_deref()).await })));
-                }>"+ Add chapter"</button>
+                }>
+                    <Icon glyph=Glyph::Plus size=14 />
+                    "New chapter"
+                </button>
             </div>
             <Show when=move || has_unplaced>
                 <h3 class="unplaced-head">"Not in the outline"</h3>

@@ -265,6 +265,14 @@ pub async fn set_appearance(appearance: Appearance) -> Result<(), String> {
     call("set_appearance", Args::default().str("appearance", appearance.name())).await
 }
 
+pub async fn markdown_panel() -> Result<bool, String> {
+    call("markdown_panel", Args::default()).await
+}
+
+pub async fn set_markdown_panel(on: bool) -> Result<(), String> {
+    call("set_markdown_panel", Args::default().set("on", on.into())).await
+}
+
 // --- Spelling ---------------------------------------------------------------------------
 
 pub async fn spell_dictionary() -> Result<SpellDictionary, String> {

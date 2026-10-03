@@ -1,12 +1,10 @@
-//! System, Light or Dark. It's kept per computer next to `last-vault`, not in the vault, because
-//! the vault also syncs to other devices.
+//! Settings kept per computer, next to `last-vault`, rather than in the vault, because the vault
+//! also syncs to other devices.
 
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
 use crate::state;
-
-const SETTING: &str = "appearance";
 
 #[derive(Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -31,7 +29,7 @@ impl Appearance {
 /// This computer's choice; System until one is made.
 #[tauri::command]
 pub fn appearance(app: AppHandle) -> Appearance {
-    match state::read_config(&app, SETTING).as_deref().map(str::trim) {
+    match state::read_config(&app, "appearance").as_deref().map(str::trim) {
         Some("light") => Appearance::Light,
         Some("dark") => Appearance::Dark,
         _ => Appearance::System,
@@ -40,5 +38,16 @@ pub fn appearance(app: AppHandle) -> Appearance {
 
 #[tauri::command]
 pub fn set_appearance(app: AppHandle, appearance: Appearance) -> Result<(), String> {
-    state::write_config(&app, SETTING, appearance.name())
+    state::write_config(&app, "appearance", appearance.name())
+}
+
+/// Whether the scene menu offers the Markdown panel, a developer aid. Off until switched on.
+#[tauri::command]
+pub fn markdown_panel(app: AppHandle) -> bool {
+    state::read_config(&app, "markdown-panel").as_deref().map(str::trim) == Some("on")
+}
+
+#[tauri::command]
+pub fn set_markdown_panel(app: AppHandle, on: bool) -> Result<(), String> {
+    state::write_config(&app, "markdown-panel", if on { "on" } else { "off" })
 }
