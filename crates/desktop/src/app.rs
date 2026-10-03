@@ -1,5 +1,6 @@
 use leptos::{prelude::*, task::spawn_local};
 
+use crate::appearance::Appearance;
 use crate::tauri::{self, VaultView};
 use crate::welcome::Welcome;
 use crate::workspace::Workspace;
@@ -10,6 +11,16 @@ pub fn App() -> impl IntoView {
     let vault = RwSignal::new(None::<VaultView>);
     let loaded = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
+
+    // The settings panel changes this from deep in the workspace, so it's shared as context.
+    let appearance = RwSignal::new(Appearance::System);
+    provide_context(appearance);
+    Effect::new(move |_| appearance.get().apply());
+    spawn_local(async move {
+        if let Ok(saved) = tauri::appearance().await {
+            appearance.set(saved);
+        }
+    });
 
     spawn_local(async move {
         match tauri::current_vault().await {

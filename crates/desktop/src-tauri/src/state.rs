@@ -60,20 +60,31 @@ impl<T, E: Display> OrString<T> for Result<T, E> {
     }
 }
 
-fn last_vault_file(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(app.path().app_config_dir().or_string()?.join("last-vault"))
+// Per-computer settings are small text files in the app's config folder, one per setting.
+
+fn config_file(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
+    Ok(app.path().app_config_dir().or_string()?.join(name))
 }
 
-fn remember(app: &AppHandle, root: &Path) -> Result<(), String> {
-    let file = last_vault_file(app)?;
+/// The setting's text, or None if it was never written.
+pub fn read_config(app: &AppHandle, name: &str) -> Option<String> {
+    fs::read_to_string(config_file(app, name).ok()?).ok()
+}
+
+pub fn write_config(app: &AppHandle, name: &str, contents: &str) -> Result<(), String> {
+    let file = config_file(app, name)?;
     if let Some(dir) = file.parent() {
         fs::create_dir_all(dir).or_string()?;
     }
-    fs::write(file, root.to_string_lossy().as_bytes()).or_string()
+    fs::write(file, contents).or_string()
+}
+
+fn remember(app: &AppHandle, root: &Path) -> Result<(), String> {
+    write_config(app, "last-vault", &root.to_string_lossy())
 }
 
 /// The vault used last time, if it's still there.
 pub fn last_vault(app: &AppHandle) -> Option<PathBuf> {
-    let path = PathBuf::from(fs::read_to_string(last_vault_file(app).ok()?).ok()?.trim());
+    let path = PathBuf::from(read_config(app, "last-vault")?.trim());
     Vault::is_vault(&path).then_some(path)
 }

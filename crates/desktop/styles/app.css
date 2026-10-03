@@ -1,26 +1,48 @@
+/* Colours come from Gwen of League of Legends: aqua threads, saturated blues, violet. Dark is a
+   Shadow Isles cutting mat, light is pattern tissue. Each token is light-dark(light, dark), which
+   follows color-scheme: the desktop's setting, unless Settings sets data-theme. */
 :root {
-  --bg: #fbfaf7;
-  --surface: #f2f0ea;
-  --text: #242424;
-  --muted: #6b6b6b;
-  --border: #e2ded4;
-  --accent: #1a6a5a;
-  --warn: #9a5b00;
-  --error: #b3261e;
   color-scheme: light dark;
+
+  --mat: light-dark(#e6efef, #0e1820); /* the window */
+  --side: light-dark(#dce8e8, #0a1218); /* sidebar and panels */
+  --piece: light-dark(#fafcfc, #121f29); /* the scene page */
+  --raise: light-dark(#ffffff, #1a2833); /* popovers and menus */
+  --text: light-dark(#15232d, #e4eef0);
+  --muted: light-dark(#4f6470, #8fa6b2);
+  --faint: light-dark(#93a7b0, #4e6573);
+  --rule: light-dark(rgb(21 35 45 / 0.12), rgb(143 166 178 / 0.16));
+  --print: light-dark(#1c3450, #55d7e0); /* pattern markings */
+  --print-soft: light-dark(rgb(30 95 166 / 0.45), rgb(85 215 224 / 0.38));
+  --thread: light-dark(#0b9fb0, #74f5f8); /* cut lines, seams, the current scene */
+  --thread-glow: light-dark(transparent, rgb(116 245 248 / 0.7));
+  --blue: light-dark(#0a78bf, #14adf6); /* current scene, buttons */
+  --blue-tint: light-dark(rgb(10 120 191 / 0.1), rgb(20 173 246 / 0.13));
+  --on-blue: light-dark(#ffffff, #06121a);
+  --link: light-dark(#5b3fa8, #a797ed); /* wikilinks, seam labels */
+  --spell: light-dark(#d2344b, #ff6b7a);
+  --error: light-dark(#b3261e, #ff8a80);
+  --warn: light-dark(#9a5b00, #e0a64b);
+
+  /* Bundled in styles/fonts.css. Titles also set "SOFT" 100, "WONK" 1. */
+  --font-text: Literata, Georgia, serif;
+  --font-title: Fraunces, Georgia, serif;
+  --font-label: "Alegreya SC", Georgia, serif;
+  --font-ui: "Alegreya Sans", system-ui, sans-serif;
+
+  /* The names the styles below still use, until they're redone. */
+  --bg: var(--piece);
+  --surface: var(--side);
+  --border: var(--rule);
+  --accent: var(--blue);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #1b1a18;
-    --surface: #24231f;
-    --text: #e6e3dc;
-    --muted: #a29e95;
-    --border: #36342f;
-    --accent: #7fcbb6;
-    --warn: #e0a64b;
-    --error: #ff8a80;
-  }
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 * {
@@ -38,7 +60,7 @@ body {
   flex-direction: column;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.4 system-ui, "Inter", "Noto Sans", sans-serif;
+  font: 15px/1.4 var(--font-ui);
 }
 
 .topbar {
@@ -52,15 +74,11 @@ body {
   background: var(--surface);
 }
 
-.scenes,
-.status {
+.status-area {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-}
-
-.status {
   color: var(--muted);
 }
 
@@ -156,7 +174,7 @@ button.active {
   padding: 1px 6px;
   border-radius: 4px;
   background: var(--bg);
-  font: 13px/1.5 ui-monospace, "JetBrains Mono", "DejaVu Sans Mono", monospace;
+  font: 14px/1.5 var(--font-text);
 }
 
 .setting-description {
@@ -276,7 +294,7 @@ button.active {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg);
-  font: 15px/1.6 Charter, "Noto Serif", Georgia, serif;
+  font: 15px/1.6 var(--font-text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -309,7 +327,8 @@ del {
 
 .welcome h1 {
   margin: 0;
-  font: 600 32px/1.2 Charter, "Noto Serif", Georgia, serif;
+  font: 600 40px/1.2 var(--font-title);
+  font-variation-settings: "SOFT" 100, "WONK" 1;
 }
 
 .welcome-actions {
@@ -389,8 +408,58 @@ select,
 }
 
 .sidebar-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 8px 12px;
   border-top: 1px solid var(--border);
+}
+
+.icon {
+  display: block;
+  flex: none;
+}
+
+button.icon-button {
+  display: inline-grid;
+  place-items: center;
+  padding: 6px;
+}
+
+/* A popover that opens upwards, from the bottom of the sidebar. */
+.panel.up {
+  top: auto;
+  right: auto;
+  bottom: calc(100% + 6px);
+  left: 0;
+  width: min(320px, calc(100vw - 32px));
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--mat);
+}
+
+.segmented button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--muted);
+}
+
+.segmented button.active {
+  background: var(--raise);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
 }
 
 .main {
@@ -415,7 +484,7 @@ select,
   border-radius: 6px;
   background: transparent;
   color: var(--text);
-  font: 600 15px/1.4 system-ui, "Inter", "Noto Sans", sans-serif;
+  font: 600 16px/1.4 var(--font-ui);
 }
 
 .scene-name:hover,
@@ -597,7 +666,7 @@ button.add:hover {
 }
 
 /* Status dots: idea, draft, revised, done (custom statuses use the first colour). */
-.status {
+.status-dot {
   flex: none;
   width: 8px;
   height: 8px;

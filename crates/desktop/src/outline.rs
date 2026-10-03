@@ -117,8 +117,8 @@ pub fn OutlineTree(
         let slug = scene.slug.clone();
         let key = format!("scene:{slug}");
         let status_class = match statuses.iter().position(|s| *s == scene.status) {
-            Some(i) => format!("status status-{}", i.min(3)),
-            None => "status".to_owned(),
+            Some(i) => format!("status-dot status-{}", i.min(3)),
+            None => "status-dot".to_owned(),
         };
         let is_current = {
             let slug = slug.clone();

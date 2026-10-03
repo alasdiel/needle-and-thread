@@ -1,7 +1,10 @@
 mod app;
+mod appearance;
 mod editor;
 mod history;
+mod icons;
 mod outline;
+mod settings;
 mod spell;
 mod tauri;
 mod typography;

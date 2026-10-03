@@ -1,6 +1,7 @@
 // Prevents an extra console window on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod appearance;
 mod history;
 mod spelling;
 mod state;
@@ -58,6 +59,8 @@ fn main() {
             history::snapshot_now,
             history::restore_version,
             history::name_version,
+            appearance::appearance,
+            appearance::set_appearance,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Needle and Thread")

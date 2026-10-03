@@ -6,7 +6,9 @@ use needle_core::spell::Speller;
 
 use crate::editor::{Editor, EditorHandle, Typography};
 use crate::history::HistoryPanel;
+use crate::icons::{Glyph, Icon};
 use crate::outline::OutlineTree;
+use crate::settings::SettingsPanel;
 use crate::spell::SpellBridge;
 use crate::tauri::{self, OutlineView, ProjectView, SceneView, VaultView};
 use crate::typography::TypographySettings;
@@ -55,6 +57,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let markdown = RwSignal::new(String::new());
     let typography = RwSignal::new(Typography::default());
     let show_typography = RwSignal::new(false);
+    let show_settings = RwSignal::new(false);
     let panel = RwSignal::new(None::<Panel>);
     let revision = RwSignal::new(0u32);
     let new_project = RwSignal::new(None::<String>);
@@ -369,6 +372,21 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                 />
                 <div class="sidebar-foot">
                     <button class="quiet" title=vault.path.clone() on:click=open_other_vault>"Open another vault…"</button>
+                    <div class="popover-anchor">
+                        <button
+                            class="quiet icon-button"
+                            title="Settings"
+                            aria-label="Settings"
+                            class:active=move || show_settings.get()
+                            on:click=move |_| show_settings.update(|v| *v = !*v)
+                        >
+                            <Icon glyph=Glyph::Settings />
+                        </button>
+                        <Show when=move || show_settings.get()>
+                            <div class="backdrop" on:click=move |_| show_settings.set(false)></div>
+                            <SettingsPanel />
+                        </Show>
+                    </div>
                 </div>
             </aside>
             <section class="main">
@@ -391,7 +409,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                             }
                         })}
                     </div>
-                    <div class="status">
+                    <div class="status-area">
                         {move || spell_error.get().map(|e| view! { <span class="error">{format!("Spellcheck unavailable: {e}")}</span> })}
                         <span>{move || format!("{} words", words.get())}</span>
                         <span class="save" class:error=move || matches!(save_state.get(), SaveState::Failed(_))>
