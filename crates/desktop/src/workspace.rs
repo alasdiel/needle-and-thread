@@ -7,7 +7,7 @@ use needle_core::spell::Speller;
 use crate::editor::{Editor, EditorHandle, Typography};
 use crate::history::HistoryPanel;
 use crate::icons::{Glyph, Icon};
-use crate::outline::{self, OutlineTree};
+use crate::outline::{self, LiveWords, OutlineTree};
 use crate::pattern::{Grainline, Notches};
 use crate::settings::{Prefs, SettingsPanel};
 use crate::spell::SpellBridge;
@@ -89,6 +89,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let error = RwSignal::new(None::<String>);
     let spell_error = RwSignal::new(None::<String>);
     let words = RwSignal::new(0usize);
+    let live_words = RwSignal::<LiveWords>::new(None);
     let markdown = RwSignal::new(String::new());
     let typography = RwSignal::new(Typography::default());
     let show_typography = RwSignal::new(false);
@@ -119,13 +120,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         words.set(count as usize);
         markdown.set(md.clone());
         let (Some(p), Some(s)) = (project.get_untracked(), current()) else { return };
-        outline.update(|o| {
-            if let Some(scene) = o.as_mut().and_then(|o| {
-                o.chapters.iter_mut().flat_map(|c| &mut c.scenes).chain(&mut o.unplaced).find(|x| x.slug == s)
-            }) {
-                scene.words = count as usize;
-            }
-        });
+        live_words.set(Some((s.clone(), count as usize)));
         save_state.set(SaveState::Saving);
         spawn_local(async move {
             save_state.set(match tauri::save_scene(&p, &s, &md).await {
@@ -153,6 +148,17 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         // Flushing saves the scene being left while it's still current; the snapshot is
         // queued after that save.
         flush();
+        // The scene being left keeps its latest count in the outline.
+        if let Some((left, count)) = live_words.get_untracked() {
+            live_words.set(None);
+            outline.update(|o| {
+                if let Some(scene) = o.as_mut().and_then(|o| {
+                    o.chapters.iter_mut().flat_map(|c| &mut c.scenes).chain(&mut o.unplaced).find(|x| x.slug == left)
+                }) {
+                    scene.words = count;
+                }
+            });
+        }
         if current().is_some() {
             spawn_local(async {
                 let _ = tauri::snapshot_now().await;
@@ -189,13 +195,19 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         });
     };
 
+    // An outline from the backend counts every saved word, so the live count can go.
+    let set_outline = move |view: OutlineView| {
+        live_words.set(None);
+        outline.set(Some(view));
+    };
+
     // After any outline change: refresh the open scene's title and status, and move on if
     // the open scene is gone. The outline is set first, so views of the scene see the new one.
     let apply = move |view: OutlineView| {
         let open = current();
         let info = open.as_deref().and_then(|s| find(&view, s));
         let first = reading_order(&view).first().map(|s| s.slug.clone());
-        outline.set(Some(view));
+        set_outline(view);
         match info {
             Some(info) => scene.set(Some(info)),
             None if open.is_some() => {
@@ -216,7 +228,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                 Ok(view) => {
                     let first = reading_order(&view).first().map(|s| s.slug.clone());
                     scene.set(None);
-                    outline.set(Some(view));
+                    set_outline(view);
                     match first {
                         Some(first) => open_scene(first),
                         None => close_scene(),
@@ -306,7 +318,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                     Ok(created) => {
                         // The editor still holds the whole text; don't save it over the split.
                         scene.set(None);
-                        outline.set(Some(created.outline));
+                        set_outline(created.outline);
                         open_scene(created.scene);
                     }
                     Err(e) => report(e),
@@ -357,7 +369,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                 match tauri::cut_scene(&p, &s).await {
                     Ok(view) => {
                         scene.set(None);
-                        outline.set(Some(view));
+                        set_outline(view);
                         match next {
                             Some(next) => open_scene(next),
                             None => close_scene(),
@@ -433,7 +445,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let project_meta = move || {
         outline.with(|o| {
             o.as_ref().map(|o| {
-                let total: usize = o.chapters.iter().map(|c| outline::words(&c.scenes)).sum();
+                let total = live_words.with(|live| outline::words(o.chapters.iter().flat_map(|c| &c.scenes), live));
                 format!("{} · {}", kind_label(&o.project.kind), outline::format_words(total))
             })
         })
@@ -537,6 +549,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                     outline=outline
                     current=current_slug
                     cutting=cutting
+                    live_words=live_words
                     on_open=open_scene
                     on_outline=apply
                     on_error=report

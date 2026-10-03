@@ -44,8 +44,19 @@ fn groups(chapters: Vec<ChapterView>) -> Vec<Group> {
     groups
 }
 
-pub fn words(scenes: &[SceneView]) -> usize {
-    scenes.iter().map(|s| s.words).sum()
+/// The open scene's word count as you type, by slug. The outline only takes it in when you move
+/// to another scene, since redrawing the outline while a click is under way swallows the click.
+pub type LiveWords = Option<(String, usize)>;
+
+/// The scenes' total words, counting the open one as it is now.
+pub fn words<'a>(scenes: impl IntoIterator<Item = &'a SceneView>, live: &LiveWords) -> usize {
+    scenes
+        .into_iter()
+        .map(|s| match live {
+            Some((slug, n)) if *slug == s.slug => *n,
+            _ => s.words,
+        })
+        .sum()
 }
 
 /// "9,984", "1,234,567".
@@ -81,6 +92,7 @@ pub fn OutlineTree(
     /// The cut line is showing: a ghost row under the current scene previews the new one.
     #[prop(into)]
     cutting: Signal<bool>,
+    #[prop(into)] live_words: Signal<LiveWords>,
     on_open: impl Fn(String) + Copy + Send + Sync + 'static,
     /// Receives the outline after a change made here.
     on_outline: impl Fn(OutlineView) + Copy + Send + Sync + 'static,
@@ -236,7 +248,12 @@ pub fn OutlineTree(
                         }
                     />
                 </Show>
-                <span class="count">{format_count(scene.words)}</span>
+                <span class="count">
+                    {
+                        let scene = scene.clone();
+                        move || format_count(live_words.with(|live| words([&scene], live)))
+                    }
+                </span>
             </li>
             <Show when=shows_ghost>
                 <li class="ghost-row" aria-hidden="true">
@@ -247,7 +264,11 @@ pub fn OutlineTree(
         }
     };
 
-    let chapter_block = move |index: usize, chapter: ChapterView, statuses: Vec<String>, total: usize| {
+    let chapter_block = move |index: usize, chapter: ChapterView, statuses: Vec<String>| {
+        let total = {
+            let scenes = chapter.scenes.clone();
+            move || format_count(live_words.with(|live| words(&scenes, live)))
+        };
         let id = chapter.id.clone();
         let header_key = format!("chapter:{id}");
         let end_key = format!("end:{id}");
@@ -344,7 +365,7 @@ pub fn OutlineTree(
                             }
                         />
                     </Show>
-                    <span class="count">{format_count(total)}</span>
+                    <span class="count">{total}</span>
                     <span class="row-actions">
                         <button
                             class="icon-button"
@@ -465,14 +486,14 @@ pub fn OutlineTree(
             .map(|group| {
                 let ids: Vec<String> = group.chapters.iter().map(|(_, c)| c.id.clone()).collect();
                 let first = ids[0].clone();
-                let group_words: usize = group.chapters.iter().map(|(_, c)| words(&c.scenes)).sum();
+                let group_words = {
+                    let scenes: Vec<SceneView> = group.chapters.iter().flat_map(|(_, c)| c.scenes.clone()).collect();
+                    move || format_count(live_words.with(|live| words(&scenes, live)))
+                };
                 let chapters = group
                     .chapters
                     .into_iter()
-                    .map(|(index, chapter)| {
-                        let total = words(&chapter.scenes);
-                        chapter_block(index, chapter, statuses.clone(), total)
-                    })
+                    .map(|(index, chapter)| chapter_block(index, chapter, statuses.clone()))
                     .collect_view();
                 let editing_part = {
                     let first = first.clone();
@@ -488,7 +509,7 @@ pub fn OutlineTree(
                             view! {
                                 <div class="part-head" on:dblclick=move |_| editing.set(Some(Editing::Part(first.clone())))>
                                     <span>{title}</span>
-                                    <span class="count">{format_count(group_words)}</span>
+                                    <span class="count">{group_words.clone()}</span>
                                 </div>
                             }
                         })
