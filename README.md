@@ -3,6 +3,7 @@
 A structure-first writing app for long fiction and nonfiction. Your work lives in a vault: a folder of plain Markdown files, with a history of snapshots kept alongside. No AI.
 
 **Status:** early. The editor, snapshots and the outline work; notes, search and exports are next. See [docs/DESIGN.md](docs/DESIGN.md) for the plan.
+Built releases will also come later.
 
 ## What works
 
