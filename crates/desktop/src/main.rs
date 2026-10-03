@@ -1,9 +1,12 @@
 mod app;
 mod editor;
 mod history;
+mod outline;
 mod spell;
 mod tauri;
 mod typography;
+mod welcome;
+mod workspace;
 
 fn main() {
     console_error_panic_hook::set_once();

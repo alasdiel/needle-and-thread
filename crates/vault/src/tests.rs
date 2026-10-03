@@ -29,6 +29,7 @@ fn creating_a_vault_is_idempotent_and_only_vaults_open() {
     Vault::create(vault.root()).unwrap();
     assert_eq!(fs::read_to_string(vault.root().join(".needle/vault.toml")).unwrap(), settings);
     assert!(Vault::open(dir.path()).is_err());
+    assert_eq!(vault.settings().unwrap().statuses, ["idea", "draft", "revised", "done"]);
 }
 
 #[test]
@@ -206,4 +207,21 @@ fn the_sample_vault_opens_and_every_scene_is_placed() {
     assert_eq!(placed, files);
     let market = project.scene_info("night-market").unwrap();
     assert_eq!((market.title.as_str(), market.status.as_str()), ("The night market", "draft"));
+}
+
+#[test]
+fn new_chapters_join_the_part_before_them() {
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    let first = first_chapter(&project);
+    project.edit_outline(|o| {
+        o.chapter_mut(&first)?.part = Some("Part One".into());
+        Ok(())
+    })
+    .unwrap();
+    let second = project.add_chapter("  Arrival ", Some(&first)).unwrap();
+    assert_eq!((second.title.as_str(), second.part.as_deref()), ("Arrival", Some("Part One")));
+    assert!(second.id.starts_with("ol_"));
+    assert_eq!(project.outline().unwrap().chapters[1].id, second.id);
+    assert!(project.add_chapter("Lost", Some("ol_missing")).is_err());
 }

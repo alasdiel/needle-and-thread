@@ -38,6 +38,18 @@ extern "C" {
 
     #[wasm_bindgen(method)]
     fn destroy(this: &EditorHandle);
+
+    #[wasm_bindgen(method, js_name = splitParts)]
+    fn split_parts_js(this: &EditorHandle) -> JsValue;
+}
+
+impl EditorHandle {
+    /// The text before and after the cursor, as Markdown.
+    pub fn split_parts(&self) -> (String, String) {
+        let parts = self.split_parts_js();
+        let get = |key: &str| Reflect::get(&parts, &key.into()).ok().and_then(|v| v.as_string()).unwrap_or_default();
+        (get("before"), get("after"))
+    }
 }
 
 /// Automatic typography changes, each switchable on its own. Mirrors `Typography` in

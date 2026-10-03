@@ -5,7 +5,7 @@ use std::time::SystemTime;
 
 use needle_core::header::Header;
 use needle_core::id::{make_id, slugify};
-use needle_core::outline::{Outline, OutlineError};
+use needle_core::outline::{Chapter, Outline, OutlineError};
 use needle_core::project::ProjectConfig;
 use needle_core::scene::SceneFile;
 use needle_core::words::count_markdown_words;
@@ -76,6 +76,25 @@ impl Project {
         let result = edit(&mut outline)?;
         self.save_outline(&outline)?;
         Ok(result)
+    }
+
+    /// Adds a chapter after chapter `after` (or at the end), in the same part as the chapter
+    /// before it.
+    pub fn add_chapter(&self, title: &str, after: Option<&str>) -> Result<Chapter> {
+        self.edit_outline(|o| {
+            let index = match after {
+                Some(id) => o.chapters.iter().position(|c| c.id == id).map(|i| i + 1).ok_or_else(|| OutlineError::NoSuchChapter(id.to_owned()))?,
+                None => o.chapters.len(),
+            };
+            let chapter = Chapter {
+                id: make_id("ol", fastrand::u64(..)),
+                title: title.trim().to_owned(),
+                part: index.checked_sub(1).and_then(|i| o.chapters.get(i)).and_then(|c| c.part.clone()),
+                ..Default::default()
+            };
+            o.insert_chapter(index, chapter.clone());
+            Ok(chapter)
+        })
     }
 
     pub fn scene_path(&self, slug: &str) -> Result<PathBuf> {

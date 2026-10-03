@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use needle_core::id::{make_id, slugify};
 use needle_core::outline::{Chapter, Outline};
 use needle_core::project::{ProjectConfig, ProjectKind};
+use needle_core::settings::VaultSettings;
 
 pub use error::{Error, Result};
 pub use project::{Placement, Project, SceneInfo};
@@ -65,6 +66,19 @@ impl Vault {
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    pub fn settings(&self) -> Result<VaultSettings> {
+        match fs::read_to_string(self.root.join(SETTINGS)) {
+            Ok(text) => VaultSettings::parse(&text).map_err(Error::Invalid),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(VaultSettings::default()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// The personal spellcheck dictionary, one word per line.
+    pub fn dictionary_path(&self) -> PathBuf {
+        self.root.join(".needle/dictionary.txt")
     }
 
     /// All projects, sorted by title.

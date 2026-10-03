@@ -86,6 +86,15 @@ export class Editor {
     return serializeMarkdown(this.view.state.doc);
   }
 
+  /** The document as Markdown before and after the cursor, for splitting a scene there. */
+  splitParts(): { before: string; after: string } {
+    const { doc, selection } = this.view.state;
+    return {
+      before: serializeMarkdown(doc.cut(0, selection.from)),
+      after: serializeMarkdown(doc.cut(selection.from)),
+    };
+  }
+
   wordCount(): number {
     return countWords(this.view.state.doc);
   }

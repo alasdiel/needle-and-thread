@@ -294,3 +294,325 @@ del {
   background: color-mix(in srgb, var(--error) 18%, transparent);
   color: var(--error);
 }
+
+/* --- Welcome ------------------------------------------------------------------------- */
+
+.welcome {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 12px;
+  flex: 1;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.welcome h1 {
+  margin: 0;
+  font: 600 32px/1.2 Charter, "Noto Serif", Georgia, serif;
+}
+
+.welcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.welcome-actions button {
+  padding: 8px 16px;
+}
+
+button.quiet {
+  border-color: transparent;
+  color: var(--muted);
+}
+
+button.quiet:hover {
+  color: var(--text);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* --- Workspace layout ------------------------------------------------------------------ */
+
+.workspace-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  min-height: 0;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.sidebar-head {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.project-picker {
+  flex: 1;
+  min-width: 0;
+}
+
+select,
+.new-project input {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.new-project {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.new-project .actions {
+  margin: 0;
+}
+
+.sidebar-foot {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.scene-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.scene-name {
+  min-width: 120px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: 600 15px/1.4 system-ui, "Inter", "Noto Sans", sans-serif;
+}
+
+.scene-name:hover,
+.scene-name:focus {
+  border-color: var(--border);
+  background: var(--bg);
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.page.empty .editor-host {
+  display: none;
+}
+
+.empty-note {
+  margin: 48px auto;
+  max-width: 420px;
+  text-align: center;
+}
+
+/* --- Outline tree ---------------------------------------------------------------------- */
+
+.outline-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 6px 24px;
+}
+
+.outline-tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.outline-total {
+  padding: 2px 8px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.count {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.part-head {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 2px;
+  padding: 2px 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.part.in-part > .chapters {
+  padding-left: 6px;
+  border-left: 2px solid var(--border);
+  margin-left: 8px;
+}
+
+.chapter-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border-top: 2px solid transparent;
+  border-radius: 4px;
+  font-weight: 600;
+  cursor: grab;
+}
+
+.chapter-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-actions {
+  display: none;
+  gap: 2px;
+}
+
+.chapter-head:hover .row-actions {
+  display: inline-flex;
+}
+
+.row-actions button {
+  padding: 0 6px;
+  font-size: 12px;
+}
+
+.chapter-head:hover .count {
+  display: none;
+}
+
+.scenes {
+  padding-left: 10px;
+}
+
+.scene-row,
+.scene-end,
+.add-chapter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 0;
+  border-top: 2px solid transparent;
+  border-radius: 4px;
+}
+
+.scene-row:hover {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.scene-row.current {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.scene-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 3px 8px;
+  border: 0;
+  background: none;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.drop-before {
+  border-top-color: var(--accent) !important;
+}
+
+button.add {
+  padding: 2px 8px;
+  border: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+button.add:hover {
+  color: var(--accent);
+}
+
+.inline-edit {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.unplaced-head {
+  margin: 16px 8px 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Status dots: idea, draft, revised, done (custom statuses use the first colour). */
+.status {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.status-1 {
+  background: #d4a017;
+}
+
+.status-2 {
+  background: #4a8fd8;
+}
+
+.status-3 {
+  background: #2e9b5f;
+}

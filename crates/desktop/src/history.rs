@@ -9,7 +9,8 @@ use crate::tauri::{self, VersionInfo};
 
 #[component]
 pub fn HistoryPanel(
-    #[prop(into)] path: Signal<Option<String>>,
+    /// The open scene, as (project, scene).
+    #[prop(into)] target: Signal<Option<(String, String)>>,
     /// Bumped whenever a snapshot is taken or named.
     #[prop(into)] revision: Signal<u32>,
     editor: StoredValue<Option<EditorHandle>, LocalStorage>,
@@ -25,9 +26,9 @@ pub fn HistoryPanel(
 
     Effect::new(move |_| {
         revision.track();
-        let Some(path) = path.get() else { return };
+        let Some((project, scene)) = target.get() else { return };
         spawn_local(async move {
-            match tauri::scene_history(&path).await {
+            match tauri::scene_history(&project, &scene).await {
                 Ok(list) => versions.set(list),
                 Err(e) => error.set(Some(e)),
             }
@@ -35,7 +36,7 @@ pub fn HistoryPanel(
     });
 
     Effect::new(move |_| {
-        path.track();
+        target.track();
         selected.set(None);
     });
 
@@ -48,7 +49,7 @@ pub fn HistoryPanel(
     };
 
     let select = move |version: VersionInfo| {
-        let Some(path) = path.get_untracked() else { return };
+        let Some((project, scene)) = target.get_untracked() else { return };
         let current = editor.with_value(|h| h.as_ref().map(EditorHandle::markdown)).unwrap_or_default();
         let id = version.id.clone();
         changes.set(None);
@@ -56,7 +57,7 @@ pub fn HistoryPanel(
         name_input.set(version.name.clone().unwrap_or_default());
         selected.set(Some(version));
         spawn_local(async move {
-            match tauri::scene_version(&path, &id).await {
+            match tauri::scene_version(&project, &scene, &id).await {
                 Ok(old) => changes.set(Some(diff::words(&old, &current))),
                 Err(e) => error.set(Some(e)),
             }
@@ -64,11 +65,11 @@ pub fn HistoryPanel(
     };
 
     let restore = move |_| {
-        let (Some(path), Some(version)) = (path.get_untracked(), selected.get_untracked()) else { return };
+        let (Some((project, scene)), Some(version)) = (target.get_untracked(), selected.get_untracked()) else { return };
         flush_editor();
         let label = time_label(version.time);
         spawn_local(async move {
-            match tauri::restore_version(&path, &version.id, &label).await {
+            match tauri::restore_version(&project, &scene, &version.id, &label).await {
                 Ok(markdown) => {
                     selected.set(None);
                     on_restore(markdown);

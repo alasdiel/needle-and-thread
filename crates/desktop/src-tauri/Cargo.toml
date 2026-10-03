@@ -9,7 +9,9 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 needle-core = { workspace = true }
+needle-vault = { workspace = true }
 needle-vcs = { workspace = true }
 serde = { workspace = true }
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
 tempfile = "3"
