@@ -1057,6 +1057,198 @@ input.switch:checked {
   outline: none;
 }
 
+/* --- Split and Merge -------------------------------------------------------------------------
+   The cut line and seam are drawn by the editor (editor/src/pattern.ts) and reach out to the
+   piece's edges: its padding is 68px left and 56px right, plus a 1.5px border. */
+
+.cut-line {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  margin: 8px -57.5px 8px -82px;
+  color: var(--thread);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.cut-line > svg,
+.seam > svg {
+  flex: none;
+  filter: drop-shadow(0 0 4px var(--thread-glow));
+}
+
+/* Between paragraphs, the line takes the place of a paragraph gap: even space above and below. */
+.needle-prose > .cut-line {
+  margin-top: -6px;
+  margin-bottom: 15px;
+}
+
+.cut-dashes {
+  flex: 1;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, var(--thread) 0 10px, transparent 10px 17px);
+  filter: drop-shadow(0 0 4px var(--thread-glow));
+  animation: draw-in 0.35s ease-out;
+}
+
+.cut-actions {
+  position: absolute;
+  top: 50%;
+  right: 64px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  background: var(--side);
+  box-shadow: 0 8px 24px var(--shadow-color);
+  transform: translateY(-50%);
+}
+
+.cut-actions button {
+  gap: 8px;
+  height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  font-family: var(--font-label);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+}
+
+.cut-actions button.primary {
+  color: var(--on-blue);
+}
+
+.cut-actions kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font: 12.5px var(--font-ui);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.cut-actions .primary kbd {
+  border-color: transparent;
+  background: rgb(0 0 0 / 0.14);
+}
+
+/* Sewn in from the left, held, then faded: the editor removes it after six seconds. */
+.seam {
+  position: relative;
+  height: 30px;
+  margin: 2px -57.5px 22px -69.5px;
+  color: var(--thread);
+  user-select: none;
+  animation: seam-fade 6s ease-in forwards;
+}
+
+.seam::before,
+.seam::after {
+  content: "";
+  position: absolute;
+  top: 9px;
+  width: 9px;
+  height: 12px;
+  background: var(--print);
+}
+
+.seam::before {
+  left: -10px;
+  clip-path: polygon(100% 0, 0 50%, 100% 100%);
+}
+
+.seam::after {
+  right: -10px;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+.seam-stitches {
+  position: absolute;
+  top: 13px;
+  right: 30px;
+  left: 6px;
+  height: 4px;
+  background: var(--thread);
+  filter: drop-shadow(0 0 4px var(--thread-glow));
+  --stitch: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='4'%3E%3Cpath d='M2 2h5' stroke='black' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  -webkit-mask: var(--stitch) left center / 15px 4px repeat-x;
+  mask: var(--stitch) left center / 15px 4px repeat-x;
+  animation: draw-in 0.9s ease-out;
+}
+
+.seam > svg {
+  position: absolute;
+  top: -4px;
+  right: 6px;
+}
+
+.seam-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  padding: 2px 12px;
+  border-radius: 999px;
+  background: var(--piece);
+  color: var(--link);
+  font: 500 15px var(--font-label);
+  letter-spacing: 0.07em;
+  text-transform: lowercase;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+}
+
+@keyframes draw-in {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes seam-fade {
+  0%,
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cut-dashes,
+  .seam-stitches {
+    animation: none;
+  }
+}
+
+.ghost-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 4px;
+  padding: 6px 8px 6px 35px;
+  border: 1px dashed var(--print-soft);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 14.5px;
+  font-style: italic;
+}
+
+.ghost-row .icon {
+  color: var(--thread);
+}
+
 .empty-note {
   max-width: 420px;
   margin: 15vh auto;

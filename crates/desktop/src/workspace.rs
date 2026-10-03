@@ -95,6 +95,10 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let show_settings = RwSignal::new(false);
     let show_scene_menu = RwSignal::new(false);
     let panel = RwSignal::new(None::<Panel>);
+    // The cut line is showing, waiting for Enter or Escape.
+    let cutting = RwSignal::new(false);
+    // After a merge: where the merged-in scene starts, in top-level blocks, for the seam.
+    let pending_seam = StoredValue::new(None::<u32>);
     let revision = RwSignal::new(0u32);
     let new_project = RwSignal::new(None::<String>);
     tauri::listen("snapshot-taken", move || {
@@ -144,6 +148,8 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
 
     let open_scene = move |slug: String| {
         let Some(p) = project.get_untracked() else { return };
+        // Loading new text takes the cut line away with it.
+        cutting.set(false);
         // Flushing saves the scene being left while it's still current; the snapshot is
         // queued after that save.
         flush();
@@ -155,16 +161,28 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         spawn_local(async move {
             match tauri::open_scene(&p, &slug).await {
                 Ok(opened) => {
+                    let seam = pending_seam.try_update_value(Option::take).flatten();
                     editor.with_value(|h| {
                         if let Some(h) = h {
                             h.set_content(&opened.markdown);
                             words.set(h.word_count() as usize);
                             markdown.set(h.markdown());
-                            h.focus();
                         }
                     });
                     scene.set(Some(opened.scene));
                     save_state.set(SaveState::Saved);
+                    // The piece is hidden while no scene is open (as during a split or merge), and
+                    // a hidden editor can't take the cursor, so wait until it shows again.
+                    request_animation_frame(move || {
+                        editor.with_value(|h| {
+                            if let Some(h) = h {
+                                h.focus();
+                                if let Some(index) = seam {
+                                    h.show_seam(index);
+                                }
+                            }
+                        });
+                    });
                 }
                 Err(e) => report(e),
             }
@@ -297,8 +315,25 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         });
     };
 
+    // Split shows the cut line first; Enter (or "Cut here") splits, Escape puts it away.
+    let show_cut_line = move |on: bool| {
+        cutting.set(on);
+        editor.with_value(|h| {
+            if let Some(h) = h {
+                h.show_cut_line(on);
+            }
+        });
+    };
+    let on_cut_confirm = move || {
+        show_cut_line(false);
+        split();
+    };
+    let on_cut_cancel = move || show_cut_line(false);
+
     let merge = move || {
         with_scene(&move |p, s| {
+            // The merged-in scene's text goes after this one's, so the seam goes after its blocks.
+            pending_seam.set_value(editor.with_value(|h| h.as_ref().map(EditorHandle::block_count)));
             spawn_local(async move {
                 match tauri::merge_scene(&p, &s).await {
                     Ok(view) => {
@@ -306,7 +341,10 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                         scene.set(None);
                         open_scene(s);
                     }
-                    Err(e) => report(e),
+                    Err(e) => {
+                        pending_seam.set_value(None);
+                        report(e);
+                    }
                 }
             });
         });
@@ -498,6 +536,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                     project=project
                     outline=outline
                     current=current_slug
+                    cutting=cutting
                     on_open=open_scene
                     on_outline=apply
                     on_error=report
@@ -576,9 +615,9 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                             <Show when=move || show_scene_menu.get()>
                                 <div class="backdrop" on:click=move |_| show_scene_menu.set(false)></div>
                                 <div class="menu" role="menu" aria-label="Scene actions">
-                                    <button role="menuitem" title="Split this scene at the cursor" on:click=move |_| {
+                                    <button role="menuitem" title="Shows a cut line at the cursor; Enter cuts there" on:click=move |_| {
                                         show_scene_menu.set(false);
-                                        split();
+                                        show_cut_line(true);
                                     }>
                                         <Icon glyph=Glyph::Scissors />
                                         "Split at the cursor"
@@ -629,7 +668,14 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                         <Notches />
                         <Grainline />
                         {piece_head}
-                        <Editor handle=editor typography=typography on_change=on_change on_ready=on_ready />
+                        <Editor
+                            handle=editor
+                            typography=typography
+                            on_change=on_change
+                            on_cut_confirm=on_cut_confirm
+                            on_cut_cancel=on_cut_cancel
+                            on_ready=on_ready
+                        />
                     </article>
                     <Show when=move || !has_scene()>
                         <p class="empty-note">"No scene open. Pick one in the outline, or add one with the + on a chapter."</p>

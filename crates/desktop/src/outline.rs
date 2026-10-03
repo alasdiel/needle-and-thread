@@ -78,6 +78,9 @@ pub fn OutlineTree(
     #[prop(into)] project: Signal<Option<String>>,
     #[prop(into)] outline: Signal<Option<OutlineView>>,
     #[prop(into)] current: Signal<Option<String>>,
+    /// The cut line is showing: a ghost row under the current scene previews the new one.
+    #[prop(into)]
+    cutting: Signal<bool>,
     on_open: impl Fn(String) + Copy + Send + Sync + 'static,
     /// Receives the outline after a change made here.
     on_outline: impl Fn(OutlineView) + Copy + Send + Sync + 'static,
@@ -146,6 +149,10 @@ pub fn OutlineTree(
         let is_editing = {
             let slug = slug.clone();
             move || editing.get() == Some(Editing::Scene(slug.clone()))
+        };
+        let shows_ghost = {
+            let is_current = is_current.clone();
+            move || cutting.get() && is_current()
         };
         let title = scene.title.clone();
         // `<Show>` children are a closure that takes what it uses, so it gets its own copies.
@@ -231,6 +238,12 @@ pub fn OutlineTree(
                 </Show>
                 <span class="count">{format_count(scene.words)}</span>
             </li>
+            <Show when=shows_ghost>
+                <li class="ghost-row" aria-hidden="true">
+                    <Icon glyph=Glyph::Scissors size=13 />
+                    "New piece from the cut"
+                </li>
+            </Show>
         }
     };
 

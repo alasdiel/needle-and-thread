@@ -29,6 +29,19 @@ extern "C" {
     #[wasm_bindgen(method, js_name = wordCount)]
     pub fn word_count(this: &EditorHandle) -> u32;
 
+    /// Top-level blocks in the document, 0 when it's empty.
+    #[wasm_bindgen(method, js_name = blockCount)]
+    pub fn block_count(this: &EditorHandle) -> u32;
+
+    /// Shows or hides the cut line at the cursor. While it shows, Enter and Escape call the
+    /// editor's `on_cut_confirm` and `on_cut_cancel`.
+    #[wasm_bindgen(method, js_name = showCutLine)]
+    pub fn show_cut_line(this: &EditorHandle, on: bool);
+
+    /// Draws a fading seam before top-level block `index` and puts the cursor there.
+    #[wasm_bindgen(method, js_name = showSeam)]
+    pub fn show_seam(this: &EditorHandle, index: u32);
+
     #[wasm_bindgen(method)]
     pub fn focus(this: &EditorHandle);
 
@@ -91,16 +104,20 @@ pub(crate) fn set(target: &Object, key: &str, value: &JsValue) {
 
 /// Mounts the editor once its element exists, stores it in `handle` so the parent can drive
 /// it, then calls `on_ready`. `on_change` receives the Markdown and word count after typing
-/// pauses.
+/// pauses; `on_cut_confirm` and `on_cut_cancel` answer the cut line.
 #[component]
 pub fn Editor(
     handle: StoredValue<Option<EditorHandle>, LocalStorage>,
     #[prop(into)] typography: Signal<Typography>,
     on_change: impl Fn(String, u32) + 'static,
+    on_cut_confirm: impl Fn() + 'static,
+    on_cut_cancel: impl Fn() + 'static,
     on_ready: impl Fn() + 'static,
 ) -> impl IntoView {
     let node_ref = NodeRef::<html::Div>::new();
     let on_change = StoredValue::new_local(Closure::<dyn FnMut(String, u32)>::new(on_change));
+    let on_cut_confirm = StoredValue::new_local(Closure::<dyn FnMut()>::new(on_cut_confirm));
+    let on_cut_cancel = StoredValue::new_local(Closure::<dyn FnMut()>::new(on_cut_cancel));
 
     Effect::new(move |_| {
         let Some(el) = node_ref.get() else { return };
@@ -109,6 +126,8 @@ pub fn Editor(
         }
         let options = options(typography.get_untracked());
         on_change.with_value(|f| set(&options, "onChange", f.as_ref()));
+        on_cut_confirm.with_value(|f| set(&options, "onCutConfirm", f.as_ref()));
+        on_cut_cancel.with_value(|f| set(&options, "onCutCancel", f.as_ref()));
         handle.set_value(Some(mount(&el, "", &options)));
         on_ready();
     });
@@ -123,13 +142,15 @@ pub fn Editor(
     });
 
     on_cleanup(move || {
-        // `destroy` flushes through `on_change`, so the closure must outlive it.
+        // `destroy` flushes through `on_change`, so the closures must outlive it.
         handle.update_value(|h| {
             if let Some(h) = h.take() {
                 h.destroy();
             }
         });
         on_change.dispose();
+        on_cut_confirm.dispose();
+        on_cut_cancel.dispose();
     });
 
     view! { <div class="editor-host" node_ref=node_ref></div> }

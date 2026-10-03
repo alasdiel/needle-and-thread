@@ -4,12 +4,23 @@
 import "./style.css";
 import type { Node } from "prosemirror-model";
 import { history } from "prosemirror-history";
-import { EditorState, type Plugin } from "prosemirror-state";
+import { EditorState, type Plugin, Selection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { type Typography, buildInputRules, defaultTypography } from "./inputrules.ts";
 import { buildKeymaps } from "./keymap.ts";
 import { countWords, parseMarkdown, serializeMarkdown } from "./markdown.ts";
 import { openSpellMenu } from "./menu.ts";
+import {
+  type CutCallbacks,
+  SEAM_MS,
+  type SeamMeta,
+  blockCount,
+  cutLineKey,
+  cutLinePlugin,
+  seamKey,
+  seamPlugin,
+  seamPosition,
+} from "./pattern.ts";
 import { type SpellMeta, type Spellchecker, spellcheckKey, spellcheckPlugin } from "./spellcheck.ts";
 
 export type { Spellchecker, Typography };
@@ -18,7 +29,7 @@ export interface EditorOptions {
   typography?: Partial<Typography>;
 }
 
-export interface MountOptions extends EditorOptions {
+export interface MountOptions extends EditorOptions, Partial<CutCallbacks> {
   /** Called with the document's Markdown once typing pauses for `debounceMs`. */
   onChange?: (markdown: string, words: number) => void;
   debounceMs?: number;
@@ -27,6 +38,7 @@ export interface MountOptions extends EditorOptions {
 export class Editor {
   private readonly view: EditorView;
   private readonly onChange: (markdown: string, words: number) => void;
+  private readonly cutCallbacks: CutCallbacks;
   private readonly debounceMs: number;
   private typography: Typography;
   private spellchecker: Spellchecker | null = null;
@@ -35,11 +47,19 @@ export class Editor {
   private readonly history = history();
   private readonly spellcheck = spellcheckPlugin(() => this.spellchecker);
   private readonly keymaps = buildKeymaps();
+  // First, so Enter and Escape confirm or cancel a cut before the keymaps see them.
+  private readonly cutLine = cutLinePlugin(() => this.cutCallbacks);
+  private readonly seam = seamPlugin();
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private seamTimer: ReturnType<typeof setTimeout> | undefined;
   private dirty = false;
 
   constructor(el: HTMLElement, markdown: string, options: MountOptions = {}) {
     this.onChange = options.onChange ?? (() => {});
+    this.cutCallbacks = {
+      onCutConfirm: options.onCutConfirm ?? (() => {}),
+      onCutCancel: options.onCutCancel ?? (() => {}),
+    };
     this.debounceMs = options.debounceMs ?? 1000;
     this.typography = { ...defaultTypography, ...options.typography };
     this.view = new EditorView(el, {
@@ -99,6 +119,33 @@ export class Editor {
     return countWords(this.view.state.doc);
   }
 
+  /** Top-level blocks in the document (0 when it's empty), to place a seam after a merge. */
+  blockCount(): number {
+    return blockCount(this.view.state.doc);
+  }
+
+  /** Shows or hides the cut line at the cursor, which previews where Split will cut. While it
+   * shows, Enter and Escape call `onCutConfirm` and `onCutCancel`. */
+  showCutLine(on: boolean): void {
+    this.view.dispatch(this.view.state.tr.setMeta(cutLineKey, on).scrollIntoView());
+    if (on) this.view.focus();
+  }
+
+  /** Marks where a merged scene was joined on, before top-level block `index`, and puts the
+   * cursor there. The seam fades by itself. */
+  showSeam(index: number): void {
+    const { state } = this.view;
+    const pos = seamPosition(state.doc, index);
+    const meta: SeamMeta = pos;
+    this.view.dispatch(state.tr.setMeta(seamKey, meta).setSelection(Selection.near(state.doc.resolve(pos))));
+    this.view.dom.querySelector(".seam")?.scrollIntoView({ block: "center", behavior: "smooth" });
+    clearTimeout(this.seamTimer);
+    this.seamTimer = setTimeout(() => {
+      const clear: SeamMeta = "clear";
+      this.view.dispatch(this.view.state.tr.setMeta(seamKey, clear));
+    }, SEAM_MS);
+  }
+
   focus(): void {
     this.view.focus();
   }
@@ -112,11 +159,12 @@ export class Editor {
 
   destroy(): void {
     this.flush();
+    clearTimeout(this.seamTimer);
     this.view.destroy();
   }
 
   private plugins(): Plugin[] {
-    return [buildInputRules(this.typography), ...this.keymaps, this.history, this.spellcheck];
+    return [this.cutLine, buildInputRules(this.typography), ...this.keymaps, this.history, this.spellcheck, this.seam];
   }
 
   private createState(doc: Node): EditorState {
