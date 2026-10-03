@@ -7,6 +7,17 @@ use wasm_bindgen::prelude::*;
 extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], catch)]
     async fn invoke(cmd: &str, args: JsValue) -> Result<JsValue, JsValue>;
+
+    #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "event"], js_name = listen)]
+    fn listen_js(event: &str, handler: &Closure<dyn FnMut(JsValue)>) -> js_sys::Promise;
+}
+
+/// Calls `handler` every time the backend emits `event`, for the rest of the app's life.
+pub fn listen(event: &str, mut handler: impl FnMut() + 'static) {
+    let closure = Closure::<dyn FnMut(JsValue)>::new(move |_payload: JsValue| handler());
+    let _ = listen_js(event, &closure);
+    // The listener lives as long as the window, so its closure must too.
+    closure.forget();
 }
 
 async fn call<A: Serialize, R: DeserializeOwned>(cmd: &str, args: &A) -> Result<R, String> {
@@ -62,6 +73,56 @@ pub async fn open_scene(path: &str) -> Result<OpenedScene, String> {
 
 pub async fn save_scene(path: &str, markdown: &str) -> Result<(), String> {
     call("save_scene", &SaveArgs { path, markdown }).await
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct VersionInfo {
+    pub id: String,
+    /// Seconds since the Unix epoch.
+    pub time: i64,
+    pub message: String,
+    pub name: Option<String>,
+    pub words: usize,
+}
+
+#[derive(Serialize)]
+struct VersionArgs<'a> {
+    path: &'a str,
+    id: &'a str,
+}
+
+#[derive(Serialize)]
+struct RestoreArgs<'a> {
+    path: &'a str,
+    id: &'a str,
+    label: &'a str,
+}
+
+#[derive(Serialize)]
+struct NameArgs<'a> {
+    id: &'a str,
+    name: &'a str,
+}
+
+pub async fn scene_history(path: &str) -> Result<Vec<VersionInfo>, String> {
+    call("scene_history", &OpenArgs { path }).await
+}
+
+pub async fn scene_version(path: &str, id: &str) -> Result<String, String> {
+    call("scene_version", &VersionArgs { path, id }).await
+}
+
+pub async fn snapshot_now() -> Result<bool, String> {
+    call("snapshot_now", &()).await
+}
+
+/// Returns the restored text. `label` describes the version in the snapshot message.
+pub async fn restore_version(path: &str, id: &str, label: &str) -> Result<String, String> {
+    call("restore_version", &RestoreArgs { path, id, label }).await
+}
+
+pub async fn name_version(id: &str, name: &str) -> Result<(), String> {
+    call("name_version", &NameArgs { id, name }).await
 }
 
 pub async fn spell_dictionary() -> Result<SpellDictionary, String> {

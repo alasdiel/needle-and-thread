@@ -9,7 +9,9 @@ use std::{
 
 use needle_core::scene::SceneFile;
 use serde::Serialize;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
+
+use crate::history::History;
 
 const SAMPLES: &[(&str, &str)] = &[
     (
@@ -39,11 +41,9 @@ pub fn spike_vault(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app.path().app_data_dir().map_err(|e| e.to_string())?.join("spike-vault"))
 }
 
-/// Copies the sample scenes into the spike vault (once, so edits survive restarts) and
-/// returns their paths.
-#[tauri::command]
-pub fn sample_scenes(app: AppHandle) -> Result<Vec<SampleScene>, String> {
-    let dir = spike_vault(&app)?.join("projects/tidewater/manuscript");
+/// Copies the sample scenes into the spike vault (only if missing, so edits survive restarts).
+pub fn seed_samples(app: &AppHandle) -> Result<Vec<SampleScene>, String> {
+    let dir = spike_vault(app)?.join("projects/tidewater/manuscript");
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
     SAMPLES
@@ -62,6 +62,11 @@ pub fn sample_scenes(app: AppHandle) -> Result<Vec<SampleScene>, String> {
 }
 
 #[tauri::command]
+pub fn sample_scenes(app: AppHandle) -> Result<Vec<SampleScene>, String> {
+    seed_samples(&app)
+}
+
+#[tauri::command]
 pub fn open_scene(path: String) -> Result<OpenedScene, String> {
     let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
     Ok(OpenedScene {
@@ -76,16 +81,25 @@ pub fn open_scene(path: String) -> Result<OpenedScene, String> {
 /// Synchronous on purpose: Tauri runs sync commands one at a time on the main thread, so two
 /// quick saves can't land out of order.
 #[tauri::command]
-pub fn save_scene(path: String, markdown: String) -> Result<(), String> {
-    let path = Path::new(&path);
+pub fn save_scene(history: State<'_, History>, path: String, markdown: String) -> Result<(), String> {
+    if replace_body(Path::new(&path), &markdown)? {
+        history.edited();
+    }
+    Ok(())
+}
+
+/// Writes `markdown` as the scene's body, keeping its front matter. Returns whether the file
+/// changed.
+pub fn replace_body(path: &Path, markdown: &str) -> Result<bool, String> {
     let existing = fs::read_to_string(path).map_err(|e| e.to_string())?;
     let mut scene = SceneFile::parse(&existing);
-    scene.set_markdown(&markdown);
+    scene.set_markdown(markdown);
     let updated = scene.to_string();
     if updated == existing {
-        return Ok(());
+        return Ok(false);
     }
-    write_atomically(path, updated.as_bytes()).map_err(|e| e.to_string())
+    write_atomically(path, updated.as_bytes()).map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 /// Writes to a temporary file beside `path` and renames it into place, so a crash mid-write

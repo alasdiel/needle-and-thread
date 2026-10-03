@@ -5,4 +5,5 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+similar = "3.2.0"
 spellbook = "0.4.2"

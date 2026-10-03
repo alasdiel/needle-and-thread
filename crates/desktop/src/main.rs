@@ -1,5 +1,6 @@
 mod app;
 mod editor;
+mod history;
 mod spell;
 mod tauri;
 mod typography;

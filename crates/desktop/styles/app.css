@@ -175,7 +175,7 @@ button.active {
   overflow-y: auto;
 }
 
-.markdown-panel {
+.side-panel {
   width: min(45%, 560px);
   overflow: auto;
   border-left: 1px solid var(--border);
@@ -188,4 +188,109 @@ button.active {
   font: 13px/1.5 ui-monospace, "JetBrains Mono", "DejaVu Sans Mono", monospace;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.history-panel {
+  padding: 12px 16px;
+}
+
+.history-panel h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+  font-size: 15px;
+}
+
+.history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.versions {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.version {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.version-time {
+  font-weight: 600;
+}
+
+.version-name {
+  justify-self: start;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.version-message,
+.version-words {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
+.actions,
+.name-form {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.name-form input {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.legend {
+  margin: 12px 0 6px;
+  color: var(--muted);
+}
+
+.diff {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  font: 15px/1.6 Charter, "Noto Serif", Georgia, serif;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.diff span {
+  color: var(--muted);
+}
+
+ins {
+  background: color-mix(in srgb, #2e9b5f 25%, transparent);
+  text-decoration: none;
+}
+
+del {
+  background: color-mix(in srgb, var(--error) 18%, transparent);
+  color: var(--error);
 }

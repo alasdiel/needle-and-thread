@@ -92,7 +92,7 @@ needle-and-thread/
 └── docs/             this file, plus spike findings in docs/spikes/
 ```
 
-`crates/desktop` follows the layout of the official create-tauri-app Leptos template, so the Tauri and Leptos docs apply as written. Crates are added as their phase starts (`index`, `vcs`, `export`, `ui`, `phone` and `worker` don't exist yet).
+`crates/desktop` follows the layout of the official create-tauri-app Leptos template, so the Tauri and Leptos docs apply as written. Crates are added as their phase starts (`index`, `export`, `ui`, `phone` and `worker` don't exist yet).
 
 `core` is used by the desktop app, the phone app and the reader page. Parsing, link resolution, timeline maths and encryption therefore behave the same everywhere. The Worker reuses its API types.
 

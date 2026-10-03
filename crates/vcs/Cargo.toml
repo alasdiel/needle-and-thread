@@ -1,0 +1,13 @@
+[package]
+name = "needle-vcs"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+# HTTPS only: pushes authenticate with a token, never SSH keys.
+git2 = { version = "0.21", default-features = false, features = ["https"] }
+needle-core = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

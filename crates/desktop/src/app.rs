@@ -2,6 +2,7 @@ use leptos::{prelude::*, task::spawn_local};
 use needle_core::spell::Speller;
 
 use crate::editor::{Editor, EditorHandle, Typography};
+use crate::history::HistoryPanel;
 use crate::spell::SpellBridge;
 use crate::tauri::{self, SampleScene};
 use crate::typography::TypographySettings;
@@ -11,6 +12,12 @@ enum SaveState {
     Saved,
     Saving,
     Failed(String),
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Panel {
+    Markdown,
+    History,
 }
 
 #[derive(Clone, PartialEq)]
@@ -35,7 +42,10 @@ pub fn App() -> impl IntoView {
     let markdown = RwSignal::new(String::new());
     let typography = RwSignal::new(Typography::default());
     let show_typography = RwSignal::new(false);
-    let show_markdown = RwSignal::new(false);
+    let panel = RwSignal::new(None::<Panel>);
+    // Bumped by the backend's snapshot events, so the History panel reloads.
+    let revision = RwSignal::new(0u32);
+    tauri::listen("snapshot-taken", move || revision.update(|r| *r += 1));
 
     let on_change = move |md: String, count: u32| {
         words.set(count);
@@ -51,12 +61,18 @@ pub fn App() -> impl IntoView {
     };
 
     let open = move |path: String| {
-        // Flushing saves the scene being left while `current_path` still points at it.
+        // Flushing saves the scene being left while `current_path` still points at it; the
+        // snapshot is queued after that save.
         editor.with_value(|h| {
             if let Some(h) = h {
                 h.flush();
             }
         });
+        if current_path.get_untracked().is_some() {
+            spawn_local(async move {
+                let _ = tauri::snapshot_now().await;
+            });
+        }
         spawn_local(async move {
             match tauri::open_scene(&path).await {
                 Ok(scene) => editor.with_value(|h| {
@@ -74,6 +90,19 @@ pub fn App() -> impl IntoView {
             }
         });
     };
+
+    let on_restore = move |md: String| {
+        editor.with_value(|h| {
+            if let Some(h) = h {
+                h.set_content(&md);
+                words.set(h.word_count());
+            }
+        });
+        markdown.set(md);
+        save_state.set(SaveState::Saved);
+    };
+
+    let toggle = move |which: Panel| panel.update(|p| *p = if *p == Some(which) { None } else { Some(which) });
 
     let load_spellchecker = move || {
         spawn_local(async move {
@@ -176,7 +205,10 @@ pub fn App() -> impl IntoView {
                         <TypographySettings typography=typography />
                     </Show>
                 </div>
-                <button class:active=move || show_markdown.get() on:click=move |_| show_markdown.update(|v| *v = !*v)>
+                <button class:active=move || panel.get() == Some(Panel::History) on:click=move |_| toggle(Panel::History)>
+                    "History"
+                </button>
+                <button class:active=move || panel.get() == Some(Panel::Markdown) on:click=move |_| toggle(Panel::Markdown)>
                     "Markdown"
                 </button>
             </div>
@@ -185,11 +217,17 @@ pub fn App() -> impl IntoView {
             <div class="page">
                 <Editor handle=editor typography=typography on_change=on_change on_ready=on_ready />
             </div>
-            <Show when=move || show_markdown.get()>
-                <aside class="markdown-panel">
-                    <pre>{move || markdown.get()}</pre>
-                </aside>
-            </Show>
+            {move || match panel.get() {
+                None => None,
+                Some(Panel::Markdown) => Some(view! {
+                    <aside class="side-panel markdown-panel">
+                        <pre>{move || markdown.get()}</pre>
+                    </aside>
+                }.into_any()),
+                Some(Panel::History) => Some(view! {
+                    <HistoryPanel path=current_path revision=revision editor=editor on_restore=on_restore />
+                }.into_any()),
+            }}
         </main>
     }
 }
