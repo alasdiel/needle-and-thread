@@ -1,0 +1,14 @@
+[package]
+name = "needle-desktop"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+needle-core = { workspace = true }
+serde = { workspace = true }
+tauri = { version = "2", features = [] }
+tempfile = "3"

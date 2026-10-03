@@ -1,0 +1,31 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/desktop", "crates/desktop/src-tauri"]
+# The desktop frontend only builds for wasm32 (via trunk), so plain `cargo build`/`cargo test`
+# at the root skips it.
+default-members = ["crates/core", "crates/desktop/src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Debug info and incremental caches made up most of a 5+ GB target/. Line tables still give
+# file:line in panics for our own crates.
+[profile.dev]
+debug = "line-tables-only"
+incremental = false
+
+[profile.dev.package."*"]
+debug = false
+
+# Parsing a full Hunspell dictionary unoptimized takes seconds in wasm debug builds.
+[profile.dev.package.spellbook]
+opt-level = 3
+
+[profile.dev.package.hashbrown]
+opt-level = 3
+
+[workspace.dependencies]
+needle-core = { path = "crates/core" }
+serde = { version = "1", features = ["derive"] }

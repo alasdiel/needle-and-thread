@@ -1,0 +1,8 @@
+[package]
+name = "needle-core"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+spellbook = "0.4.2"

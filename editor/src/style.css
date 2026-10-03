@@ -1,0 +1,183 @@
+@import "prosemirror-view/style/prosemirror.css";
+
+:root {
+  --prose-text: #242424;
+  --prose-muted: #6b6b6b;
+  --prose-rule: #d9d9d9;
+  --prose-accent: #1a6a5a;
+  --prose-chip: #e3f1ed;
+  --prose-selection: #cfe6df;
+  --prose-misspelled: #d93025;
+  --menu-bg: #ffffff;
+  --menu-border: #e2ded4;
+  --menu-hover: #eef5f2;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --prose-text: #e6e3dc;
+    --prose-muted: #a29e95;
+    --prose-rule: #44413b;
+    --prose-accent: #7fcbb6;
+    --prose-chip: #23413a;
+    --prose-selection: #2f5a50;
+    --prose-misspelled: #ff7b72;
+    --menu-bg: #2a2925;
+    --menu-border: #44413b;
+    --menu-hover: #33403b;
+  }
+}
+
+.needle-prose {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 56px 24px 40vh;
+  font-family: Charter, "Bitstream Charter", "Sitka Text", Cambria, "Noto Serif", "DejaVu Serif", Georgia, serif;
+  font-size: 21px;
+  line-height: 1.6;
+  color: var(--prose-text);
+  outline: none;
+  caret-color: var(--prose-accent);
+  overflow-wrap: break-word;
+}
+
+.needle-prose ::selection {
+  background: var(--prose-selection);
+}
+
+.needle-prose p {
+  margin: 0 0 1.15em;
+}
+
+.needle-prose h1,
+.needle-prose h2,
+.needle-prose h3,
+.needle-prose h4,
+.needle-prose h5,
+.needle-prose h6 {
+  font-family: system-ui, "Inter", "Noto Sans", sans-serif;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  margin: 1.6em 0 0.5em;
+}
+
+.needle-prose h1 { font-size: 1.75em; }
+.needle-prose h2 { font-size: 1.4em; }
+.needle-prose h3 { font-size: 1.15em; }
+.needle-prose h4,
+.needle-prose h5,
+.needle-prose h6 { font-size: 1em; }
+
+.needle-prose > :first-child {
+  margin-top: 0;
+}
+
+.needle-prose blockquote {
+  margin: 0 0 1.15em;
+  padding-left: 1.1em;
+  border-left: 3px solid var(--prose-text);
+  font-style: italic;
+}
+
+.needle-prose ul,
+.needle-prose ol {
+  margin: 0 0 1.15em;
+  padding-left: 1.6em;
+}
+
+.needle-prose li > p {
+  margin-bottom: 0.4em;
+}
+
+.needle-prose hr.scene-break {
+  border: 0;
+  height: auto;
+  margin: 2em 0;
+  text-align: center;
+  color: var(--prose-muted);
+}
+
+.needle-prose hr.scene-break::after {
+  content: "* * *";
+  letter-spacing: 0.8em;
+}
+
+.needle-prose hr.scene-break.ProseMirror-selectednode {
+  outline: 2px solid var(--prose-selection);
+  outline-offset: 4px;
+}
+
+.needle-prose u {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.needle-prose a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--prose-accent);
+  text-underline-offset: 3px;
+}
+
+.needle-prose .wikilink {
+  padding: 0 0.25em;
+  border-radius: 4px;
+  background: var(--prose-chip);
+  color: var(--prose-accent);
+  white-space: nowrap;
+}
+
+.needle-prose .wikilink.ProseMirror-selectednode {
+  outline: 2px solid var(--prose-accent);
+}
+
+.needle-prose .misspelled {
+  text-decoration: underline wavy var(--prose-misspelled);
+  text-decoration-thickness: 1px;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 4px;
+}
+
+.needle-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid var(--menu-border);
+  border-radius: 8px;
+  background: var(--menu-bg);
+  color: var(--prose-text);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.18);
+  font: 14px/1.4 system-ui, "Inter", "Noto Sans", sans-serif;
+}
+
+.needle-menu button {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.needle-menu button:hover:not(:disabled),
+.needle-menu button:focus-visible {
+  background: var(--menu-hover);
+  outline: none;
+}
+
+.needle-menu button:disabled {
+  color: var(--prose-muted);
+  cursor: default;
+}
+
+.needle-menu hr {
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--menu-border);
+}
