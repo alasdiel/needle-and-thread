@@ -5,3 +5,4 @@
 /editor/dist
 /.cargo/config.toml
 /crates/desktop/dist-release
+/docs/HANDOFF.md
