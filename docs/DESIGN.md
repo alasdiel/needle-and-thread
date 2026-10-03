@@ -460,6 +460,15 @@ Each project has **compile** settings that control:
 
 The app ships its own fonts, so a PDF comes out the same on every machine.
 
+### Citation machine (later)
+
+Requested 2026-10-03; not needed for the first phases.
+
+- **Make a source:** paste a URL, DOI or ISBN and the details are filled in (DOI via Crossref, ISBN via Open Library, URL from the page's metadata), or type them by hand. The result is a normal `source` note.
+- **Cite:** insert `[@source, p. 42]` while writing, chosen from your sources by autocomplete.
+- **Styles:** APA, MLA, Chicago and any other CSL style, for in-text citations, footnotes and a generated bibliography. Exports format them; the editor shows a preview.
+- **Likely tool:** hayagriva, the Rust bibliography library Typst uses, which reads CSL styles.
+
 ## 12. Security and privacy
 
 - **Your writing on GitHub is private but not encrypted.** GitHub could technically read it, just as with Google Docs. Encrypting the vault would break phone lookup, so this can be revisited if it matters.
@@ -477,7 +486,7 @@ The app ships its own fonts, so a PDF comes out the same on every machine.
 | 3 · Timeline + network | Calendars, resolver, timeline view, plot points, relationships, network map with story-time slider |
 | 4 · Sync + phone | Two-way sync, Pages deploy, phone capture, tagging and lookup, inbox filing, QR setup |
 | 5 · Sharing | Worker, encryption, reader page, comments and anchoring, author tools, desktop comments panel |
-| Later | Windows builds; moving a project out of the vault; a chapter as one continuous document; citations for nonfiction; notes-to-self inside the prose |
+| Later | Windows builds; moving a project out of the vault; a chapter as one continuous document; citation machine for nonfiction (§11); notes-to-self inside the prose |
 
 ## 14. Risks
 
