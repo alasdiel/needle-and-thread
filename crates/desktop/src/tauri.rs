@@ -219,6 +219,33 @@ pub struct HintView {
     pub note: NoteView,
 }
 
+/// A search result: a scene (`kind` "scene", `key` its file name) or a note (`key` its path).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct HitView {
+    pub kind: String,
+    pub project: Option<String>,
+    pub world: Option<String>,
+    pub key: String,
+    pub title: String,
+    pub status: Option<String>,
+    pub note_type: Option<String>,
+    /// (text, is the match) pieces.
+    pub snippet: Vec<(String, bool)>,
+}
+
+/// What to search for; see the `search` command.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SearchQuery {
+    pub text: String,
+    pub everywhere: bool,
+    pub kind: Option<&'static str>,
+    pub status: Option<String>,
+    pub note_type: Option<String>,
+    /// Names (title and aliases) of the POV character and thread to filter by.
+    pub pov: Vec<String>,
+    pub thread: Vec<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct ProjectSettings {
     pub title: String,
@@ -410,6 +437,22 @@ pub async fn promote_note(project: &str, path: &str) -> Result<NoteView, String>
 /// was one.
 pub async fn link_mention(project: &str, scene: &str, note: &NoteKey) -> Result<bool, String> {
     call("link_mention", note_args(note).str("project", project).str("scene", scene)).await
+}
+
+// --- Search -----------------------------------------------------------------------------
+
+pub async fn search(project: &str, query: &SearchQuery) -> Result<Vec<HitView>, String> {
+    let list = |names: &[String]| -> JsValue { names.iter().map(|n| JsValue::from_str(n)).collect::<js_sys::Array>().into() };
+    let args = Args::default()
+        .str("project", project)
+        .str("text", &query.text)
+        .set("everywhere", query.everywhere.into())
+        .opt("kind", query.kind)
+        .opt("status", query.status.as_deref())
+        .opt("noteType", query.note_type.as_deref())
+        .set("pov", list(&query.pov))
+        .set("thread", list(&query.thread));
+    call("search", args).await
 }
 
 // --- History ----------------------------------------------------------------------------

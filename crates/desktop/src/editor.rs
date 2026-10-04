@@ -31,6 +31,11 @@ extern "C" {
     #[wasm_bindgen(method, js_name = refreshLinks)]
     pub fn refresh_links(this: &EditorHandle);
 
+    /// Highlights words starting with any of `terms` (empty clears it); with `reveal`, scrolls
+    /// to the first one.
+    #[wasm_bindgen(method, js_name = setHighlights)]
+    pub fn set_highlights(this: &EditorHandle, terms: &js_sys::Array, reveal: bool);
+
     /// Checks every word again, after the spellchecker learned new ones.
     #[wasm_bindgen(method, js_name = recheckSpelling)]
     pub fn recheck_spelling(this: &EditorHandle);

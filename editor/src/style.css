@@ -11,6 +11,8 @@
   --prose-stitch: var(--print-soft, #9aa5b1);
   --prose-selection: color-mix(in srgb, var(--blue, #1a6a5a) 30%, transparent);
   --prose-misspelled: var(--spell, #d93025);
+  --prose-mark: var(--mark, rgb(11 159 176 / 0.16));
+  --prose-mark-line: var(--thread, #0b9fb0);
   --menu-bg: var(--raise, #ffffff);
   --menu-border: var(--rule, #e2ded4);
   --menu-hover: var(--blue-tint, #eef5f2);
@@ -147,6 +149,12 @@
   outline: 2px solid var(--prose-link);
   outline-offset: 2px;
   border-radius: 2px;
+}
+
+.needle-prose .search-match {
+  border-radius: 2px;
+  background: var(--prose-mark);
+  box-shadow: 0 1.5px 0 var(--prose-mark-line);
 }
 
 .needle-prose .misspelled {
