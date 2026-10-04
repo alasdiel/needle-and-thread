@@ -3,6 +3,7 @@
 
 mod history;
 mod notes;
+mod search;
 mod settings;
 mod spelling;
 mod state;
@@ -66,6 +67,7 @@ fn main() {
             notes::update_project,
             notes::scene_names,
             notes::set_scene_names,
+            search::search,
             spelling::spell_dictionary,
             spelling::add_to_dictionary,
             history::scene_history,

@@ -143,3 +143,45 @@ fn what_people_type_becomes_a_safe_query() {
     assert_eq!(match_expression("\"unclosed phrase"), Some("\"unclosed phrase\"".into()));
     assert_eq!(match_expression("  — "), None);
 }
+
+/// Timings on the sample vault, scaled up 20 times: `cargo test -p needle-index -- --ignored --nocapture`.
+#[test]
+#[ignore]
+fn timings_on_a_novel_sized_vault() {
+    let sample = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-vault");
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().join("vault");
+    let copy = |from: &std::path::Path, to: &std::path::Path| {
+        fn walk(from: &std::path::Path, to: &std::path::Path) {
+            fs::create_dir_all(to).unwrap();
+            for entry in fs::read_dir(from).unwrap() {
+                let entry = entry.unwrap();
+                let target = to.join(entry.file_name());
+                if entry.path().is_dir() {
+                    walk(&entry.path(), &target);
+                } else {
+                    fs::copy(entry.path(), target).unwrap();
+                }
+            }
+        }
+        walk(from, to);
+    };
+    copy(&sample, &root);
+    // Twenty copies of the long chapter: about 200,000 words, two novels' worth.
+    let manuscript = root.join("projects/tidewater/manuscript");
+    let long = fs::read_to_string(manuscript.join("long-chapter.md")).unwrap();
+    for i in 0..20 {
+        fs::write(manuscript.join(format!("copy-{i}.md")), &long).unwrap();
+    }
+    let vault = Vault::open(&root).unwrap();
+    let mut index = Index::in_memory().unwrap();
+    let started = std::time::Instant::now();
+    let synced = index.sync(&vault).unwrap();
+    eprintln!("first sync: {synced:?} in {:?}", started.elapsed());
+    let started = std::time::Instant::now();
+    index.sync(&vault).unwrap();
+    eprintln!("sync with nothing changed: {:?}", started.elapsed());
+    let started = std::time::Instant::now();
+    let hits = search(&index, "harbor bell");
+    eprintln!("search: {} hits in {:?}", hits.len(), started.elapsed());
+}

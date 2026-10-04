@@ -2472,6 +2472,7 @@ name = "needle-desktop"
 version = "0.1.0"
 dependencies = [
  "needle-core",
+ "needle-index",
  "needle-vault",
  "needle-vcs",
  "serde",
