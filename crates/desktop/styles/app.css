@@ -1294,9 +1294,10 @@ kbd {
   display: none;
 }
 
+/* Under the title, not the icon: 13 px of icon and 8 px of gap. */
 .search-hit-snippet {
   display: -webkit-box;
-  margin-top: 3px;
+  margin: 3px 0 0 21px;
   overflow: hidden;
   color: var(--muted);
   font: 13.5px/1.45 var(--font-text);
@@ -1383,6 +1384,11 @@ kbd {
 .palette .search-hit {
   padding: 9px 14px 10px 16px;
   border-radius: 8px;
+}
+
+/* Headings line up with the results' icons. */
+.palette .search-group {
+  padding: 14px 14px 4px 16px;
 }
 
 .palette .search-hit.selected::before {
