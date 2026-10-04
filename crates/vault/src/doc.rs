@@ -45,3 +45,17 @@ pub(crate) fn update_header(path: &Path, name: &str, edit: impl FnOnce(&mut Head
     }
     Ok(file)
 }
+
+/// Changes a scene or note with `edit` and writes it back if anything changed. Returns whether
+/// it did.
+pub(crate) fn edit(path: &Path, name: &str, edit: impl FnOnce(&mut SceneFile) -> Result<()>) -> Result<bool> {
+    let mut file = read(path, name)?;
+    let before = file.to_string();
+    edit(&mut file)?;
+    let after = file.to_string();
+    if after == before {
+        return Ok(false);
+    }
+    write_atomically(path, after.as_bytes())?;
+    Ok(true)
+}

@@ -3,6 +3,8 @@
 
 use std::ops::Range;
 
+use crate::words::visible_text;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Link<'a> {
     /// The name linked to, trimmed: `Mara Venn` in `[[Mara Venn|Mara]]`.
@@ -57,6 +59,91 @@ fn link_at(markdown: &str, start: usize) -> Option<Link<'_>> {
     })
 }
 
+/// Replaces links: `replace` gets each one and returns its new Markdown, or None to keep it.
+pub fn rewrite_links(markdown: &str, mut replace: impl FnMut(&Link) -> Option<String>) -> String {
+    let mut out = String::with_capacity(markdown.len());
+    let mut done = 0;
+    for link in links(markdown) {
+        if let Some(new) = replace(&link) {
+            out.push_str(&markdown[done..link.range.start]);
+            out.push_str(&new);
+            done = link.range.end;
+        }
+    }
+    out.push_str(&markdown[done..]);
+    out
+}
+
+/// A link as Markdown: `[[target]]`, or `[[target|label]]` when the label differs.
+pub fn format_link(target: &str, label: Option<&str>) -> String {
+    match label {
+        Some(label) if label != target => format!("[[{target}|{label}]]"),
+        _ => format!("[[{target}]]"),
+    }
+}
+
+/// Where `name` appears as a whole word outside links. Case counts, since names are proper
+/// nouns ("Will" shouldn't find "will"), but apostrophe style doesn't, and so a possessive
+/// ("Mara’s") is found too.
+pub fn mentions(markdown: &str, name: &str) -> Vec<Range<usize>> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Vec::new();
+    }
+    let linked: Vec<Range<usize>> = links(markdown).into_iter().map(|l| l.range).collect();
+    let mut variants = vec![name.to_owned()];
+    for (from, to) in [('\'', "’"), ('’', "'")] {
+        if name.contains(from) {
+            variants.push(name.replace(from, to));
+        }
+    }
+    let is_word_char = |c: Option<char>| c.is_some_and(char::is_alphanumeric);
+    let mut found: Vec<Range<usize>> = variants
+        .iter()
+        .flat_map(|variant| markdown.match_indices(variant.as_str()).map(|(i, m)| i..i + m.len()))
+        .filter(|r| !is_word_char(markdown[..r.start].chars().next_back()) && !is_word_char(markdown[r.end..].chars().next()))
+        .filter(|r| !linked.iter().any(|l| l.start < r.end && r.start < l.end))
+        .collect();
+    found.sort_by_key(|r| r.start);
+    found.dedup();
+    found
+}
+
+/// The text around `range` (a mention) as a reader sees it, from the same paragraph: up to
+/// `radius` characters each side, cut at a space, with "…" where it was cut.
+pub fn snippet(markdown: &str, range: Range<usize>, radius: usize) -> (String, String, String) {
+    let start = markdown[..range.start].rfind("\n\n").map_or(0, |i| i + 2);
+    let end = markdown[range.end..].find("\n\n").map_or(markdown.len(), |i| range.end + i);
+    let plain = |md: &str| {
+        let text = visible_text(md).replace(['*', '\\'], "");
+        text.split_whitespace().collect::<Vec<_>>().join(" ")
+    };
+    let before = plain(&markdown[start..range.start]);
+    let before = before.trim_start_matches(['#', '>', '-', ' ']);
+    let after = plain(&markdown[range.end..end]);
+
+    let chars: Vec<char> = before.chars().collect();
+    let before = if chars.len() > radius {
+        let cut: String = chars[chars.len() - radius..].iter().collect();
+        format!("…{}", cut.split_once(' ').map_or(cut.as_str(), |(_, rest)| rest))
+    } else {
+        before.to_owned()
+    };
+    let after = if after.chars().count() > radius {
+        let cut: String = after.chars().take(radius).collect();
+        format!("{}…", cut.rsplit_once(' ').map_or(cut.as_str(), |(rest, _)| rest))
+    } else {
+        after
+    };
+    // Keep the space that separated the name from its neighbours.
+    let space = |s: &str, at_end: bool| match at_end {
+        true if markdown[..range.start].ends_with(char::is_whitespace) && !s.is_empty() => format!("{s} "),
+        false if markdown[range.end..].starts_with(char::is_whitespace) && !s.is_empty() => format!(" {s}"),
+        _ => s.to_owned(),
+    };
+    (space(&before, true), markdown[range.clone()].to_owned(), space(&after, false))
+}
+
 /// The form names are compared in, so `[[old teodor]]` finds "Old Teodor": lowercase, curly
 /// apostrophes straightened, and any run of whitespace as one space.
 pub fn name_key(name: &str) -> String {
@@ -103,6 +190,40 @@ mod tests {
     #[test]
     fn handles_text_outside_ascii() {
         assert_eq!(targets("Café — [[Zoë’s ship|the ship]] …"), [("Zoë’s ship", Some("the ship"))]);
+    }
+
+    #[test]
+    fn rewrites_only_the_links_asked_for() {
+        let md = "[[Old Teodor]] and [[Mara]], then [[old teodor|him]].";
+        let out = rewrite_links(md, |l| {
+            (name_key(l.target) == "old teodor").then(|| format_link("Teodor Brask", Some(l.label.unwrap_or(l.target))))
+        });
+        assert_eq!(out, "[[Teodor Brask|Old Teodor]] and [[Mara]], then [[Teodor Brask|him]].");
+        assert_eq!(format_link("Mara", Some("Mara")), "[[Mara]]");
+    }
+
+    #[test]
+    fn mentions_are_whole_words_outside_links() {
+        let md = "Mara’s ship. [[Mara]] and Marabou, but MARA and Mara.";
+        let found: Vec<&str> = mentions(md, "Mara").into_iter().map(|r| &md[r]).collect();
+        assert_eq!(found, ["Mara", "Mara"]);
+        assert_eq!(mentions(md, "Mara")[0].start, 0);
+        let md = "Teodor's stall, Teodor’s stall";
+        assert_eq!(mentions(md, "Teodor's stall").len(), 2);
+        assert!(mentions("anything", "  ").is_empty());
+    }
+
+    #[test]
+    fn snippets_show_the_sentence_around_a_mention() {
+        let md = "First paragraph.\n\nThe lanterns *guttered*, and Mara counted the stalls a third time, slowly.\n\nNext.";
+        let range = mentions(md, "Mara")[0].clone();
+        let (before, name, after) = snippet(md, range.clone(), 200);
+        assert_eq!(
+            (before.as_str(), name.as_str(), after.as_str()),
+            ("The lanterns guttered, and ", "Mara", " counted the stalls a third time, slowly.")
+        );
+        let (before, _, after) = snippet(md, range, 14);
+        assert_eq!((before.as_str(), after.as_str()), ("…guttered, and ", " counted the…"));
     }
 
     #[test]

@@ -337,3 +337,116 @@ fn links_reach_this_project_then_its_world_then_other_projects_by_name() {
     let names = vault.names(&saltmarsh).unwrap();
     assert!(matches!(names.resolve("The Drowning"), Resolution::Missing));
 }
+
+/// Tidewater (in the Glass Coast world) with Mara, Teodor and two scenes that name them, plus
+/// Saltmarsh, which links into Tidewater.
+fn linked_vault() -> (TempDir, Vault) {
+    let (dir, vault) = vault();
+    let tidewater = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    let saltmarsh = vault.create_project("Saltmarsh", ProjectKind::Fiction).unwrap();
+    vault.create_world("Glass Coast").unwrap();
+    let config = tidewater.root().join("project.toml");
+    fs::write(&config, fs::read_to_string(&config).unwrap() + "world = \"glass-coast\"\n").unwrap();
+    let tidewater = vault.project("tidewater").unwrap();
+
+    let notes = tidewater.notes();
+    let mara = notes.create(NoteKind::Character, "Mara Venn").unwrap();
+    notes.update_header(&mara.path, |h| h.set_list("aliases", &["Mara"])).unwrap();
+    let teodor = notes.create(NoteKind::Character, "Old Teodor").unwrap();
+    notes.save_body(&teodor.path, "Owes [[Mara Venn]] nothing.\n").unwrap();
+    let drowning = vault.world("glass-coast").unwrap().notes().create(NoteKind::Event, "The Drowning").unwrap();
+    vault.world("glass-coast").unwrap().notes().save_body(&drowning.path, "[[Old Teodor]] saw it.\n").unwrap();
+
+    tidewater
+        .update_header("untitled-scene", |h| {
+            h.set_str("pov", "Mara Venn");
+            h.set_list("cast", &["Mara", "Old Teodor"]);
+        })
+        .unwrap();
+    tidewater
+        .save_body("untitled-scene", "[[Mara Venn|Mara]] met [[old teodor]].\n\nLater Mara slept. Mara Venn’s boat rocked.\n")
+        .unwrap();
+    let next = tidewater
+        .create_scene("Next", Placement::After { scene: "untitled-scene".into() })
+        .unwrap();
+    tidewater.save_body(&next.slug, "[[Mara]] waited.\n").unwrap();
+
+    saltmarsh
+        .save_body("untitled-scene", "[[tidewater/Old Teodor]] and an [[Old Teodor]] of our own.\n")
+        .unwrap();
+    (dir, vault)
+}
+
+#[test]
+fn a_note_knows_what_points_at_it() {
+    let (_dir, vault) = linked_vault();
+    let tidewater = vault.project("tidewater").unwrap();
+    let here = Owner::Project("tidewater".into());
+    let found = vault.note_links(&tidewater, &here, "characters/mara-venn").unwrap();
+
+    let appears: Vec<_> = found.appears_in.iter().map(|a| (a.scene.slug.as_str(), a.fields.clone())).collect();
+    assert_eq!(appears, [("untitled-scene", vec!["pov", "cast"])]);
+
+    let linked: Vec<_> = found
+        .linked_from
+        .iter()
+        .map(|b| match &b.from {
+            LinkSource::Scene(s) => (s.slug.clone(), b.count),
+            LinkSource::Note(n) => (n.note.title.clone(), b.count),
+        })
+        .collect();
+    assert_eq!(linked, [("untitled-scene".into(), 1), ("next".into(), 1), ("Old Teodor".into(), 1)]);
+
+    // "Mara Venn’s" is one mention, not also one of "Mara".
+    let [mention] = found.mentioned_in.as_slice() else { panic!("{:?}", found.mentioned_in) };
+    assert_eq!((mention.scene.slug.as_str(), mention.count), ("untitled-scene", 2));
+    assert_eq!(
+        (mention.before.as_str(), mention.name.as_str(), mention.after.as_str()),
+        ("Later ", "Mara", " slept. Mara Venn’s boat rocked.")
+    );
+
+    // A world note's backlinks include world notes.
+    let teodor = vault.note_links(&tidewater, &here, "characters/old-teodor").unwrap();
+    assert_eq!(teodor.linked_from.len(), 2, "{:?}", teodor.linked_from);
+}
+
+#[test]
+fn renaming_a_note_keeps_every_link_and_the_prose() {
+    let (_dir, vault) = linked_vault();
+    let here = Owner::Project("tidewater".into());
+    let renamed = vault.rename_note(&here, "characters/old-teodor", "Teodor Brask").unwrap();
+    assert_eq!(renamed.note.title, "Teodor Brask");
+    assert_eq!(renamed.note.path, "characters/old-teodor", "the file keeps its name");
+
+    let tidewater = vault.project("tidewater").unwrap();
+    let scene = tidewater.scene("untitled-scene").unwrap();
+    assert!(scene.markdown().starts_with("[[Mara Venn|Mara]] met [[Teodor Brask|old teodor]]."), "{}", scene.markdown());
+    assert_eq!(scene.header().unwrap().list("cast"), ["Mara", "Teodor Brask"]);
+
+    // Saltmarsh's prefixed link follows; its own loose "Old Teodor" isn't this note.
+    let saltmarsh = vault.project("saltmarsh").unwrap();
+    assert_eq!(
+        saltmarsh.scene("untitled-scene").unwrap().markdown(),
+        "[[tidewater/Teodor Brask|tidewater/Old Teodor]] and an [[Old Teodor]] of our own.\n"
+    );
+    // Opened from Tidewater, the world's note linked to Tidewater's Teodor, so it follows too.
+    let world = vault.world("glass-coast").unwrap().notes();
+    assert_eq!(world.read("events/the-drowning").unwrap().markdown(), "[[Teodor Brask|Old Teodor]] saw it.\n");
+
+    let mut scenes = renamed.scenes.clone();
+    scenes.sort();
+    assert_eq!(scenes, [("saltmarsh".into(), "untitled-scene".into()), ("tidewater".into(), "untitled-scene".into())]);
+    assert_eq!(renamed.notes, [(Owner::World("glass-coast".into()), "events/the-drowning".to_owned())]);
+}
+
+#[test]
+fn a_rename_can_not_take_another_notes_title() {
+    let (_dir, vault) = linked_vault();
+    let here = Owner::Project("tidewater".into());
+    assert!(vault.rename_note(&here, "characters/mara-venn", "old TEODOR").is_err());
+    assert!(vault.rename_note(&here, "characters/mara-venn", "  ").is_err());
+    // Changing only the case is fine and rewrites nothing.
+    let renamed = vault.rename_note(&here, "characters/mara-venn", "MARA VENN").unwrap();
+    assert_eq!(renamed.note.title, "MARA VENN");
+    assert!(renamed.scenes.is_empty());
+}

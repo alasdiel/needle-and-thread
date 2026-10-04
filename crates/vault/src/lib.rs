@@ -5,6 +5,7 @@
 mod doc;
 mod error;
 mod files;
+mod links;
 mod notes;
 mod project;
 mod world;
@@ -19,6 +20,7 @@ use needle_core::project::{ProjectConfig, ProjectKind, WorldConfig};
 use needle_core::settings::VaultSettings;
 
 pub use error::{Error, Result};
+pub use links::{Appearance, Backlink, LinkSource, Mention, NAME_FIELDS, NoteLinks, Renamed};
 pub use notes::{NoteInfo, Notes};
 pub use project::{Placement, Project, SceneInfo};
 pub use world::World;
@@ -209,13 +211,16 @@ impl Vault {
 
     /// Finds notes by name the way links in `project` do.
     pub fn names(&self, project: &Project) -> Result<NameIndex<NamedNote>> {
-        let mut index = NameIndex::new(&project.slug, project.config.world.as_deref());
-        for named in self.reachable_notes(project)? {
-            let owner = named.owner.clone();
-            let (title, aliases) = (named.note.title.clone(), named.note.aliases.clone());
-            index.add(&owner, &title, &aliases, named);
+        let notes = self.reachable_notes(project)?;
+        Ok(links::index(&notes, &project.slug, project.config.world.as_deref()))
+    }
+
+    /// The notes of a project or world.
+    pub fn notes_of(&self, owner: &Owner) -> Result<Notes> {
+        match owner {
+            Owner::Project(slug) => Ok(self.project(slug)?.notes()),
+            Owner::World(slug) => Ok(self.world(slug)?.notes()),
         }
-        Ok(index)
     }
 }
 

@@ -137,6 +137,11 @@ impl Notes {
         Ok(info(&format!("{}/{stem}", kind.folder()), &note))
     }
 
+    /// Changes a note with `edit`, writing it back if anything changed.
+    pub(crate) fn edit(&self, path: &str, edit: impl FnOnce(&mut SceneFile) -> Result<()>) -> Result<bool> {
+        doc::edit(&self.file_path(path)?, &format!("note {path}"), edit)
+    }
+
     /// Replaces a note's text, keeping its header. Returns whether the file changed.
     pub fn save_body(&self, path: &str, markdown: &str) -> Result<bool> {
         doc::save_body(&self.file_path(path)?, &format!("note {path}"), markdown)

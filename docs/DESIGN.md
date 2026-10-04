@@ -202,11 +202,11 @@ Each type has its own template: an ordinary note in `.needle/templates/` (`chara
 - In each, titles come before aliases, so `[[Mara]]` reaches "Mara Venn" through her alias. Case and apostrophe style don't matter. A name that two notes share at the same level (an alias used twice, say) is flagged rather than guessed.
 - Autocomplete always writes the title, with what you typed as the shown text (`[[Mara Venn|Mara]]`), so links keep working when an alias changes.
 - A note in another project is linked with its project's folder name: `[[tidewater/Mara Venn]]`.
-- Renaming a note updates every link that points to it.
+- Renaming a note updates every link and header that names it by its title. A link keeps the words it shows (`[[Old Teodor]]` becomes `[[Teodor Brask|Old Teodor]]`), so renaming never changes the prose. The note's file keeps its name.
 - Each note shows three lists:
   - **backlinks**: what links to it
   - **appearances**: scenes that list it in their header
-  - **unlinked mentions**: scenes that use its name or aliases
+  - **unlinked mentions**: scenes that use its name or aliases (matching case, since names are proper nouns)
 - A project can belong to one **world**. The world holds the characters, places, history and calendar that a series shares.
 - **Promote to world** moves a note from a project into its world, for example when book two starts.
 - For nonfiction, a world can serve as a shared research library.

@@ -126,20 +126,41 @@ impl Project {
 
     /// Every scene file, whether or not the outline places it, in no particular order.
     pub fn scenes(&self) -> Result<Vec<SceneInfo>> {
+        self.scene_slugs()?.iter().map(|slug| self.scene_info(slug)).collect()
+    }
+
+    fn scene_slugs(&self) -> Result<Vec<String>> {
         let dir = self.root.join("manuscript");
-        let mut scenes = Vec::new();
+        let mut slugs = Vec::new();
         if !dir.is_dir() {
-            return Ok(scenes);
+            return Ok(slugs);
         }
         for entry in fs::read_dir(dir)? {
             let path = entry?.path();
             if path.extension().is_some_and(|ext| ext == "md")
                 && let Some(slug) = path.file_stem().and_then(|s| s.to_str())
             {
-                scenes.push(self.scene_info(slug)?);
+                slugs.push(slug.to_owned());
             }
         }
-        Ok(scenes)
+        Ok(slugs)
+    }
+
+    /// Every scene's name in reading order, then those the outline doesn't place, by name.
+    pub fn reading_order(&self) -> Result<Vec<String>> {
+        let outline = self.outline()?;
+        let mut order: Vec<String> = outline.scenes().map(str::to_owned).collect();
+        let mut unplaced: Vec<String> = self.scene_slugs()?.into_iter().filter(|s| !order.contains(s)).collect();
+        unplaced.sort();
+        order.retain(|slug| self.scene_path(slug).is_ok_and(|p| p.is_file()));
+        order.extend(unplaced);
+        Ok(order)
+    }
+
+    /// A scene's file and what the outline shows for it, from one read.
+    pub(crate) fn read_scene(&self, slug: &str) -> Result<(SceneInfo, SceneFile)> {
+        let file = self.scene(slug)?;
+        Ok((info(slug, &file)?, file))
     }
 
     pub fn create_scene(&self, title: &str, placement: Placement) -> Result<SceneInfo> {
@@ -185,6 +206,11 @@ impl Project {
     /// Replaces a scene's text, keeping its header. Returns whether the file changed.
     pub fn save_body(&self, slug: &str, markdown: &str) -> Result<bool> {
         doc::save_body(&self.scene_path(slug)?, &format!("scene {slug}"), markdown)
+    }
+
+    /// Changes a scene with `edit`, writing it back if anything changed.
+    pub(crate) fn edit_scene(&self, slug: &str, edit: impl FnOnce(&mut SceneFile) -> Result<()>) -> Result<bool> {
+        doc::edit(&self.scene_path(slug)?, &format!("scene {slug}"), edit)
     }
 
     /// Edits a scene's header in place; fields `edit` doesn't touch keep their formatting.
