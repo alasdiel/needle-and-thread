@@ -1,12 +1,14 @@
 mod app;
 mod appearance;
 mod editor;
+mod envelope;
 mod history;
 mod icons;
 mod links;
 mod notes;
 mod outline;
 mod pattern;
+mod project;
 mod settings;
 mod spell;
 mod status;

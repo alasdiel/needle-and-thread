@@ -7,16 +7,18 @@ use needle_core::project::{NoteKind, ProjectKind};
 use needle_core::spell::Speller;
 
 use crate::editor::{Editor, EditorHandle, Typography};
+use crate::envelope::{self, EnvelopeCard};
 use crate::history::HistoryPanel;
 use crate::icons::{Glyph, Icon};
 use crate::links::{LinkBridge, name_words};
 use crate::notes::{self, LinksSwatch, NotesList, Pin};
 use crate::outline::{self, LiveWords, OutlineTree};
 use crate::pattern::{Grainline, Notches};
+use crate::project::ProjectPanel;
 use crate::settings::{Prefs, SettingsPanel};
 use crate::spell::SpellBridge;
 use crate::status::{self, StatusMark};
-use crate::tauri::{self, NoteKey, NoteView, OutlineView, ProjectView, SceneView, VaultView};
+use crate::tauri::{self, NoteKey, NoteView, OutlineView, ProjectView, SceneNamesView, SceneView, VaultView};
 use crate::typography::TypographySettings;
 
 #[derive(Clone, PartialEq)]
@@ -102,6 +104,10 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let notes_list = RwSignal::new(Vec::<NoteView>::new());
     let world = RwSignal::new(None::<(String, String)>);
     let tab = RwSignal::new(Tab::Outline);
+    // The open scene's envelope: its header names and hints, fetched again after each save.
+    let scene_names = RwSignal::new(None::<SceneNamesView>);
+    let names_revision = RwSignal::new(0u32);
+    let envelope_open = RwSignal::new(false);
     let save_state = RwSignal::new(SaveState::Saved);
     let error = RwSignal::new(None::<String>);
     let spell_error = RwSignal::new(None::<String>);
@@ -112,6 +118,9 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let show_typography = RwSignal::new(false);
     let show_settings = RwSignal::new(false);
     let show_scene_menu = RwSignal::new(false);
+    let show_note_menu = RwSignal::new(false);
+    let show_project_panel = RwSignal::new(false);
+    let show_project_menu = RwSignal::new(false);
     let panel = RwSignal::new(None::<Panel>);
     // The cut line is showing, waiting for Enter or Escape.
     let cutting = RwSignal::new(false);
@@ -151,7 +160,10 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         save_state.set(SaveState::Saving);
         spawn_local(async move {
             save_state.set(match tauri::save_scene(&p, &s, &md).await {
-                Ok(()) => SaveState::Saved,
+                Ok(()) => {
+                    names_revision.update(|r| *r += 1);
+                    SaveState::Saved
+                }
                 Err(e) => SaveState::Failed(e),
             });
         });
@@ -272,6 +284,33 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                     notes_list.set(found.notes);
                     world.set(found.world);
                 }
+                Err(e) => report(e),
+            }
+        });
+    };
+
+    // The envelope follows the open scene, its saves, and the notes there are.
+    Effect::new(move |_| {
+        names_revision.track();
+        notes_list.track();
+        let slug = scene.with(|s| s.as_ref().map(|s| s.slug.clone()));
+        let (Some(p), Some(slug)) = (project.get_untracked(), slug) else {
+            scene_names.set(None);
+            return;
+        };
+        let wanted = slug.clone();
+        envelope::load(
+            async move { tauri::scene_names(&p, &slug).await },
+            move || scene.with_untracked(|s| s.as_ref().map(|s| s.slug.as_str()) == Some(wanted.as_str())),
+            move |view| scene_names.set(Some(view)),
+        );
+    });
+
+    let set_scene_names = move |field: String, names: Vec<String>| {
+        let (Some(p), Some(s)) = (project.get_untracked(), current()) else { return };
+        spawn_local(async move {
+            match tauri::set_scene_names(&p, &s, &field, &names).await {
+                Ok(view) => scene_names.set(Some(view)),
                 Err(e) => report(e),
             }
         });
@@ -618,6 +657,33 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         });
     };
 
+    let project_saved = move || {
+        spawn_local(async move {
+            if let Ok(Some(vault)) = tauri::current_vault().await {
+                projects.set(vault.projects);
+            }
+        });
+        if let Some(p) = project.get_untracked() {
+            load_project(p);
+        }
+    };
+
+    let promote = move || {
+        let (Some(p), Some(n)) = (project.get_untracked(), note.get_untracked()) else { return };
+        flush();
+        spawn_local(async move {
+            match tauri::promote_note(&p, &n.path).await {
+                Ok(moved) => {
+                    load_notes(p);
+                    // The editor has the note's latest text, already saved; reopen it where it is now.
+                    note.set(None);
+                    open_note(moved.key());
+                }
+                Err(e) => report(e),
+            }
+        });
+    };
+
     let open_other_vault = move |_| {
         flush();
         spawn_local(async move {
@@ -636,6 +702,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let current_slug = Signal::derive(move || scene.get().map(|s| s.slug));
     let has_scene = move || scene.with(Option::is_some);
     let has_note = move || note.with(Option::is_some);
+    let scene_title = Signal::derive(move || scene.with(|s| s.as_ref().map(|s| s.title.clone()).unwrap_or_default()));
     let has_doc = move || has_scene() || has_note();
     let project_kind = Signal::derive(move || {
         outline.with(|o| o.as_ref().map_or(ProjectKind::Fiction, |o| notes::project_kind(&o.project.kind)))
@@ -646,6 +713,8 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         let slug = scene.with(|s| s.as_ref().map(|s| s.slug.clone()))?;
         outline.with(|o| o.as_ref().and_then(|o| place(o, &slug)))
     };
+
+    let piece_number = Signal::derive(move || current_place().map(|p| format!("Piece {}", p.number)).unwrap_or_default());
 
     let project_title = move || {
         let slug = project.get();
@@ -787,14 +856,44 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                                     </For>
                                 </select>
                             </div>
-                            <button
-                                class="icon-button"
-                                title="New project"
-                                aria-label="New project"
-                                on:click=move |_| new_project.set(Some(String::new()))
-                            >
-                                <Icon glyph=Glyph::Plus />
-                            </button>
+                            <div class="popover-anchor">
+                                <button
+                                    class="icon-button"
+                                    title="Project actions"
+                                    aria-label="Project actions"
+                                    class:active=move || show_project_menu.get() || show_project_panel.get()
+                                    on:click=move |_| show_project_menu.update(|v| *v = !*v)
+                                >
+                                    <Icon glyph=Glyph::More />
+                                </button>
+                                <Show when=move || show_project_menu.get()>
+                                    <div class="backdrop" on:click=move |_| show_project_menu.set(false)></div>
+                                    <div class="menu" role="menu" aria-label="Project actions">
+                                        <button role="menuitem" on:click=move |_| {
+                                            show_project_menu.set(false);
+                                            show_project_panel.set(true);
+                                        }>
+                                            <Icon glyph=Glyph::Settings />
+                                            "Project settings…"
+                                        </button>
+                                        <button role="menuitem" on:click=move |_| {
+                                            show_project_menu.set(false);
+                                            new_project.set(Some(String::new()));
+                                        }>
+                                            <Icon glyph=Glyph::Plus />
+                                            "New project…"
+                                        </button>
+                                    </div>
+                                </Show>
+                                <Show when=move || show_project_panel.get() && project.get().is_some()>
+                                    <div class="backdrop" on:click=move |_| show_project_panel.set(false)></div>
+                                    <ProjectPanel
+                                        project=project.get_untracked().unwrap_or_default()
+                                        on_saved=project_saved
+                                        on_close=move || show_project_panel.set(false)
+                                    />
+                                </Show>
+                            </div>
                         </div>
                         <span class="project-meta">{project_meta}</span>
                     </div>
@@ -958,6 +1057,56 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                             </Show>
                         </div>
                     </Show>
+                    <Show when=has_note>
+                        <div class="popover-anchor">
+                            <button
+                                class="icon-button"
+                                title="Note actions"
+                                aria-label="Note actions"
+                                class:active=move || show_note_menu.get()
+                                on:click=move |_| show_note_menu.update(|v| *v = !*v)
+                            >
+                                <Icon glyph=Glyph::More size=17 />
+                            </button>
+                            <Show when=move || show_note_menu.get()>
+                                <div class="backdrop" on:click=move |_| show_note_menu.set(false)></div>
+                                <div class="menu" role="menu" aria-label="Note actions">
+                                    {move || {
+                                        let in_world = note.with(|n| n.as_ref().is_some_and(|n| n.world));
+                                        let world_name = world.get().map(|(_, name)| name);
+                                        let (enabled, detail) = match (in_world, world_name) {
+                                            (true, Some(name)) => (false, format!("Already in {name}")),
+                                            (false, Some(name)) => (true, format!("Moves it to {name}, for every project there")),
+                                            (_, None) => (false, "Put the project in a world first (⋯ by its title)".to_owned()),
+                                        };
+                                        view! {
+                                            <button
+                                                role="menuitem"
+                                                class="with-note"
+                                                disabled=!enabled
+                                                on:click=move |_| {
+                                                    show_note_menu.set(false);
+                                                    promote();
+                                                }
+                                            >
+                                                <span>"Promote to world"</span>
+                                                <span class="menu-note muted">{detail}</span>
+                                            </button>
+                                        }
+                                    }}
+                                    <Show when=move || prefs.markdown_panel.get()>
+                                        <hr />
+                                        <button role="menuitem" on:click=move |_| {
+                                            show_note_menu.set(false);
+                                            toggle(Panel::Markdown);
+                                        }>
+                                            {move || if panel.get() == Some(Panel::Markdown) { "Hide Markdown" } else { "Show Markdown" }}
+                                        </button>
+                                    </Show>
+                                </div>
+                            </Show>
+                        </div>
+                    </Show>
                 </header>
                 {move || error.get().map(|e| view! {
                     <div class="banner error">
@@ -996,6 +1145,21 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                                 <Pin />
                             </Show>
                         </div>
+                        <Show when=has_scene>
+                            <aside class="envelope-holder" aria-label="Scene details">
+                                <EnvelopeCard
+                                    names=scene_names
+                                    title=scene_title
+                                    piece=piece_number
+                                    notes=notes_list
+                                    kind=project_kind
+                                    place="beside"
+                                    on_set=set_scene_names
+                                    on_open_note=open_note
+                                    on_make_note=make_linked_note
+                                />
+                            </aside>
+                        </Show>
                         <Show when=has_note>
                             <LinksSwatch
                                 project=project
@@ -1010,6 +1174,43 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                         <p class="empty-note">"No scene open. Pick one in the outline, or add one with the + on a chapter."</p>
                     </Show>
                 </div>
+                <Show when=has_scene>
+                    <button
+                        class="envelope-tab"
+                        aria-label="Scene details"
+                        aria-expanded=move || envelope_open.get().to_string()
+                        on:click=move |_| envelope_open.update(|o| *o = !*o)
+                    >
+                        <Icon glyph=Glyph::Mail size=16 />
+                        <span class="envelope-tab-label">"Notions"</span>
+                        {move || {
+                            let hints = scene_names.with(envelope::hint_count);
+                            (hints > 0).then(|| view! {
+                                <span class="envelope-tab-count" title="Named in the text but not listed">{format!("+{hints}")}</span>
+                            })
+                        }}
+                    </button>
+                    <Show when=move || envelope_open.get()>
+                        <div class="backdrop envelope-backdrop" on:click=move |_| envelope_open.set(false)></div>
+                        <div class="envelope-over">
+                            <EnvelopeCard
+                                names=scene_names
+                                title=scene_title
+                                piece=piece_number
+                                notes=notes_list
+                                kind=project_kind
+                                place="over"
+                                on_set=set_scene_names
+                                on_open_note=move |key| {
+                                    envelope_open.set(false);
+                                    open_note(key);
+                                }
+                                on_make_note=make_linked_note
+                                on_close=move |_| envelope_open.set(false)
+                            />
+                        </div>
+                    </Show>
+                </Show>
             </section>
 
             {move || match panel.get() {

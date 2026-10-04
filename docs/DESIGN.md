@@ -30,7 +30,7 @@ Needle and Thread is a structure-first writing app for long fiction and long-for
 | Desktop app | Tauri 2 + Leptos, in Rust |
 | Editor | ProseMirror as a small JavaScript island (Rust has no mature rich-text editor) |
 | Editor feel | Like Medium: formatting shows as formatting, no visible Markdown symbols |
-| Look | A sewing-pattern bench. Each scene is drawn as a pattern piece (cutting line, stitching line, notches); cut lines, seams and stitches mark Split, Merge and scene breaks. Each note is a fabric swatch with pinked edges, pinned to the bench, with a smaller swatch beside it listing what links to it. A link to a note that doesn't exist yet is basted (long loose stitches). The motifs stay in the app's frame, never in the text |
+| Look | A sewing-pattern bench. Each scene is drawn as a pattern piece (cutting line, stitching line, notches); cut lines, seams and stitches mark Split, Merge and scene breaks. Each note is a fabric swatch with pinked edges, pinned to the bench, with a smaller swatch beside it listing what links to it. A scene's POV, cast, places and threads are on its envelope (like the back of a pattern envelope listing notions), beside the scene and staying in view as it scrolls, or a tab on the page's edge when the window is narrow. A link to a note that doesn't exist yet is basted (long loose stitches). The motifs stay in the app's frame, never in the text |
 | Colours | From Gwen (League of Legends): aqua threads, saturated blues, violet. Dark, a Shadow Isles cutting mat, is the main look; light is pattern tissue. System, Light or Dark is chosen per computer |
 | Fonts | Bundled, all OFL: Literata for the text, Fraunces (soft and wonky) for titles, Alegreya SC for labels, Alegreya Sans for controls |
 | Typography as you type | Four separate settings, each explained in the app and on by default: curly double quotes, curly single quotes/apostrophes, `--` → em dash, `...` → ellipsis. They never rewrite existing text |
@@ -167,7 +167,7 @@ The market opened at dusk, as it always had…
 
 The header is TOML between `+++` lines. When the app changes a field, everything else in the header (formatting, comments, fields it doesn't know) stays exactly as written. `+++` also can't be confused with a `---` scene break.
 
-The body holds only prose, which is exactly what gets exported. Who appears in the scene, where it happens and which threads it advances all go in the header, so the prose never fills up with link syntax. The app also detects character and place names, including their aliases, in the text and suggests adding them to the header.
+The body holds only prose, which is exactly what gets exported. Who appears in the scene, where it happens and which threads it advances all go in the header, so the prose never fills up with link syntax. The app also notices characters, places and threads the text links to or mentions (by title or alias) that the header doesn't list, and offers them as faint chips on the scene's envelope; nothing is added without a click.
 
 ### A note
 
@@ -208,7 +208,7 @@ Each type has its own template: an ordinary note in `.needle/templates/` (`chara
   - **appearances**: scenes that list it in their header
   - **unlinked mentions**: scenes that use its name or aliases (matching case, since names are proper nouns)
 - A project can belong to one **world**. The world holds the characters, places, history and calendar that a series shares.
-- **Promote to world** moves a note from a project into its world, for example when book two starts.
+- **Promote to world** (the note's ⋯ menu) moves a note from a project into its world, for example when book two starts. A project's world is chosen in Project settings (the ⋯ by its title), which can also make a new world.
 - For nonfiction, a world can serve as a shared research library.
 
 ### Cut bin

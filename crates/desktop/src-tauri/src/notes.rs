@@ -2,8 +2,8 @@
 //! folder, with `world` saying which) and its path inside it, e.g. `characters/mara-venn`.
 
 use needle_core::names::Owner;
-use needle_core::project::NoteKind;
-use needle_vault::{LinkSource, NamedNote, NoteInfo};
+use needle_core::project::{NoteKind, ProjectKind};
+use needle_vault::{LinkSource, NamedNote, NoteInfo, SceneNames};
 use serde::Serialize;
 use tauri::State;
 
@@ -231,5 +231,142 @@ pub fn link_mention(
             open.history.edited();
         }
         Ok(linked)
+    })
+}
+
+/// Moves a project's note into the project's world.
+#[tauri::command]
+pub fn promote_note(state: State<'_, AppState>, project: String, path: String) -> Result<NoteView, String> {
+    state.with(|open| {
+        let project = open.vault.project(&project).or_string()?;
+        let note = open.vault.promote_note(&project, &path).or_string()?;
+        open.history.edited();
+        let world = project.config.world.clone().unwrap_or_default();
+        Ok(note_view(&Owner::World(world), note))
+    })
+}
+
+#[derive(Serialize)]
+pub struct ProjectSettings {
+    title: String,
+    kind: &'static str,
+    world: Option<String>,
+    /// Every world in the vault: (folder, name).
+    worlds: Vec<(String, String)>,
+}
+
+#[tauri::command]
+pub fn project_settings(state: State<'_, AppState>, project: String) -> Result<ProjectSettings, String> {
+    state.with(|open| {
+        let project = open.vault.project(&project).or_string()?;
+        Ok(ProjectSettings {
+            title: project.config.title.clone(),
+            kind: match project.config.kind {
+                ProjectKind::Fiction => "fiction",
+                ProjectKind::Nonfiction => "nonfiction",
+            },
+            world: project.config.world.clone(),
+            worlds: open.vault.worlds().or_string()?.into_iter().map(|w| (w.slug, w.config.name)).collect(),
+        })
+    })
+}
+
+/// Changes a project's title, kind and world. With `new_world`, makes that world first and puts
+/// the project in it.
+#[tauri::command]
+pub fn update_project(
+    state: State<'_, AppState>,
+    project: String,
+    title: String,
+    kind: String,
+    world: Option<String>,
+    new_world: Option<String>,
+) -> Result<(), String> {
+    state.with(|open| {
+        let world = match new_world.as_deref().map(str::trim).filter(|w| !w.is_empty()) {
+            Some(name) => Some(open.vault.create_world(name).or_string()?.slug),
+            None => world.filter(|w| !w.is_empty()),
+        };
+        open.vault
+            .update_project(&project, |c| {
+                c.title = title;
+                c.kind = if kind == "nonfiction" { ProjectKind::Nonfiction } else { ProjectKind::Fiction };
+                c.world = world;
+            })
+            .or_string()?;
+        open.history.edited();
+        Ok(())
+    })
+}
+
+#[derive(Serialize)]
+pub struct SceneNamesView {
+    fields: Vec<FieldView>,
+    hints: Vec<HintView>,
+}
+
+#[derive(Serialize)]
+pub struct FieldView {
+    field: &'static str,
+    names: Vec<HeaderNameView>,
+}
+
+#[derive(Serialize)]
+pub struct HeaderNameView {
+    name: String,
+    /// None if no note has the name yet.
+    note: Option<NoteView>,
+}
+
+#[derive(Serialize)]
+pub struct HintView {
+    field: &'static str,
+    note: NoteView,
+}
+
+fn scene_names_view(names: SceneNames) -> SceneNamesView {
+    SceneNamesView {
+        fields: names
+            .fields
+            .into_iter()
+            .map(|(field, names)| FieldView {
+                field,
+                names: names
+                    .into_iter()
+                    .map(|n| HeaderNameView { name: n.name, note: n.note.map(named_view) })
+                    .collect(),
+            })
+            .collect(),
+        hints: names
+            .hints
+            .into_iter()
+            .map(|h| HintView { field: h.field, note: named_view(h.note) })
+            .collect(),
+    }
+}
+
+/// A scene's pov, cast, places and threads, and notes its text names that those don't list.
+#[tauri::command]
+pub fn scene_names(state: State<'_, AppState>, project: String, scene: String) -> Result<SceneNamesView, String> {
+    state.with(|open| {
+        let project = open.vault.project(&project).or_string()?;
+        Ok(scene_names_view(open.vault.scene_names(&project, &scene).or_string()?))
+    })
+}
+
+/// Sets one of a scene's name fields and returns them all again.
+#[tauri::command]
+pub fn set_scene_names(
+    state: State<'_, AppState>,
+    project: String,
+    scene: String,
+    field: String,
+    names: Vec<String>,
+) -> Result<SceneNamesView, String> {
+    state.with(|open| {
+        let project = open.vault.project(&project).or_string()?;
+        open.vault.set_scene_names(&project, &scene, &field, &names).or_string()?;
+        open.history.edited();
+        Ok(scene_names_view(open.vault.scene_names(&project, &scene).or_string()?))
     })
 }

@@ -47,6 +47,11 @@
   --pin-2: light-dark(#0a78bf, #14adf6);
   --pin-shine: light-dark(#efe8fd, #d9ccfa);
   --steel: light-dark(#7d8e97, #b9c8d0);
+  --envelope: light-dark(#f1f5f2, #172531); /* a scene's envelope */
+  --envelope-flap: light-dark(#e4ece8, #1d2e3b);
+  --chip-border: light-dark(rgb(91 63 168 / 0.4), rgb(167 151 237 / 0.45));
+  --chip-bg: light-dark(rgb(91 63 168 / 0.06), rgb(167 151 237 / 0.08));
+  --hint-border: light-dark(rgb(21 35 45 / 0.25), rgb(143 166 178 / 0.32));
 
   /* Bundled in styles/fonts.css. */
   --font-text: Literata, Georgia, serif;
@@ -111,6 +116,8 @@ body {
 .tab,
 .notes-world,
 .links-head,
+.envelope-label,
+.envelope-tab-label,
 .mention-more,
 .pill {
   font-family: var(--font-label);
@@ -240,6 +247,10 @@ select {
 
 .new-project input,
 .new-project select,
+.new-note input,
+.new-note select,
+.project-panel input,
+.project-panel select,
 .name-form input,
 .inline-edit {
   padding: 5px 8px;
@@ -324,6 +335,40 @@ input.switch:checked {
   bottom: calc(100% + 6px);
   left: 0;
   width: min(330px, calc(100vw - 32px));
+}
+
+/* Opens downwards from the project's title, at the sidebar's left. */
+.panel.project-panel {
+  right: auto;
+  left: -150px;
+  width: min(330px, calc(100vw - 32px));
+  padding-bottom: 12px;
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0;
+}
+
+.field-label {
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.segmented.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.project-panel .new-world {
+  width: 100%;
+  margin: -4px 0 6px;
+}
+
+.panel .actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .panel h2 {
@@ -1075,10 +1120,13 @@ input.switch:checked {
 /* --- Main column ---------------------------------------------------------------------------- */
 
 .main {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  /* The scene's envelope sits beside it or tucks into a tab, depending on this width. */
+  container: main / inline-size;
 }
 
 .topbar {
@@ -1511,6 +1559,251 @@ input.switch:checked {
   position: relative;
   margin: 16px 0 0;
   color: var(--muted);
+}
+
+/* --- A scene's envelope ---------------------------------------------------------------------- */
+
+/* Beside the scene, it stays in view while the scene scrolls. */
+.envelope-holder {
+  position: sticky;
+  top: 16px;
+  align-self: flex-start;
+  flex: 0 1 300px;
+  min-width: 0;
+  margin-top: 40px;
+  filter: drop-shadow(0 20px 28px var(--swatch-drop));
+}
+
+/* The back of a pattern envelope, flap at the top. */
+.envelope {
+  position: relative;
+  padding: 48px 22px 24px;
+  background: var(--envelope);
+  clip-path: polygon(0 30px, 50% 0, 100% 30px, 100% 100%, 0 100%);
+}
+
+.envelope::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 30px;
+  background: var(--envelope-flap);
+  clip-path: polygon(0 100%, 50% 0, 100% 100%);
+}
+
+.envelope-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--print);
+  font-size: 14px;
+}
+
+.envelope-head .muted {
+  font-size: 13px;
+}
+
+.envelope-title {
+  margin-top: 2px;
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.envelope-rule {
+  margin: 12px 0 0;
+  border: 0;
+  border-top: 1px solid var(--print-soft);
+}
+
+.envelope-label {
+  margin: 14px 0 6px;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+.envelope-close {
+  position: absolute;
+  top: 38px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
+}
+
+.envelope-close ~ .envelope-head {
+  padding-right: 30px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  height: 26px;
+  border: 1px solid var(--chip-border);
+  border-radius: 6px;
+  background: var(--chip-bg);
+}
+
+.chip.basted {
+  border-style: dashed;
+  border-color: var(--link);
+  background: none;
+}
+
+.chip-open {
+  min-width: 0;
+  height: 100%;
+  gap: 6px;
+  padding: 0 2px 0 9px;
+  border: 0;
+  background: none;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.chip-open:hover {
+  background: none;
+  color: var(--blue);
+}
+
+.chip-open .icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.chip-remove {
+  justify-content: center;
+  width: 22px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  opacity: 0;
+}
+
+.chip:hover .chip-remove,
+.chip-remove:focus-visible {
+  opacity: 1;
+}
+
+.chip-remove:hover {
+  background: none;
+  color: var(--text);
+}
+
+.chip-add {
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px dashed var(--print-soft);
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+.chip-hint {
+  height: 26px;
+  gap: 5px;
+  padding: 0 8px 0 9px;
+  border: 1px dashed var(--hint-border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 14px;
+  font-style: italic;
+}
+
+.chip-hint b {
+  font-style: normal;
+}
+
+.chip-input {
+  width: 100%;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--print-soft);
+  border-radius: 6px;
+  background: var(--piece);
+  font-size: 14px;
+}
+
+/* Where there's no room beside the scene: a tab on the page's right edge. */
+.envelope-tab {
+  position: absolute;
+  top: 250px;
+  right: 0;
+  z-index: 4;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 6px 10px 7px;
+  border: 1px solid var(--print-soft);
+  border-right: 0;
+  border-radius: 9px 0 0 9px;
+  background: var(--envelope);
+  color: var(--print);
+  box-shadow: -6px 8px 18px var(--swatch-drop);
+}
+
+.envelope-tab:hover,
+.envelope-tab[aria-expanded="true"] {
+  background: var(--envelope-flap);
+}
+
+.envelope-tab-label {
+  font-size: 13.5px;
+  letter-spacing: 0.1em;
+  writing-mode: vertical-rl;
+}
+
+.envelope-tab-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px dashed var(--hint-border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.envelope-over {
+  position: absolute;
+  top: 64px;
+  right: 14px;
+  z-index: 11;
+  display: none;
+  width: min(300px, calc(100% - 28px));
+  filter: drop-shadow(0 20px 28px var(--swatch-drop));
+}
+
+.envelope-backdrop {
+  display: none;
+}
+
+@container main (max-width: 919px) {
+  .envelope-holder {
+    display: none;
+  }
+
+  .envelope-tab,
+  .envelope-backdrop {
+    display: flex;
+  }
+
+  .envelope-over {
+    display: block;
+  }
 }
 
 /* --- Split and Merge -------------------------------------------------------------------------
