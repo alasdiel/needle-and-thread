@@ -1,40 +1,28 @@
 @import "prosemirror-view/style/prosemirror.css";
 
+/* Colours and fonts come from the app's tokens (crates/desktop/styles/app.css), so the editor
+   follows its light/dark setting. The fallbacks only matter outside the app. */
 :root {
-  --prose-text: #242424;
-  --prose-muted: #6b6b6b;
-  --prose-rule: #d9d9d9;
-  --prose-accent: #1a6a5a;
-  --prose-chip: #e3f1ed;
-  --prose-selection: #cfe6df;
-  --prose-misspelled: #d93025;
-  --menu-bg: #ffffff;
-  --menu-border: #e2ded4;
-  --menu-hover: #eef5f2;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --prose-text: #e6e3dc;
-    --prose-muted: #a29e95;
-    --prose-rule: #44413b;
-    --prose-accent: #7fcbb6;
-    --prose-chip: #23413a;
-    --prose-selection: #2f5a50;
-    --prose-misspelled: #ff7b72;
-    --menu-bg: #2a2925;
-    --menu-border: #44413b;
-    --menu-hover: #33403b;
-  }
+  --prose-text: var(--text, #242424);
+  --prose-muted: var(--muted, #6b6b6b);
+  --prose-rule: var(--rule, #d9d9d9);
+  --prose-accent: var(--blue, #1a6a5a);
+  --prose-link: var(--link, #5b3fa8);
+  --prose-stitch: var(--print-soft, #9aa5b1);
+  --prose-selection: color-mix(in srgb, var(--blue, #1a6a5a) 30%, transparent);
+  --prose-misspelled: var(--spell, #d93025);
+  --menu-bg: var(--raise, #ffffff);
+  --menu-border: var(--rule, #e2ded4);
+  --menu-hover: var(--blue-tint, #eef5f2);
 }
 
 .needle-prose {
   max-width: 680px;
   margin: 0 auto;
   padding: 56px 24px 40vh;
-  font-family: Charter, "Bitstream Charter", "Sitka Text", Cambria, "Noto Serif", "DejaVu Serif", Georgia, serif;
-  font-size: 21px;
-  line-height: 1.6;
+  font-family: var(--font-text, Georgia, serif);
+  font-size: 19px;
+  line-height: 1.7;
   color: var(--prose-text);
   outline: none;
   caret-color: var(--prose-accent);
@@ -55,8 +43,10 @@
 .needle-prose h4,
 .needle-prose h5,
 .needle-prose h6 {
-  font-family: system-ui, "Inter", "Noto Sans", sans-serif;
-  font-weight: 700;
+  font-family: var(--font-title, Georgia, serif);
+  /* Soft like the app's titles, but not wonky: these headings are the author's own text. */
+  font-variation-settings: "SOFT" 100;
+  font-weight: 600;
   line-height: 1.25;
   letter-spacing: -0.01em;
   margin: 1.6em 0 0.5em;
@@ -76,7 +66,7 @@
 .needle-prose blockquote {
   margin: 0 0 1.15em;
   padding-left: 1.1em;
-  border-left: 3px solid var(--prose-text);
+  border-left: 3px solid var(--prose-stitch);
   font-style: italic;
 }
 
@@ -90,17 +80,25 @@
   margin-bottom: 0.4em;
 }
 
+/* Stored as ---, shown as three stitches. The mask gives their shape and the background their
+   colour, so they follow the theme. */
 .needle-prose hr.scene-break {
   border: 0;
   height: auto;
   margin: 2em 0;
-  text-align: center;
-  color: var(--prose-muted);
+  padding: 0.6em 0;
 }
 
 .needle-prose hr.scene-break::after {
-  content: "* * *";
-  letter-spacing: 0.8em;
+  content: "";
+  display: block;
+  width: 72px;
+  height: 8px;
+  margin: 0 auto;
+  background: var(--prose-stitch);
+  --stitches: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='72' height='8'%3E%3Cpath d='M6 4h12M30 4h12M54 4h12' stroke='black' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E");
+  -webkit-mask: var(--stitches) center / 72px 8px no-repeat;
+  mask: var(--stitches) center / 72px 8px no-repeat;
 }
 
 .needle-prose hr.scene-break.ProseMirror-selectednode {
@@ -121,15 +119,16 @@
 }
 
 .needle-prose .wikilink {
-  padding: 0 0.25em;
-  border-radius: 4px;
-  background: var(--prose-chip);
-  color: var(--prose-accent);
+  text-decoration: underline dotted var(--prose-link);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 5px;
   white-space: nowrap;
 }
 
 .needle-prose .wikilink.ProseMirror-selectednode {
-  outline: 2px solid var(--prose-accent);
+  outline: 2px solid var(--prose-link);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .needle-prose .misspelled {
@@ -149,7 +148,7 @@
   background: var(--menu-bg);
   color: var(--prose-text);
   box-shadow: 0 6px 24px rgb(0 0 0 / 0.18);
-  font: 14px/1.4 system-ui, "Inter", "Noto Sans", sans-serif;
+  font: 15px/1.4 var(--font-ui, system-ui, sans-serif);
 }
 
 .needle-menu button {

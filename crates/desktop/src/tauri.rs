@@ -6,6 +6,8 @@ use js_sys::{Object, Reflect};
 use serde::{Deserialize, de::DeserializeOwned};
 use wasm_bindgen::prelude::*;
 
+use crate::appearance::Appearance;
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(js_namespace = ["window", "__TAURI__", "core"], catch)]
@@ -251,6 +253,24 @@ pub async fn restore_version(project: &str, scene: &str, id: &str, label: &str) 
 
 pub async fn name_version(id: &str, name: &str) -> Result<(), String> {
     call("name_version", Args::default().str("id", id).str("name", name)).await
+}
+
+// --- Settings ---------------------------------------------------------------------------
+
+pub async fn appearance() -> Result<Appearance, String> {
+    call("appearance", Args::default()).await
+}
+
+pub async fn set_appearance(appearance: Appearance) -> Result<(), String> {
+    call("set_appearance", Args::default().str("appearance", appearance.name())).await
+}
+
+pub async fn markdown_panel() -> Result<bool, String> {
+    call("markdown_panel", Args::default()).await
+}
+
+pub async fn set_markdown_panel(on: bool) -> Result<(), String> {
+    call("set_markdown_panel", Args::default().set("on", on.into())).await
 }
 
 // --- Spelling ---------------------------------------------------------------------------

@@ -2,6 +2,8 @@
 
 use leptos::{prelude::*, task::spawn_local};
 
+use crate::icons::{Glyph, Icon};
+use crate::pattern::Notches;
 use crate::tauri::{self, LocalFuture, VaultView};
 
 type Action = fn() -> LocalFuture<Result<Option<VaultView>, String>>;
@@ -26,24 +28,32 @@ pub fn Welcome(on_open: impl Fn(VaultView) + Copy + Send + Sync + 'static) -> im
 
     view! {
         <main class="welcome">
-            <h1>"Needle and Thread"</h1>
-            <p class="muted">"Your writing lives in a vault: a folder of plain files, with its history kept alongside."</p>
-            <div class="welcome-actions">
-                <button disabled=move || busy.get() on:click=move |_| run(|| Box::pin(tauri::open_vault()))>
-                    "Open a vault…"
-                </button>
-                <button disabled=move || busy.get() on:click=move |_| run(|| Box::pin(tauri::create_vault()))>
-                    "Create a vault…"
-                </button>
+            <div class="pattern-piece welcome-piece">
+                <Notches />
+                <span class="spool">
+                    <Icon glyph=Glyph::Spool size=36 />
+                </span>
+                <h1>"Needle and Thread"</h1>
+                <p>"Your writing lives in a vault: a folder of plain files, with its history kept alongside."</p>
+                <div class="welcome-actions">
+                    <button class="primary" disabled=move || busy.get() on:click=move |_| run(|| Box::pin(tauri::open_vault()))>
+                        <Icon glyph=Glyph::Folder />
+                        "Open a vault…"
+                    </button>
+                    <button disabled=move || busy.get() on:click=move |_| run(|| Box::pin(tauri::create_vault()))>
+                        <Icon glyph=Glyph::Plus />
+                        "Create a vault…"
+                    </button>
+                </div>
                 <button
-                    class="quiet"
+                    class="link"
                     disabled=move || busy.get()
                     on:click=move |_| run(|| Box::pin(async { tauri::open_sample_vault().await.map(Some) }))
                 >
                     "Try the sample"
                 </button>
+                {move || error.get().map(|e| view! { <p class="error">{e}</p> })}
             </div>
-            {move || error.get().map(|e| view! { <p class="error">{e}</p> })}
         </main>
     }
 }

@@ -30,6 +30,9 @@ Needle and Thread is a structure-first writing app for long fiction and long-for
 | Desktop app | Tauri 2 + Leptos, in Rust |
 | Editor | ProseMirror as a small JavaScript island (Rust has no mature rich-text editor) |
 | Editor feel | Like Medium: formatting shows as formatting, no visible Markdown symbols |
+| Look | A sewing-pattern bench. Each scene is drawn as a pattern piece (cutting line, stitching line, notches); cut lines, seams and stitches mark Split, Merge and scene breaks. The motifs stay in the app's frame, never in the text |
+| Colours | From Gwen (League of Legends): aqua threads, saturated blues, violet. Dark, a Shadow Isles cutting mat, is the main look; light is pattern tissue. System, Light or Dark is chosen per computer |
+| Fonts | Bundled, all OFL: Literata for the text, Fraunces (soft and wonky) for titles, Alegreya SC for labels, Alegreya Sans for controls |
 | Typography as you type | Four separate settings, each explained in the app and on by default: curly double quotes, curly single quotes/apostrophes, `--` → em dash, `...` → ellipsis. They never rewrite existing text |
 | Spellcheck | Our own, not the webview's: spellbook (Rust, Hunspell-compatible) with the installed US English (`en_US`) dictionary. Underlines everything as soon as a scene opens, accepts names used in `[[links]]`, right-click for suggestions or "Add to dictionary" (`.needle/dictionary.txt`) |
 | Phone app | PWA on GitHub Pages, sharing Rust UI code with the desktop |
@@ -215,6 +218,8 @@ Each type has its own template. Labels depend on the project's kind: fiction use
 
 The default statuses are idea → draft → revised → done, and you can change them per vault. The outline shows each scene's status and word count, with totals for each chapter and part (e.g. "Ch. 3: 4/6 drafted · 8,240 words").
 
+Each status is drawn as a ring that fills as a scene moves along the list: empty for the first status, full for the last. Any number of statuses works, and there are no colours to tell apart. A status that isn't in the list is drawn dashed.
+
 ### Inbox
 
 Each idea from the phone becomes its own file in `inbox/`, with its tags in the header. Because filenames are unique, the phone and the desktop never edit the same file, so these files can't cause sync conflicts. In the desktop's Inbox panel you can turn an idea into a note, add it to an existing note or scene summary, or make it a new scene in the outline. Filed ideas are removed from the inbox.
@@ -366,12 +371,12 @@ She owes him for the berth, and both of them know it.
 
 - **Outline tree**
   - Drag to reorder, or to move items between chapters and parts. Several items can be selected at once.
-  - Split a scene at the cursor, or merge it with the next one.
+  - Split a scene at the cursor: a cut line shows where, and Enter confirms. Or merge it with the next one: a seam marks the join, then fades.
   - Every row shows status and word count.
   - Optional POV and thread columns show where a thread goes quiet.
 - **Editor** (Medium-style)
   - Headings, bold, italic, underline (Ctrl+U, stored as `<u>…</u>`), quotes, lists, links, scene breaks and footnotes.
-  - Markdown shortcuts as you type: `##`, `>`, `-`, `1.`, and `---` for a scene break (stored as `---`).
+  - Markdown shortcuts as you type: `##`, `>`, `-`, `1.`, and `---` for a scene break (stored as `---`, shown as three stitches).
   - Shift+Enter in a list starts a sublist under the current item; elsewhere it's a line break.
   - `[[` autocomplete, spellcheck and a live word count.
   - Focus mode hides the side panels.

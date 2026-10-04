@@ -3,7 +3,7 @@ target = "index.html"
 dist = "dist"
 
 [watch]
-watch = ["src", "styles", "index.html", "../../editor/src"]
+watch = ["src", "styles", "assets", "index.html", "../../editor/src"]
 
 [serve]
 port = 1420

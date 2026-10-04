@@ -1,5 +1,6 @@
 use leptos::{prelude::*, task::spawn_local};
 
+use crate::settings::Prefs;
 use crate::tauri::{self, VaultView};
 use crate::welcome::Welcome;
 use crate::workspace::Workspace;
@@ -10,6 +11,10 @@ pub fn App() -> impl IntoView {
     let vault = RwSignal::new(None::<VaultView>);
     let loaded = RwSignal::new(false);
     let error = RwSignal::new(None::<String>);
+
+    let prefs = Prefs::load();
+    provide_context(prefs);
+    Effect::new(move |_| prefs.appearance.get().apply());
 
     spawn_local(async move {
         match tauri::current_vault().await {
