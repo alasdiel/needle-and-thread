@@ -1,20 +1,27 @@
-//! A vault on disk: projects, their outlines and scenes, and the cut bin. Everything is plain
-//! files (see docs/DESIGN.md §4); this crate is the only code that reads or writes them.
+//! A vault on disk: projects, their outlines, scenes and notes, worlds, and the cut bin.
+//! Everything is plain files (see docs/DESIGN.md §4); this crate is the only code that reads or
+//! writes them.
 
+mod doc;
 mod error;
 mod files;
+mod notes;
 mod project;
+mod world;
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use needle_core::id::{make_id, slugify};
+use needle_core::names::{NameIndex, Owner};
 use needle_core::outline::{Chapter, Outline};
-use needle_core::project::{ProjectConfig, ProjectKind};
+use needle_core::project::{ProjectConfig, ProjectKind, WorldConfig};
 use needle_core::settings::VaultSettings;
 
 pub use error::{Error, Result};
+pub use notes::{NoteInfo, Notes};
 pub use project::{Placement, Project, SceneInfo};
+pub use world::World;
 
 use files::{checked_name, unique_dir, write_atomically};
 
@@ -38,6 +45,13 @@ ellipsis = true
 #[derive(Debug, Clone)]
 pub struct Vault {
     root: PathBuf,
+}
+
+/// A note anywhere in the vault, with whose it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NamedNote {
+    pub owner: Owner,
+    pub note: NoteInfo,
 }
 
 impl Vault {
@@ -76,6 +90,11 @@ impl Vault {
         }
     }
 
+    /// Templates for new notes, one per type (`character.md`…), written out on first use.
+    pub fn templates_path(&self) -> PathBuf {
+        self.root.join(".needle/templates")
+    }
+
     /// The personal spellcheck dictionary, one word per line.
     pub fn dictionary_path(&self) -> PathBuf {
         self.root.join(".needle/dictionary.txt")
@@ -91,7 +110,7 @@ impl Vault {
         for entry in fs::read_dir(dir)? {
             let path = entry?.path();
             if path.join("project.toml").is_file() {
-                projects.push(Project::open(path)?);
+                projects.push(Project::open(path, self.templates_path())?);
             }
         }
         projects.sort_by_key(|p| (p.config.title.to_lowercase(), p.slug.clone()));
@@ -99,7 +118,7 @@ impl Vault {
     }
 
     pub fn project(&self, slug: &str) -> Result<Project> {
-        Project::open(self.root.join("projects").join(checked_name(slug)?))
+        Project::open(self.root.join("projects").join(checked_name(slug)?), self.templates_path())
     }
 
     /// Creates a project with one chapter holding one empty scene, ready to write in.
@@ -119,7 +138,7 @@ impl Vault {
         };
         write_atomically(&root.join("project.toml"), config.to_toml().as_bytes())?;
 
-        let project = Project::open(root)?;
+        let project = Project::open(root, self.templates_path())?;
         let chapter = Chapter {
             id: make_id("ol", fastrand::u64(..)),
             ..Default::default()
@@ -130,6 +149,73 @@ impl Vault {
         })?;
         project.create_scene("Untitled scene", Placement::End { chapter: first })?;
         Ok(project)
+    }
+
+    /// All worlds, sorted by name.
+    pub fn worlds(&self) -> Result<Vec<World>> {
+        let mut worlds = Vec::new();
+        let dir = self.root.join("worlds");
+        if !dir.is_dir() {
+            return Ok(worlds);
+        }
+        for entry in fs::read_dir(dir)? {
+            let path = entry?.path();
+            if path.join("world.toml").is_file() {
+                worlds.push(World::open(path, self.templates_path())?);
+            }
+        }
+        worlds.sort_by_key(|w| (w.config.name.to_lowercase(), w.slug.clone()));
+        Ok(worlds)
+    }
+
+    pub fn world(&self, slug: &str) -> Result<World> {
+        World::open(self.root.join("worlds").join(checked_name(slug)?), self.templates_path())
+    }
+
+    pub fn create_world(&self, name: &str) -> Result<World> {
+        let name = match name.trim() {
+            "" => "Untitled world",
+            name => name,
+        };
+        let worlds = self.root.join("worlds");
+        fs::create_dir_all(&worlds)?;
+        let root = unique_dir(&worlds, &slugify(name));
+        let config = WorldConfig { name: name.to_owned() };
+        write_atomically(&root.join("world.toml"), config.to_toml().as_bytes())?;
+        World::open(root, self.templates_path())
+    }
+
+    /// The world `project` belongs to, if it names one.
+    pub fn world_of(&self, project: &Project) -> Result<Option<World>> {
+        project.config.world.as_deref().map(|slug| self.world(slug)).transpose()
+    }
+
+    /// Every note a link in `project` can reach: every project's notes, and its world's.
+    pub fn reachable_notes(&self, project: &Project) -> Result<Vec<NamedNote>> {
+        let mut found = Vec::new();
+        let mut add = |notes: Notes| -> Result<()> {
+            let owner = notes.owner().clone();
+            found.extend(notes.list()?.into_iter().map(|note| NamedNote { owner: owner.clone(), note }));
+            Ok(())
+        };
+        for other in self.projects()? {
+            add(other.notes())?;
+        }
+        if let Some(world) = self.world_of(project)? {
+            add(world.notes())?;
+        }
+        Ok(found)
+    }
+
+    /// Finds notes by name the way links in `project` do.
+    pub fn names(&self, project: &Project) -> Result<NameIndex<NamedNote>> {
+        let mut index = NameIndex::new(&project.slug, project.config.world.as_deref());
+        for named in self.reachable_notes(project)? {
+            let owner = named.owner.clone();
+            let (title, aliases) = (named.note.title.clone(), named.note.aliases.clone());
+            index.add(&owner, &title, &aliases, named);
+        }
+        Ok(index)
     }
 }
 

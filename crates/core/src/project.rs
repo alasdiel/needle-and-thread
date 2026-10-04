@@ -22,6 +22,23 @@ pub enum ProjectKind {
     Nonfiction,
 }
 
+/// A world's settings (`world.toml`). A world holds the notes and calendar that a series of
+/// projects share. Fields this version doesn't know, like the calendar, are left alone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorldConfig {
+    pub name: String,
+}
+
+impl WorldConfig {
+    pub fn parse(toml: &str) -> Result<Self, String> {
+        toml::from_str(toml).map_err(|e| format!("world.toml isn't valid: {}", e.message()))
+    }
+
+    pub fn to_toml(&self) -> String {
+        toml::to_string(self).expect("world settings serialize")
+    }
+}
+
 impl ProjectConfig {
     pub fn parse(toml: &str) -> Result<Self, String> {
         toml::from_str(toml).map_err(|e| format!("project.toml isn't valid: {}", e.message()))
@@ -98,6 +115,11 @@ impl NoteKind {
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|kind| kind.as_str() == value)
     }
+
+    /// The kind whose notes go in `folder`, e.g. `characters`.
+    pub fn from_folder(folder: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.folder() == folder)
+    }
 }
 
 impl fmt::Display for NoteKind {
@@ -135,5 +157,14 @@ mod tests {
         assert_eq!(NoteKind::Event.label(ProjectKind::Fiction), "Plot point");
         assert_eq!(NoteKind::Thread.label(ProjectKind::Nonfiction), "Argument");
         assert_eq!(NoteKind::parse("villain"), None);
+        for kind in NoteKind::ALL {
+            assert_eq!(NoteKind::from_folder(kind.folder()), Some(kind));
+        }
+    }
+
+    #[test]
+    fn world_settings_ignore_fields_they_do_not_know() {
+        let world = WorldConfig::parse("name = \"The Glass Coast\"\n\n[calendar]\nname = \"Reckoning\"\n").unwrap();
+        assert_eq!(world.name, "The Glass Coast");
     }
 }

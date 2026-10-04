@@ -1,7 +1,8 @@
 use std::fs;
 
+use needle_core::names::{Owner, Resolution};
 use needle_core::outline::Chapter;
-use needle_core::project::ProjectKind;
+use needle_core::project::{NoteKind, ProjectKind};
 use tempfile::TempDir;
 
 use super::*;
@@ -224,4 +225,115 @@ fn new_chapters_join_the_part_before_them() {
     assert!(second.id.starts_with("ol_"));
     assert_eq!(project.outline().unwrap().chapters[1].id, second.id);
     assert!(project.add_chapter("Lost", Some("ol_missing")).is_err());
+}
+
+#[test]
+fn notes_start_from_templates_in_their_type_folder() {
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    let notes = project.notes();
+    let mara = notes.create(NoteKind::Character, " Mara Venn ").unwrap();
+    assert_eq!(mara.path, "characters/mara-venn");
+    assert_eq!((mara.title.as_str(), mara.kind), ("Mara Venn", NoteKind::Character));
+    assert!(mara.id.starts_with("nt_"));
+    let text = fs::read_to_string(project.root().join("notes/characters/mara-venn.md")).unwrap();
+    assert_eq!(
+        text,
+        format!("+++\nid = \"{}\"\ntype = \"character\"\ntitle = \"Mara Venn\"\naliases = []\n+++\n", mara.id)
+    );
+
+    // Every default template is written out, ready to edit.
+    let templates = vault.templates_path();
+    for kind in NoteKind::ALL {
+        assert!(templates.join(format!("{kind}.md")).is_file(), "{kind}");
+    }
+
+    // An edited template shapes the next note, but can't override the app's own fields.
+    fs::write(
+        templates.join("place.md"),
+        "+++\ntitle = \"ignored\"\nregion = \"\"   # coast, hills…\n+++\n\n## What it smells like\n",
+    )
+    .unwrap();
+    let market = notes.create(NoteKind::Place, "Night Market").unwrap();
+    let text = fs::read_to_string(notes.file_path(&market.path).unwrap()).unwrap();
+    assert!(text.contains("title = \"Night Market\"\nregion = \"\"   # coast, hills…\n+++\n\n## What it smells like\n"), "{text}");
+    assert_eq!(notes.create(NoteKind::Place, "Night market").unwrap().path, "places/night-market-2");
+}
+
+#[test]
+fn notes_are_listed_by_type_then_title() {
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    let notes = project.notes();
+    notes.create(NoteKind::Place, "Night Market").unwrap();
+    notes.create(NoteKind::Character, "old Teodor").unwrap();
+    notes.create(NoteKind::Character, "Mara Venn").unwrap();
+    let root = project.root().join("notes");
+    // Written by hand: no header at all, and a header that isn't valid TOML.
+    fs::write(root.join("characters/joss.md"), "Joss sails with Mara.\n").unwrap();
+    fs::write(root.join("loose idea.md"), "+++\ntitle = unquoted\n+++\nText.\n").unwrap();
+    fs::create_dir_all(root.join(".hidden")).unwrap();
+    fs::write(root.join(".hidden/x.md"), "").unwrap();
+
+    let listed: Vec<_> = notes.list().unwrap().into_iter().map(|n| (n.kind, n.title)).collect();
+    assert_eq!(
+        listed,
+        [
+            (NoteKind::Character, "joss".to_owned()),
+            (NoteKind::Character, "Mara Venn".to_owned()),
+            (NoteKind::Character, "old Teodor".to_owned()),
+            (NoteKind::Place, "Night Market".to_owned()),
+            (NoteKind::Note, "loose idea".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn note_edits_keep_the_rest_of_the_file() {
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    let notes = project.notes();
+    let mara = notes.create(NoteKind::Character, "Mara Venn").unwrap();
+    assert!(notes.save_body(&mara.path, "Harbor pilot, thirty-four.\n").unwrap());
+    let info = notes.update_header(&mara.path, |h| h.set_list("aliases", &["Mara", "the Captain"])).unwrap();
+    assert_eq!(info.aliases, ["Mara", "the Captain"]);
+    assert_eq!(notes.read(&mara.path).unwrap().markdown(), "Harbor pilot, thirty-four.\n");
+    for bad in ["../outside", "characters/../../x", "a/b/c", ""] {
+        assert!(notes.read(bad).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn links_reach_this_project_then_its_world_then_other_projects_by_name() {
+    let (_dir, vault) = vault();
+    let tidewater = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    let saltmarsh = vault.create_project("Saltmarsh", ProjectKind::Fiction).unwrap();
+    let world = vault.create_world("The Glass Coast").unwrap();
+    assert_eq!(world.slug, "the-glass-coast");
+    let config = tidewater.root().join("project.toml");
+    let text = fs::read_to_string(&config).unwrap();
+    fs::write(&config, format!("{text}world = \"the-glass-coast\"\n")).unwrap();
+    let tidewater = vault.project("tidewater").unwrap();
+
+    let mara = tidewater.notes().create(NoteKind::Character, "Mara Venn").unwrap();
+    tidewater.notes().update_header(&mara.path, |h| h.set_list("aliases", &["Mara"])).unwrap();
+    world.notes().create(NoteKind::Character, "Mara").unwrap();
+    world.notes().create(NoteKind::Event, "The Drowning").unwrap();
+    saltmarsh.notes().create(NoteKind::Character, "Joss").unwrap();
+
+    let names = vault.names(&tidewater).unwrap();
+    let found = |name: &str| match names.resolve(name) {
+        Resolution::Found(n) => Some((n.owner.clone(), n.note.title.clone())),
+        _ => None,
+    };
+    let here = Owner::Project("tidewater".into());
+    let shared = Owner::World("the-glass-coast".into());
+    assert_eq!(found("mara"), Some((here.clone(), "Mara Venn".into())));
+    assert_eq!(found("the drowning"), Some((shared, "The Drowning".into())));
+    assert_eq!(found("Joss"), None);
+    assert_eq!(found("saltmarsh/Joss"), Some((Owner::Project("saltmarsh".into()), "Joss".into())));
+
+    // A project without a world doesn't see the world's notes.
+    let names = vault.names(&saltmarsh).unwrap();
+    assert!(matches!(names.resolve("The Drowning"), Resolution::Missing));
 }

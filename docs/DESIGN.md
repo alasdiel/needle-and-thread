@@ -111,6 +111,7 @@ vault/
 ├── .needle/
 │   ├── vault.toml               settings: status labels, snapshot timing
 │   ├── shares.toml              share registry: ids, scopes, keys
+│   ├── templates/               one per note type (character.md…), yours to edit
 │   └── index.json               small name index for the phone app (generated)
 ├── inbox/
 │   └── 2026-10-03T142205Z-k3f9.md   one file per phone idea
@@ -192,12 +193,14 @@ Note types:
 - **relationship**: a named line between two notes on the network (§7)
 - **note**: anything else
 
-Each type has its own template. Labels depend on the project's kind: fiction uses Scene, Thread and Plot point; nonfiction uses Section, Argument and Event.
+Each type has its own template: an ordinary note in `.needle/templates/` (`character.md`, `place.md`…) whose header fields and text every new note of that type starts with. The app writes the defaults the first time you make a note, and fills in `id`, `type` and `title` itself. Labels depend on the project's kind: fiction uses Scene, Thread and Plot point; nonfiction uses Section, Argument and Event.
 
 ### Links and shared worlds
 
 - `[[Name]]` or `[[Name|shown text]]` links to any note, and typing `[[` brings up autocomplete.
 - A name is looked up in the project first, then in the project's world. Self-contained projects have no world.
+- In each, titles come before aliases, so `[[Mara]]` reaches "Mara Venn" through her alias. Case and apostrophe style don't matter. A name that two notes share at the same level (an alias used twice, say) is flagged rather than guessed.
+- Autocomplete always writes the title, with what you typed as the shown text (`[[Mara Venn|Mara]]`), so links keep working when an alias changes.
 - A note in another project is linked with its project's folder name: `[[tidewater/Mara Venn]]`.
 - Renaming a note updates every link that points to it.
 - Each note shows three lists:
