@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod history;
+mod notes;
 mod settings;
 mod spelling;
 mod state;
@@ -52,6 +53,19 @@ fn main() {
             workspace::set_chapter_part,
             workspace::move_chapter,
             workspace::remove_chapter,
+            notes::project_notes,
+            notes::open_note,
+            notes::save_note,
+            notes::create_note,
+            notes::rename_note,
+            notes::set_note_aliases,
+            notes::note_links,
+            notes::link_mention,
+            notes::promote_note,
+            notes::project_settings,
+            notes::update_project,
+            notes::scene_names,
+            notes::set_scene_names,
             spelling::spell_dictionary,
             spelling::add_to_dictionary,
             history::scene_history,

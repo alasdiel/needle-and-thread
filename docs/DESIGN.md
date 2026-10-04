@@ -30,7 +30,7 @@ Needle and Thread is a structure-first writing app for long fiction and long-for
 | Desktop app | Tauri 2 + Leptos, in Rust |
 | Editor | ProseMirror as a small JavaScript island (Rust has no mature rich-text editor) |
 | Editor feel | Like Medium: formatting shows as formatting, no visible Markdown symbols |
-| Look | A sewing-pattern bench. Each scene is drawn as a pattern piece (cutting line, stitching line, notches); cut lines, seams and stitches mark Split, Merge and scene breaks. The motifs stay in the app's frame, never in the text |
+| Look | A sewing-pattern bench. Each scene is drawn as a pattern piece (cutting line, stitching line, notches); cut lines, seams and stitches mark Split, Merge and scene breaks. Each note is a fabric swatch with pinked edges, pinned to the bench, with a smaller swatch beside it listing what links to it. A scene's POV, cast, places and threads are on its envelope (like the back of a pattern envelope listing notions), beside the scene and staying in view as it scrolls, or a tab on the page's edge when the window is narrow. A link to a note that doesn't exist yet is basted (long loose stitches). The motifs stay in the app's frame, never in the text |
 | Colours | From Gwen (League of Legends): aqua threads, saturated blues, violet. Dark, a Shadow Isles cutting mat, is the main look; light is pattern tissue. System, Light or Dark is chosen per computer |
 | Fonts | Bundled, all OFL: Literata for the text, Fraunces (soft and wonky) for titles, Alegreya SC for labels, Alegreya Sans for controls |
 | Typography as you type | Four separate settings, each explained in the app and on by default: curly double quotes, curly single quotes/apostrophes, `--` → em dash, `...` → ellipsis. They never rewrite existing text |
@@ -111,6 +111,7 @@ vault/
 ├── .needle/
 │   ├── vault.toml               settings: status labels, snapshot timing
 │   ├── shares.toml              share registry: ids, scopes, keys
+│   ├── templates/               one per note type (character.md…), yours to edit
 │   └── index.json               small name index for the phone app (generated)
 ├── inbox/
 │   └── 2026-10-03T142205Z-k3f9.md   one file per phone idea
@@ -166,7 +167,7 @@ The market opened at dusk, as it always had…
 
 The header is TOML between `+++` lines. When the app changes a field, everything else in the header (formatting, comments, fields it doesn't know) stays exactly as written. `+++` also can't be confused with a `---` scene break.
 
-The body holds only prose, which is exactly what gets exported. Who appears in the scene, where it happens and which threads it advances all go in the header, so the prose never fills up with link syntax. The app also detects character and place names, including their aliases, in the text and suggests adding them to the header.
+The body holds only prose, which is exactly what gets exported. Who appears in the scene, where it happens and which threads it advances all go in the header, so the prose never fills up with link syntax. The app also notices characters, places and threads the text links to or mentions (by title or alias) that the header doesn't list, and offers them as faint chips on the scene's envelope; nothing is added without a click.
 
 ### A note
 
@@ -192,20 +193,22 @@ Note types:
 - **relationship**: a named line between two notes on the network (§7)
 - **note**: anything else
 
-Each type has its own template. Labels depend on the project's kind: fiction uses Scene, Thread and Plot point; nonfiction uses Section, Argument and Event.
+Each type has its own template: an ordinary note in `.needle/templates/` (`character.md`, `place.md`…) whose header fields and text every new note of that type starts with. The app writes the defaults the first time you make a note, and fills in `id`, `type` and `title` itself. Labels depend on the project's kind: fiction uses Scene, Thread and Plot point; nonfiction uses Section, Argument and Event.
 
 ### Links and shared worlds
 
 - `[[Name]]` or `[[Name|shown text]]` links to any note, and typing `[[` brings up autocomplete.
 - A name is looked up in the project first, then in the project's world. Self-contained projects have no world.
+- In each, titles come before aliases, so `[[Mara]]` reaches "Mara Venn" through her alias. Case and apostrophe style don't matter. A name that two notes share at the same level (an alias used twice, say) is flagged rather than guessed.
+- Autocomplete always writes the title, with what you typed as the shown text (`[[Mara Venn|Mara]]`), so links keep working when an alias changes.
 - A note in another project is linked with its project's folder name: `[[tidewater/Mara Venn]]`.
-- Renaming a note updates every link that points to it.
+- Renaming a note updates every link and header that names it by its title. A link keeps the words it shows (`[[Old Teodor]]` becomes `[[Teodor Brask|Old Teodor]]`), so renaming never changes the prose. The note's file keeps its name.
 - Each note shows three lists:
   - **backlinks**: what links to it
   - **appearances**: scenes that list it in their header
-  - **unlinked mentions**: scenes that use its name or aliases
+  - **unlinked mentions**: scenes that use its name or aliases (matching case, since names are proper nouns)
 - A project can belong to one **world**. The world holds the characters, places, history and calendar that a series shares.
-- **Promote to world** moves a note from a project into its world, for example when book two starts.
+- **Promote to world** (the note's ⋯ menu) moves a note from a project into its world, for example when book two starts. A project's world is chosen in Project settings (the ⋯ by its title), which can also make a new world.
 - For nonfiction, a world can serve as a shared research library.
 
 ### Cut bin
@@ -378,9 +381,11 @@ She owes him for the berth, and both of them know it.
   - Headings, bold, italic, underline (Ctrl+U, stored as `<u>…</u>`), quotes, lists, links, scene breaks and footnotes.
   - Markdown shortcuts as you type: `##`, `>`, `-`, `1.`, and `---` for a scene break (stored as `---`, shown as three stitches).
   - Shift+Enter in a list starts a sublist under the current item; elsewhere it's a line break.
-  - `[[` autocomplete, spellcheck and a live word count.
+  - `[[` suggests notes by title or alias as you type; Enter or Tab picks one.
+  - Clicking a link opens its note, offers to make one if there isn't one yet, or lets you choose between notes that share the name. Ctrl-click opens the note straight away.
+  - Spellcheck (which accepts the names in your notes' titles and aliases) and a live word count.
   - Focus mode hides the side panels.
-- **Notes**: the same editor, plus backlinks, appearances, unlinked mentions, and a small graph of what connects to the note.
+- **Notes**, in the sidebar's Notes tab, grouped by type: the same editor, on a swatch, with the title and aliases at the top. Beside it (below it in a narrow window) a smaller swatch lists the scenes that name the note in their header, the scenes and notes that link to it, and unlinked mentions, each with a **Link** button. The small graph of what connects to a note waits for the network view (phase 3).
 - **Search**: full text across the vault, filtered by project, status, POV, thread or note type.
 - **Command palette** (Ctrl+K) for every action.
 

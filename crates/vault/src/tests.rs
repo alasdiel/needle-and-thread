@@ -1,7 +1,8 @@
 use std::fs;
 
+use needle_core::names::{Owner, Resolution};
 use needle_core::outline::Chapter;
-use needle_core::project::ProjectKind;
+use needle_core::project::{NoteKind, ProjectKind};
 use tempfile::TempDir;
 
 use super::*;
@@ -207,6 +208,12 @@ fn the_sample_vault_opens_and_every_scene_is_placed() {
     assert_eq!(placed, files);
     let market = project.scene_info("night-market").unwrap();
     assert_eq!((market.title.as_str(), market.status.as_str()), ("The night market", "draft"));
+
+    let notes: Vec<String> = project.notes().list().unwrap().into_iter().map(|n| n.title).collect();
+    assert_eq!(notes, ["Mara Venn", "Old Teodor", "Night Market", "The missing ledger"]);
+    let mara = vault.note_links(project, &Owner::Project("tidewater".into()), "characters/mara-venn").unwrap();
+    assert_eq!(mara.appears_in.len(), 1);
+    assert_eq!(mara.linked_from.len(), 2, "both scenes");
 }
 
 #[test]
@@ -224,4 +231,306 @@ fn new_chapters_join_the_part_before_them() {
     assert!(second.id.starts_with("ol_"));
     assert_eq!(project.outline().unwrap().chapters[1].id, second.id);
     assert!(project.add_chapter("Lost", Some("ol_missing")).is_err());
+}
+
+#[test]
+fn notes_start_from_templates_in_their_type_folder() {
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    let notes = project.notes();
+    let mara = notes.create(NoteKind::Character, " Mara Venn ").unwrap();
+    assert_eq!(mara.path, "characters/mara-venn");
+    assert_eq!((mara.title.as_str(), mara.kind), ("Mara Venn", NoteKind::Character));
+    assert!(mara.id.starts_with("nt_"));
+    let text = fs::read_to_string(project.root().join("notes/characters/mara-venn.md")).unwrap();
+    assert_eq!(
+        text,
+        format!("+++\nid = \"{}\"\ntype = \"character\"\ntitle = \"Mara Venn\"\naliases = []\n+++\n", mara.id)
+    );
+
+    // Every default template is written out, ready to edit.
+    let templates = vault.templates_path();
+    for kind in NoteKind::ALL {
+        assert!(templates.join(format!("{kind}.md")).is_file(), "{kind}");
+    }
+
+    // An edited template shapes the next note, but can't override the app's own fields.
+    fs::write(
+        templates.join("place.md"),
+        "+++\ntitle = \"ignored\"\nregion = \"\"   # coast, hills…\n+++\n\n## What it smells like\n",
+    )
+    .unwrap();
+    let market = notes.create(NoteKind::Place, "Night Market").unwrap();
+    let text = fs::read_to_string(notes.file_path(&market.path).unwrap()).unwrap();
+    assert!(text.contains("title = \"Night Market\"\nregion = \"\"   # coast, hills…\n+++\n\n## What it smells like\n"), "{text}");
+    assert_eq!(notes.create(NoteKind::Place, "Night market").unwrap().path, "places/night-market-2");
+}
+
+#[test]
+fn notes_are_listed_by_type_then_title() {
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    let notes = project.notes();
+    notes.create(NoteKind::Place, "Night Market").unwrap();
+    notes.create(NoteKind::Character, "old Teodor").unwrap();
+    notes.create(NoteKind::Character, "Mara Venn").unwrap();
+    let root = project.root().join("notes");
+    // Written by hand: no header at all, and a header that isn't valid TOML.
+    fs::write(root.join("characters/joss.md"), "Joss sails with Mara.\n").unwrap();
+    fs::write(root.join("loose idea.md"), "+++\ntitle = unquoted\n+++\nText.\n").unwrap();
+    fs::create_dir_all(root.join(".hidden")).unwrap();
+    fs::write(root.join(".hidden/x.md"), "").unwrap();
+
+    let listed: Vec<_> = notes.list().unwrap().into_iter().map(|n| (n.kind, n.title)).collect();
+    assert_eq!(
+        listed,
+        [
+            (NoteKind::Character, "joss".to_owned()),
+            (NoteKind::Character, "Mara Venn".to_owned()),
+            (NoteKind::Character, "old Teodor".to_owned()),
+            (NoteKind::Place, "Night Market".to_owned()),
+            (NoteKind::Note, "loose idea".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn note_edits_keep_the_rest_of_the_file() {
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    let notes = project.notes();
+    let mara = notes.create(NoteKind::Character, "Mara Venn").unwrap();
+    assert!(notes.save_body(&mara.path, "Harbor pilot, thirty-four.\n").unwrap());
+    let info = notes.update_header(&mara.path, |h| h.set_list("aliases", &["Mara", "the Captain"])).unwrap();
+    assert_eq!(info.aliases, ["Mara", "the Captain"]);
+    assert_eq!(notes.read(&mara.path).unwrap().markdown(), "Harbor pilot, thirty-four.\n");
+    for bad in ["../outside", "characters/../../x", "a/b/c", ""] {
+        assert!(notes.read(bad).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn links_reach_this_project_then_its_world_then_other_projects_by_name() {
+    let (_dir, vault) = vault();
+    let tidewater = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    let saltmarsh = vault.create_project("Saltmarsh", ProjectKind::Fiction).unwrap();
+    let world = vault.create_world("The Glass Coast").unwrap();
+    assert_eq!(world.slug, "the-glass-coast");
+    let config = tidewater.root().join("project.toml");
+    let text = fs::read_to_string(&config).unwrap();
+    fs::write(&config, format!("{text}world = \"the-glass-coast\"\n")).unwrap();
+    let tidewater = vault.project("tidewater").unwrap();
+
+    let mara = tidewater.notes().create(NoteKind::Character, "Mara Venn").unwrap();
+    tidewater.notes().update_header(&mara.path, |h| h.set_list("aliases", &["Mara"])).unwrap();
+    world.notes().create(NoteKind::Character, "Mara").unwrap();
+    world.notes().create(NoteKind::Event, "The Drowning").unwrap();
+    saltmarsh.notes().create(NoteKind::Character, "Joss").unwrap();
+
+    let names = vault.names(&tidewater).unwrap();
+    let found = |name: &str| match names.resolve(name) {
+        Resolution::Found(n) => Some((n.owner.clone(), n.note.title.clone())),
+        _ => None,
+    };
+    let here = Owner::Project("tidewater".into());
+    let shared = Owner::World("the-glass-coast".into());
+    assert_eq!(found("mara"), Some((here.clone(), "Mara Venn".into())));
+    assert_eq!(found("the drowning"), Some((shared, "The Drowning".into())));
+    assert_eq!(found("Joss"), None);
+    assert_eq!(found("saltmarsh/Joss"), Some((Owner::Project("saltmarsh".into()), "Joss".into())));
+
+    // A project without a world doesn't see the world's notes.
+    let names = vault.names(&saltmarsh).unwrap();
+    assert!(matches!(names.resolve("The Drowning"), Resolution::Missing));
+}
+
+/// Tidewater (in the Glass Coast world) with Mara, Teodor and two scenes that name them, plus
+/// Saltmarsh, which links into Tidewater.
+fn linked_vault() -> (TempDir, Vault) {
+    let (dir, vault) = vault();
+    let tidewater = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    let saltmarsh = vault.create_project("Saltmarsh", ProjectKind::Fiction).unwrap();
+    vault.create_world("Glass Coast").unwrap();
+    let config = tidewater.root().join("project.toml");
+    fs::write(&config, fs::read_to_string(&config).unwrap() + "world = \"glass-coast\"\n").unwrap();
+    let tidewater = vault.project("tidewater").unwrap();
+
+    let notes = tidewater.notes();
+    let mara = notes.create(NoteKind::Character, "Mara Venn").unwrap();
+    notes.update_header(&mara.path, |h| h.set_list("aliases", &["Mara"])).unwrap();
+    let teodor = notes.create(NoteKind::Character, "Old Teodor").unwrap();
+    notes.save_body(&teodor.path, "Owes [[Mara Venn]] nothing.\n").unwrap();
+    let drowning = vault.world("glass-coast").unwrap().notes().create(NoteKind::Event, "The Drowning").unwrap();
+    vault.world("glass-coast").unwrap().notes().save_body(&drowning.path, "[[Old Teodor]] saw it.\n").unwrap();
+
+    tidewater
+        .update_header("untitled-scene", |h| {
+            h.set_str("pov", "Mara Venn");
+            h.set_list("cast", &["Mara", "Old Teodor"]);
+        })
+        .unwrap();
+    tidewater
+        .save_body("untitled-scene", "[[Mara Venn|Mara]] met [[old teodor]].\n\nLater Mara slept. Mara Venn’s boat rocked.\n")
+        .unwrap();
+    let next = tidewater
+        .create_scene("Next", Placement::After { scene: "untitled-scene".into() })
+        .unwrap();
+    tidewater.save_body(&next.slug, "[[Mara]] waited.\n").unwrap();
+
+    saltmarsh
+        .save_body("untitled-scene", "[[tidewater/Old Teodor]] and an [[Old Teodor]] of our own.\n")
+        .unwrap();
+    (dir, vault)
+}
+
+#[test]
+fn a_note_knows_what_points_at_it() {
+    let (_dir, vault) = linked_vault();
+    let tidewater = vault.project("tidewater").unwrap();
+    let here = Owner::Project("tidewater".into());
+    let found = vault.note_links(&tidewater, &here, "characters/mara-venn").unwrap();
+
+    let appears: Vec<_> = found.appears_in.iter().map(|a| (a.scene.slug.as_str(), a.fields.clone())).collect();
+    assert_eq!(appears, [("untitled-scene", vec!["pov", "cast"])]);
+
+    let linked: Vec<_> = found
+        .linked_from
+        .iter()
+        .map(|b| match &b.from {
+            LinkSource::Scene(s) => (s.slug.clone(), b.count),
+            LinkSource::Note(n) => (n.note.title.clone(), b.count),
+        })
+        .collect();
+    assert_eq!(linked, [("untitled-scene".into(), 1), ("next".into(), 1), ("Old Teodor".into(), 1)]);
+
+    // "Mara Venn’s" is one mention, not also one of "Mara".
+    let [mention] = found.mentioned_in.as_slice() else { panic!("{:?}", found.mentioned_in) };
+    assert_eq!((mention.scene.slug.as_str(), mention.count), ("untitled-scene", 2));
+    assert_eq!(
+        (mention.before.as_str(), mention.name.as_str(), mention.after.as_str()),
+        ("Later ", "Mara", " slept. Mara Venn’s boat rocked.")
+    );
+
+    // A world note's backlinks include world notes.
+    let teodor = vault.note_links(&tidewater, &here, "characters/old-teodor").unwrap();
+    assert_eq!(teodor.linked_from.len(), 2, "{:?}", teodor.linked_from);
+}
+
+#[test]
+fn renaming_a_note_keeps_every_link_and_the_prose() {
+    let (_dir, vault) = linked_vault();
+    let here = Owner::Project("tidewater".into());
+    let renamed = vault.rename_note(&here, "characters/old-teodor", "Teodor Brask").unwrap();
+    assert_eq!(renamed.note.title, "Teodor Brask");
+    assert_eq!(renamed.note.path, "characters/old-teodor", "the file keeps its name");
+
+    let tidewater = vault.project("tidewater").unwrap();
+    let scene = tidewater.scene("untitled-scene").unwrap();
+    assert!(scene.markdown().starts_with("[[Mara Venn|Mara]] met [[Teodor Brask|old teodor]]."), "{}", scene.markdown());
+    assert_eq!(scene.header().unwrap().list("cast"), ["Mara", "Teodor Brask"]);
+
+    // Saltmarsh's prefixed link follows; its own loose "Old Teodor" isn't this note.
+    let saltmarsh = vault.project("saltmarsh").unwrap();
+    assert_eq!(
+        saltmarsh.scene("untitled-scene").unwrap().markdown(),
+        "[[tidewater/Teodor Brask|tidewater/Old Teodor]] and an [[Old Teodor]] of our own.\n"
+    );
+    // Opened from Tidewater, the world's note linked to Tidewater's Teodor, so it follows too.
+    let world = vault.world("glass-coast").unwrap().notes();
+    assert_eq!(world.read("events/the-drowning").unwrap().markdown(), "[[Teodor Brask|Old Teodor]] saw it.\n");
+
+    let mut scenes = renamed.scenes.clone();
+    scenes.sort();
+    assert_eq!(scenes, [("saltmarsh".into(), "untitled-scene".into()), ("tidewater".into(), "untitled-scene".into())]);
+    assert_eq!(renamed.notes, [(Owner::World("glass-coast".into()), "events/the-drowning".to_owned())]);
+}
+
+#[test]
+fn a_rename_can_not_take_another_notes_title() {
+    let (_dir, vault) = linked_vault();
+    let here = Owner::Project("tidewater".into());
+    assert!(vault.rename_note(&here, "characters/mara-venn", "old TEODOR").is_err());
+    assert!(vault.rename_note(&here, "characters/mara-venn", "  ").is_err());
+    // Changing only the case is fine and rewrites nothing.
+    let renamed = vault.rename_note(&here, "characters/mara-venn", "MARA VENN").unwrap();
+    assert_eq!(renamed.note.title, "MARA VENN");
+    assert!(renamed.scenes.is_empty());
+}
+
+#[test]
+fn linking_a_mention_keeps_the_words_shown() {
+    let (_dir, vault) = linked_vault();
+    let tidewater = vault.project("tidewater").unwrap();
+    let here = Owner::Project("tidewater".into());
+    assert!(vault.link_mention(&tidewater, "untitled-scene", &here, "characters/mara-venn").unwrap());
+    assert_eq!(
+        tidewater.scene("untitled-scene").unwrap().markdown(),
+        "[[Mara Venn|Mara]] met [[old teodor]].\n\nLater [[Mara Venn|Mara]] slept. Mara Venn’s boat rocked.\n"
+    );
+    assert!(vault.link_mention(&tidewater, "untitled-scene", &here, "characters/mara-venn").unwrap());
+    assert!(tidewater.scene("untitled-scene").unwrap().markdown().contains("[[Mara Venn]]’s boat"));
+    assert!(!vault.link_mention(&tidewater, "untitled-scene", &here, "characters/mara-venn").unwrap());
+}
+
+#[test]
+fn a_project_can_join_a_world_and_promote_notes_to_it() {
+    let (_dir, vault) = vault();
+    vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    assert!(vault.update_project("tidewater", |c| c.world = Some("nowhere".into())).is_err());
+    let world = vault.create_world("Glass Coast").unwrap();
+    let project = vault
+        .update_project("tidewater", |c| {
+            c.world = Some(world.slug.clone());
+            c.kind = ProjectKind::Nonfiction;
+            c.title = "  Tidewater, revised ".into();
+        })
+        .unwrap();
+    assert_eq!(project.config.title, "Tidewater, revised");
+    assert_eq!(vault.project("tidewater").unwrap().config.kind, ProjectKind::Nonfiction);
+
+    let mara = project.notes().create(NoteKind::Character, "Mara Venn").unwrap();
+    project.save_body("untitled-scene", "[[Mara Venn]] waits.\n").unwrap();
+    let promoted = vault.promote_note(&project, &mara.path).unwrap();
+    assert_eq!(promoted.path, "characters/mara-venn");
+    assert!(project.notes().list().unwrap().is_empty());
+    assert_eq!(world.notes().list().unwrap()[0].id, mara.id);
+
+    // Links from the project now find it in the world.
+    let names = vault.names(&project).unwrap();
+    assert!(matches!(names.resolve("Mara Venn"), Resolution::Found(n) if n.owner == Owner::World("glass-coast".into())));
+
+    // A second note with that title can't follow it.
+    let again = project.notes().create(NoteKind::Character, "Mara Venn").unwrap();
+    assert!(vault.promote_note(&project, &again.path).is_err());
+    assert!(vault.update_project("tidewater", |c| c.title = " ".into()).is_err());
+}
+
+#[test]
+fn a_scene_lists_its_names_and_hints_at_missing_ones() {
+    let (_dir, vault) = linked_vault();
+    let tidewater = vault.project("tidewater").unwrap();
+    tidewater.notes().create(NoteKind::Place, "Night Market").unwrap();
+    tidewater.notes().create(NoteKind::Thread, "The ledger").unwrap();
+    tidewater
+        .save_body("next", "[[Mara]] waited at the Night Market. Old Teodor didn't come.\n")
+        .unwrap();
+    vault.set_scene_names(&tidewater, "next", "places", &["Night Market".into(), "The harbor".into()]).unwrap();
+
+    let names = vault.scene_names(&tidewater, "next").unwrap();
+    let places = &names.fields.iter().find(|(f, _)| *f == "places").unwrap().1;
+    let shown: Vec<_> = places.iter().map(|n| (n.name.as_str(), n.note.as_ref().map(|n| n.note.title.as_str()))).collect();
+    assert_eq!(shown, [("Night Market", Some("Night Market")), ("The harbor", None)]);
+    // Mara is linked and Teodor mentioned, but neither is in the cast; the market is listed.
+    let hints: Vec<_> = names.hints.iter().map(|h| (h.field, h.note.note.title.as_str())).collect();
+    assert_eq!(hints, [("cast", "Mara Venn"), ("cast", "Old Teodor")]);
+
+    vault.set_scene_names(&tidewater, "next", "cast", &["Mara".into()]).unwrap();
+    vault.set_scene_names(&tidewater, "next", "pov", &[" Mara Venn ".into()]).unwrap();
+    let names = vault.scene_names(&tidewater, "next").unwrap();
+    let hints: Vec<_> = names.hints.iter().map(|h| h.note.note.title.as_str()).collect();
+    assert_eq!(hints, ["Old Teodor"], "an alias in the cast counts");
+    assert_eq!(tidewater.scene("next").unwrap().header().unwrap().str("pov"), Some("Mara Venn"));
+    vault.set_scene_names(&tidewater, "next", "pov", &[]).unwrap();
+    assert!(!tidewater.scene("next").unwrap().header().unwrap().contains("pov"));
+    assert!(vault.set_scene_names(&tidewater, "next", "mood", &[]).is_err());
 }

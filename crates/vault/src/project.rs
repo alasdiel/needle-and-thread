@@ -5,12 +5,15 @@ use std::time::SystemTime;
 
 use needle_core::header::Header;
 use needle_core::id::{make_id, slugify};
+use needle_core::names::Owner;
 use needle_core::outline::{Chapter, Outline, OutlineError};
 use needle_core::project::ProjectConfig;
 use needle_core::scene::SceneFile;
 use needle_core::words::count_markdown_words;
 
+use crate::doc;
 use crate::files::{checked_name, unique_file, utc_iso, utc_stamp, write_atomically};
+use crate::notes::Notes;
 use crate::{Error, Result};
 
 #[derive(Debug, Clone)]
@@ -19,6 +22,8 @@ pub struct Project {
     pub slug: String,
     pub config: ProjectConfig,
     root: PathBuf,
+    /// The vault's note templates.
+    templates: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,7 +45,7 @@ pub enum Placement {
 }
 
 impl Project {
-    pub(crate) fn open(root: PathBuf) -> Result<Self> {
+    pub(crate) fn open(root: PathBuf, templates: PathBuf) -> Result<Self> {
         let config_path = root.join("project.toml");
         let text = fs::read_to_string(&config_path).map_err(|e| match e.kind() {
             io::ErrorKind::NotFound => Error::NotFound(format!("no project at {}", root.display())),
@@ -51,11 +56,28 @@ impl Project {
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
             .unwrap_or_default();
-        Ok(Self { slug, config, root })
+        Ok(Self {
+            slug,
+            config,
+            root,
+            templates,
+        })
     }
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// The project's own notes, in `notes/`.
+    pub fn notes(&self) -> Notes {
+        Notes::new(Owner::Project(self.slug.clone()), self.root.join("notes"), self.templates.clone())
+    }
+
+    /// Saves new settings to `project.toml`. The file is the app's, so it's rewritten whole.
+    pub fn save_config(&mut self, config: ProjectConfig) -> Result<()> {
+        write_atomically(&self.root.join("project.toml"), config.to_toml().as_bytes())?;
+        self.config = config;
+        Ok(())
     }
 
     pub fn outline(&self) -> Result<Outline> {
@@ -102,12 +124,7 @@ impl Project {
     }
 
     pub fn scene(&self, slug: &str) -> Result<SceneFile> {
-        let path = self.scene_path(slug)?;
-        let text = fs::read_to_string(&path).map_err(|e| match e.kind() {
-            io::ErrorKind::NotFound => Error::NotFound(format!("no scene {slug}")),
-            _ => Error::Io(e),
-        })?;
-        Ok(SceneFile::parse(&text))
+        doc::read(&self.scene_path(slug)?, &format!("scene {slug}"))
     }
 
     pub fn scene_info(&self, slug: &str) -> Result<SceneInfo> {
@@ -116,20 +133,41 @@ impl Project {
 
     /// Every scene file, whether or not the outline places it, in no particular order.
     pub fn scenes(&self) -> Result<Vec<SceneInfo>> {
+        self.scene_slugs()?.iter().map(|slug| self.scene_info(slug)).collect()
+    }
+
+    fn scene_slugs(&self) -> Result<Vec<String>> {
         let dir = self.root.join("manuscript");
-        let mut scenes = Vec::new();
+        let mut slugs = Vec::new();
         if !dir.is_dir() {
-            return Ok(scenes);
+            return Ok(slugs);
         }
         for entry in fs::read_dir(dir)? {
             let path = entry?.path();
             if path.extension().is_some_and(|ext| ext == "md")
                 && let Some(slug) = path.file_stem().and_then(|s| s.to_str())
             {
-                scenes.push(self.scene_info(slug)?);
+                slugs.push(slug.to_owned());
             }
         }
-        Ok(scenes)
+        Ok(slugs)
+    }
+
+    /// Every scene's name in reading order, then those the outline doesn't place, by name.
+    pub fn reading_order(&self) -> Result<Vec<String>> {
+        let outline = self.outline()?;
+        let mut order: Vec<String> = outline.scenes().map(str::to_owned).collect();
+        let mut unplaced: Vec<String> = self.scene_slugs()?.into_iter().filter(|s| !order.contains(s)).collect();
+        unplaced.sort();
+        order.retain(|slug| self.scene_path(slug).is_ok_and(|p| p.is_file()));
+        order.extend(unplaced);
+        Ok(order)
+    }
+
+    /// A scene's file and what the outline shows for it, from one read.
+    pub(crate) fn read_scene(&self, slug: &str) -> Result<(SceneInfo, SceneFile)> {
+        let file = self.scene(slug)?;
+        Ok((info(slug, &file)?, file))
     }
 
     pub fn create_scene(&self, title: &str, placement: Placement) -> Result<SceneInfo> {
@@ -174,30 +212,17 @@ impl Project {
 
     /// Replaces a scene's text, keeping its header. Returns whether the file changed.
     pub fn save_body(&self, slug: &str, markdown: &str) -> Result<bool> {
-        let path = self.scene_path(slug)?;
-        let mut scene = self.scene(slug)?;
-        let before = scene.to_string();
-        scene.set_markdown(markdown);
-        let after = scene.to_string();
-        if after == before {
-            return Ok(false);
-        }
-        write_atomically(&path, after.as_bytes())?;
-        Ok(true)
+        doc::save_body(&self.scene_path(slug)?, &format!("scene {slug}"), markdown)
+    }
+
+    /// Changes a scene with `edit`, writing it back if anything changed.
+    pub(crate) fn edit_scene(&self, slug: &str, edit: impl FnOnce(&mut SceneFile) -> Result<()>) -> Result<bool> {
+        doc::edit(&self.scene_path(slug)?, &format!("scene {slug}"), edit)
     }
 
     /// Edits a scene's header in place; fields `edit` doesn't touch keep their formatting.
     pub fn update_header(&self, slug: &str, edit: impl FnOnce(&mut Header)) -> Result<SceneInfo> {
-        let path = self.scene_path(slug)?;
-        let mut scene = self.scene(slug)?;
-        let mut header = scene.header()?;
-        edit(&mut header);
-        let before = scene.to_string();
-        scene.set_header(&header);
-        let after = scene.to_string();
-        if after != before {
-            write_atomically(&path, after.as_bytes())?;
-        }
+        let scene = doc::update_header(&self.scene_path(slug)?, &format!("scene {slug}"), edit)?;
         info(slug, &scene)
     }
 

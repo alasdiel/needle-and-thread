@@ -5,7 +5,8 @@ import { type SpellMeta, spellcheckKey } from "./spellcheck.ts";
 
 const MAX_SUGGESTIONS = 6;
 
-interface MenuItem {
+/** A menu entry; one without `run` is shown greyed out, as a heading or a note. */
+export interface MenuItem {
   label: string;
   run?: () => void;
 }
@@ -47,7 +48,7 @@ export function openSpellMenu(view: EditorView, event: MouseEvent): boolean {
 
 let closeOpenMenu: (() => void) | null = null;
 
-function showMenu(view: EditorView, x: number, y: number, items: (MenuItem | "separator")[]): void {
+export function showMenu(view: EditorView, x: number, y: number, items: (MenuItem | "separator")[]): void {
   closeOpenMenu?.();
 
   const menu = document.createElement("div");

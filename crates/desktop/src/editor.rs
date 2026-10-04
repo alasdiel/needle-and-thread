@@ -23,6 +23,18 @@ extern "C" {
     #[wasm_bindgen(method, js_name = setSpellchecker)]
     pub fn set_spellchecker(this: &EditorHandle, checker: &Object);
 
+    /// Expects the object built by `crate::links::LinkBridge`.
+    #[wasm_bindgen(method, js_name = setLinkResolver)]
+    pub fn set_link_resolver(this: &EditorHandle, resolver: &Object);
+
+    /// Checks every link again, after notes changed.
+    #[wasm_bindgen(method, js_name = refreshLinks)]
+    pub fn refresh_links(this: &EditorHandle);
+
+    /// Checks every word again, after the spellchecker learned new ones.
+    #[wasm_bindgen(method, js_name = recheckSpelling)]
+    pub fn recheck_spelling(this: &EditorHandle);
+
     #[wasm_bindgen(method, js_name = getMarkdown)]
     pub fn markdown(this: &EditorHandle) -> String;
 

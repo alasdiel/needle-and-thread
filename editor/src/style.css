@@ -125,6 +125,24 @@
   white-space: nowrap;
 }
 
+.needle-prose .wikilink {
+  cursor: pointer;
+}
+
+/* A link to a note that doesn't exist yet is basted, not sewn: long loose stitches. */
+.needle-prose .wikilink.loose {
+  padding-bottom: 3px;
+  text-decoration: none;
+  background: repeating-linear-gradient(90deg, var(--prose-link) 0 10px, transparent 10px 16px) 0 100% / 100% 1.5px
+    no-repeat;
+}
+
+/* Two notes share the name: a doubled line, until it's made clear which. */
+.needle-prose .wikilink.ambiguous {
+  text-decoration-style: double;
+  text-decoration-thickness: 1px;
+}
+
 .needle-prose .wikilink.ProseMirror-selectednode {
   outline: 2px solid var(--prose-link);
   outline-offset: 2px;
@@ -179,4 +197,33 @@
   margin: 4px 0;
   border: 0;
   border-top: 1px solid var(--menu-border);
+}
+
+/* Notes offered while typing a link. */
+.needle-suggest {
+  min-width: 220px;
+  max-width: 360px;
+}
+
+.needle-suggest[hidden] {
+  display: none;
+}
+
+.needle-suggest button {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.needle-suggest button[aria-selected="true"] {
+  background: var(--menu-hover);
+}
+
+.needle-suggest .detail {
+  overflow: hidden;
+  color: var(--prose-muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

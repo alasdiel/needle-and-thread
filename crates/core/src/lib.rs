@@ -4,6 +4,8 @@
 pub mod diff;
 pub mod header;
 pub mod id;
+pub mod links;
+pub mod names;
 pub mod outline;
 pub mod project;
 pub mod scene;

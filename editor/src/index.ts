@@ -8,6 +8,7 @@ import { EditorState, type Plugin, Selection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { type Typography, buildInputRules, defaultTypography } from "./inputrules.ts";
 import { buildKeymaps } from "./keymap.ts";
+import { type LinkMeta, type LinkResolver, linkSuggestPlugin, linksKey, linksPlugin } from "./links.ts";
 import { countWords, parseMarkdown, serializeMarkdown } from "./markdown.ts";
 import { openSpellMenu } from "./menu.ts";
 import {
@@ -23,7 +24,7 @@ import {
 } from "./pattern.ts";
 import { type SpellMeta, type Spellchecker, spellcheckKey, spellcheckPlugin } from "./spellcheck.ts";
 
-export type { Spellchecker, Typography };
+export type { LinkResolver, Spellchecker, Typography };
 
 export interface EditorOptions {
   typography?: Partial<Typography>;
@@ -42,6 +43,7 @@ export class Editor {
   private readonly debounceMs: number;
   private typography: Typography;
   private spellchecker: Spellchecker | null = null;
+  private linkResolver: LinkResolver | null = null;
   // Plugins with state are kept across reconfigures, so changing a setting doesn't wipe undo
   // history or spellcheck results.
   private readonly history = history();
@@ -50,6 +52,9 @@ export class Editor {
   // First, so Enter and Escape confirm or cancel a cut before the keymaps see them.
   private readonly cutLine = cutLinePlugin(() => this.cutCallbacks);
   private readonly seam = seamPlugin();
+  private readonly links = linksPlugin(() => this.linkResolver);
+  // Before the keymaps, so Enter picks a suggestion instead of splitting the paragraph.
+  private readonly linkSuggest = linkSuggestPlugin(() => this.linkResolver);
   private timer: ReturnType<typeof setTimeout> | undefined;
   private seamTimer: ReturnType<typeof setTimeout> | undefined;
   private dirty = false;
@@ -99,6 +104,25 @@ export class Editor {
   setSpellchecker(checker: Spellchecker | null): void {
     this.spellchecker = checker;
     const meta: SpellMeta = { checker };
+    this.view.dispatch(this.view.state.tr.setMeta(spellcheckKey, meta));
+  }
+
+  /** Starts (or, with null, stops) checking links against the notes there are. */
+  setLinkResolver(resolver: LinkResolver | null): void {
+    this.linkResolver = resolver;
+    const meta: LinkMeta = { resolver };
+    this.view.dispatch(this.view.state.tr.setMeta(linksKey, meta));
+  }
+
+  /** Checks every link again, after notes were made, renamed or given aliases. */
+  refreshLinks(): void {
+    const meta: LinkMeta = { refresh: true };
+    this.view.dispatch(this.view.state.tr.setMeta(linksKey, meta));
+  }
+
+  /** Checks every word again, after the spellchecker learned new ones. */
+  recheckSpelling(): void {
+    const meta: SpellMeta = { recheck: true };
     this.view.dispatch(this.view.state.tr.setMeta(spellcheckKey, meta));
   }
 
@@ -164,7 +188,16 @@ export class Editor {
   }
 
   private plugins(): Plugin[] {
-    return [this.cutLine, buildInputRules(this.typography), ...this.keymaps, this.history, this.spellcheck, this.seam];
+    return [
+      this.cutLine,
+      this.linkSuggest,
+      buildInputRules(this.typography),
+      ...this.keymaps,
+      this.history,
+      this.spellcheck,
+      this.links,
+      this.seam,
+    ];
   }
 
   private createState(doc: Node): EditorState {
