@@ -100,6 +100,8 @@ needle-and-thread/
 
 `crates/desktop` follows the layout of the official create-tauri-app Leptos template, so the Tauri and Leptos docs apply as written. Crates are added as their phase starts (`index`, `export`, `ui`, `phone` and `worker` don't exist yet).
 
+The search index is a SQLite file in the app's cache folder, one per vault, never inside the vault. Before each search it stats every file and re-reads only those that changed, so it can't fall behind, and if it's lost it's rebuilt from the files. (Backlinks and mentions still read the files directly; they can move to the index if a vault ever gets big enough to need it.)
+
 `core` is used by the desktop app, the phone app and the reader page. Parsing, link resolution, timeline maths and encryption therefore behave the same everywhere. The Worker reuses its API types.
 
 ## 4. The vault
@@ -386,7 +388,10 @@ She owes him for the berth, and both of them know it.
   - Spellcheck (which accepts the names in your notes' titles and aliases) and a live word count.
   - Focus mode hides the side panels.
 - **Notes**, in the sidebar's Notes tab, grouped by type: the same editor, on a swatch, with the title and aliases at the top. Beside it (below it in a narrow window) a smaller swatch lists the scenes that name the note in their header, the scenes and notes that link to it, and unlinked mentions, each with a **Link** button. The small graph of what connects to a note waits for the network view (phase 3).
-- **Search**: full text across the vault, filtered by project, status, POV, thread or note type.
+- **Search**: full text across the vault, filtered by project (and its world, or the whole vault), scenes or notes, status, POV or thread. Each word typed matches the start of a word, "quoted words" match exactly, and accents don't matter; a title match ranks first. Two places, one query:
+  - **Ctrl+K** opens a box over the page; ↑↓ and Enter open a result, Ctrl+Enter keeps the list in the sidebar.
+  - The sidebar's **Search** tab keeps the results listed while you open them one by one.
+  - A result opens with the words highlighted and the first one in view.
 - **Command palette** (Ctrl+K) for every action.
 
 ### The editor island

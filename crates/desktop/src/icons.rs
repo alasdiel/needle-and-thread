@@ -30,6 +30,7 @@ pub enum Glyph {
     Plus,
     Restore,
     Scissors,
+    Search,
     Settings,
     Spool,
     Sun,
@@ -82,6 +83,7 @@ impl Glyph {
             Self::Scissors => {
                 r#"<circle cx="6" cy="6" r="3"/><path d="M8.12 8.12 12 12"/><path d="M20 4 8.12 15.88"/><circle cx="6" cy="18" r="3"/><path d="M14.8 14.8 20 20"/>"#
             }
+            Self::Search => r#"<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>"#,
             Self::Settings => {
                 r#"<path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/>"#
             }

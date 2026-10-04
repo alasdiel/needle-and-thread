@@ -9,6 +9,7 @@ mod notes;
 mod outline;
 mod pattern;
 mod project;
+mod search;
 mod settings;
 mod spell;
 mod status;

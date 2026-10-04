@@ -4,10 +4,11 @@
 import "./style.css";
 import type { Node } from "prosemirror-model";
 import { history } from "prosemirror-history";
-import { EditorState, type Plugin, Selection } from "prosemirror-state";
+import { EditorState, type Plugin, Selection, TextSelection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { type Typography, buildInputRules, defaultTypography } from "./inputrules.ts";
 import { buildKeymaps } from "./keymap.ts";
+import { type HighlightMeta, highlightKey, highlightPlugin } from "./highlight.ts";
 import { type LinkMeta, type LinkResolver, linkSuggestPlugin, linksKey, linksPlugin } from "./links.ts";
 import { countWords, parseMarkdown, serializeMarkdown } from "./markdown.ts";
 import { openSpellMenu } from "./menu.ts";
@@ -53,6 +54,7 @@ export class Editor {
   private readonly cutLine = cutLinePlugin(() => this.cutCallbacks);
   private readonly seam = seamPlugin();
   private readonly links = linksPlugin(() => this.linkResolver);
+  private readonly highlight = highlightPlugin();
   // Before the keymaps, so Enter picks a suggestion instead of splitting the paragraph.
   private readonly linkSuggest = linkSuggestPlugin(() => this.linkResolver);
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -118,6 +120,19 @@ export class Editor {
   refreshLinks(): void {
     const meta: LinkMeta = { refresh: true };
     this.view.dispatch(this.view.state.tr.setMeta(linksKey, meta));
+  }
+
+  /** Highlights words starting with any of `terms` (empty clears it), and with `reveal`,
+   * scrolls the first one into view and puts the cursor there. */
+  setHighlights(terms: string[], reveal: boolean): void {
+    const meta: HighlightMeta = { terms };
+    this.view.dispatch(this.view.state.tr.setMeta(highlightKey, meta));
+    if (!reveal) return;
+    const [first] = highlightKey.getState(this.view.state)?.decorations.find() ?? [];
+    if (!first) return;
+    const { state } = this.view;
+    this.view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, first.from)).scrollIntoView());
+    this.view.dom.querySelector(".search-match")?.scrollIntoView({ block: "center" });
   }
 
   /** Checks every word again, after the spellchecker learned new ones. */
@@ -196,6 +211,7 @@ export class Editor {
       this.history,
       this.spellcheck,
       this.links,
+      this.highlight,
       this.seam,
     ];
   }

@@ -15,10 +15,11 @@ use crate::notes::{self, LinksSwatch, NotesList, Pin};
 use crate::outline::{self, LiveWords, OutlineTree};
 use crate::pattern::{Grainline, Notches};
 use crate::project::ProjectPanel;
+use crate::search::{Search, SearchPalette, SearchSidebar};
 use crate::settings::{Prefs, SettingsPanel};
 use crate::spell::SpellBridge;
 use crate::status::{self, StatusMark};
-use crate::tauri::{self, NoteKey, NoteView, OutlineView, ProjectView, SceneNamesView, SceneView, VaultView};
+use crate::tauri::{self, HitView, NoteKey, NoteView, OutlineView, ProjectView, SceneNamesView, SceneView, VaultView};
 use crate::typography::TypographySettings;
 
 #[derive(Clone, PartialEq)]
@@ -39,6 +40,12 @@ enum Panel {
 enum Tab {
     Outline,
     Notes,
+    Search,
+}
+
+/// Search words for the editor to highlight.
+fn terms_array(terms: &[String]) -> js_sys::Array {
+    terms.iter().map(|t| wasm_bindgen::JsValue::from_str(t)).collect()
 }
 
 /// Scenes in reading order: chapters first, then unplaced ones.
@@ -108,6 +115,11 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let scene_names = RwSignal::new(None::<SceneNamesView>);
     let names_revision = RwSignal::new(0u32);
     let envelope_open = RwSignal::new(false);
+    let search = Search::new();
+    let palette_open = RwSignal::new(false);
+    let search_focus = RwSignal::new(0u32);
+    // Words to highlight in the next scene or note to open, when it's opened from search.
+    let pending_terms = StoredValue::new(None::<Vec<String>>);
     let save_state = RwSignal::new(SaveState::Saved);
     let error = RwSignal::new(None::<String>);
     let spell_error = RwSignal::new(None::<String>);
@@ -213,16 +225,21 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
             match tauri::open_scene(&p, &slug).await {
                 Ok(opened) => {
                     let seam = pending_seam.try_update_value(Option::take).flatten();
+                    let terms = pending_terms.try_update_value(Option::take).flatten();
                     editor.with_value(|h| {
                         if let Some(h) = h {
                             h.set_content(&opened.markdown);
+                            h.set_highlights(&terms_array(terms.as_deref().unwrap_or_default()), false);
                             words.set(h.word_count() as usize);
                             markdown.set(h.markdown());
                         }
                     });
                     note.set(None);
                     scene.set(Some(opened.scene));
-                    tab.set(Tab::Outline);
+                    // Results opened from the Search tab keep it showing.
+                    if tab.get_untracked() != Tab::Search {
+                        tab.set(Tab::Outline);
+                    }
                     save_state.set(SaveState::Saved);
                     // The piece is hidden while no scene is open (as during a split or merge), and
                     // a hidden editor can't take the cursor, so wait until it shows again.
@@ -232,6 +249,9 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                                 h.focus();
                                 if let Some(index) = seam {
                                     h.show_seam(index);
+                                }
+                                if let Some(terms) = &terms {
+                                    h.set_highlights(&terms_array(terms), true);
                                 }
                             }
                         });
@@ -247,16 +267,20 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         spawn_local(async move {
             match tauri::open_note(&key).await {
                 Ok(opened) => {
+                    let terms = pending_terms.try_update_value(Option::take).flatten();
                     editor.with_value(|h| {
                         if let Some(h) = h {
                             h.set_content(&opened.markdown);
+                            h.set_highlights(&terms_array(terms.as_deref().unwrap_or_default()), false);
                             words.set(h.word_count() as usize);
                             markdown.set(h.markdown());
                         }
                     });
                     scene.set(None);
                     note.set(Some(opened.note));
-                    tab.set(Tab::Notes);
+                    if tab.get_untracked() != Tab::Search {
+                        tab.set(Tab::Notes);
+                    }
                     // History follows scenes only, for now.
                     panel.update(|p| {
                         if *p == Some(Panel::History) {
@@ -268,6 +292,9 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                         editor.with_value(|h| {
                             if let Some(h) = h {
                                 h.focus();
+                                if let Some(terms) = &terms {
+                                    h.set_highlights(&terms_array(terms), true);
+                                }
                             }
                         });
                     });
@@ -388,13 +415,13 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         }
     };
 
-    let load_project = move |slug: String| {
+    let load_project_at = move |slug: String, target: Option<String>| {
         flush();
         load_notes(slug.clone());
         spawn_local(async move {
             match tauri::project_outline(&slug).await {
                 Ok(view) => {
-                    let first = reading_order(&view).first().map(|s| s.slug.clone());
+                    let first = target.or_else(|| reading_order(&view).first().map(|s| s.slug.clone()));
                     scene.set(None);
                     note.set(None);
                     set_outline(view);
@@ -407,6 +434,36 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
             }
         });
     };
+
+    let load_project = move |slug: String| load_project_at(slug, None);
+
+    // Opens a search result, with its matches highlighted; a scene in another project opens
+    // that project first.
+    let open_hit = move |hit: HitView| {
+        pending_terms.set_value(Some(search.terms()));
+        if hit.kind == "scene" {
+            let Some(p) = hit.project else { return };
+            if project.get_untracked().as_ref() == Some(&p) {
+                open_scene(hit.key);
+            } else {
+                project.set(Some(p.clone()));
+                load_project_at(p, Some(hit.key));
+            }
+        } else {
+            let world = hit.world.is_some();
+            let owner = hit.world.or(hit.project).unwrap_or_default();
+            open_note(NoteKey { owner, world, path: hit.key });
+        }
+    };
+
+    // Ctrl+K (Cmd+K on a Mac) opens the search box from anywhere.
+    let shortcut = window_event_listener(leptos::ev::keydown, move |ev| {
+        if (ev.ctrl_key() || ev.meta_key()) && ev.key().eq_ignore_ascii_case("k") {
+            ev.prevent_default();
+            palette_open.try_set(true);
+        }
+    });
+    on_cleanup(move || shortcut.remove());
 
     let load_spellchecker = move || {
         spawn_local(async move {
@@ -709,6 +766,35 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     });
     let statuses = Signal::derive(move || outline.with(|o| o.as_ref().map(|o| o.statuses.clone()).unwrap_or_default()));
     let current_note = Signal::derive(move || note.with(|n| n.as_ref().map(NoteView::key)));
+    let titles_of = move |kind: &'static str| {
+        Signal::derive(move || notes_list.with(|all| all.iter().filter(|n| n.kind == kind).map(|n| n.title.clone()).collect::<Vec<_>>()))
+    };
+    let characters = titles_of("character");
+    let threads = titles_of("thread");
+    search.watch(project.into(), notes_list.into());
+
+    // Under a result's title: a scene's chapter (or its project, if it's another one), a
+    // note's type.
+    let hit_subtitle = move |hit: &HitView| -> String {
+        if hit.kind != "scene" {
+            return notes::kind_label(hit.note_type.as_deref().unwrap_or("note"), project_kind.get_untracked()).to_owned();
+        }
+        if hit.project != project.get_untracked() {
+            return projects.with_untracked(|list| {
+                list.iter().find(|p| Some(&p.slug) == hit.project.as_ref()).map(|p| p.title.clone()).unwrap_or_default()
+            });
+        }
+        outline.with_untracked(|o| o.as_ref().and_then(|o| place(o, &hit.key)).and_then(|p| p.chapter)).unwrap_or_default()
+    };
+    let hit_is_open = move |hit: &HitView| {
+        if hit.kind == "scene" {
+            hit.project == project.get() && scene.with(|s| s.as_ref().is_some_and(|s| s.slug == hit.key))
+        } else {
+            note.with(|n| {
+                n.as_ref().is_some_and(|n| n.path == hit.key && n.world == hit.world.is_some() && Some(&n.owner) == hit.world.as_ref().or(hit.project.as_ref()))
+            })
+        }
+    };
     let current_place = move || {
         let slug = scene.with(|s| s.as_ref().map(|s| s.slug.clone()))?;
         outline.with(|o| o.as_ref().and_then(|o| place(o, &slug)))
@@ -918,6 +1004,17 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                     >
                         "Notes"
                     </button>
+                    <button
+                        role="tab"
+                        class="tab"
+                        aria-selected=move || (tab.get() == Tab::Search).to_string()
+                        on:click=move |_| {
+                            tab.set(Tab::Search);
+                            search_focus.update(|f| *f += 1);
+                        }
+                    >
+                        "Search"
+                    </button>
                 </div>
                 <div class="cut-rule" aria-hidden="true">
                     <Icon glyph=Glyph::Scissors size=14 />
@@ -944,6 +1041,18 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                         current=current_note
                         on_open=open_note
                         on_create=create_note
+                    />
+                </div>
+                <div class="tab-panel" role="tabpanel" hidden=move || tab.get() != Tab::Search>
+                    <SearchSidebar
+                        search=search
+                        focus=search_focus
+                        statuses=statuses
+                        characters=characters
+                        threads=threads
+                        subtitle=hit_subtitle
+                        is_current=hit_is_open
+                        on_open=open_hit
                     />
                 </div>
                 <div class="cut-rule" aria-hidden="true">
@@ -1217,6 +1326,22 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                     </div>
                 </Show>
             </section>
+
+            <Show when=move || palette_open.get()>
+                <SearchPalette
+                    search=search
+                    open=palette_open
+                    statuses=statuses
+                    characters=characters
+                    threads=threads
+                    subtitle=hit_subtitle
+                    on_open=open_hit
+                    on_list=move || {
+                        tab.set(Tab::Search);
+                        search_focus.update(|f| *f += 1);
+                    }
+                />
+            </Show>
 
             {move || match panel.get() {
                 Some(Panel::History) => Some(view! {

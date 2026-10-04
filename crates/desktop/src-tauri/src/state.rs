@@ -9,10 +9,12 @@ use needle_vault::Vault;
 use tauri::{AppHandle, Manager};
 
 use crate::history::History;
+use crate::search::Search;
 
 pub struct OpenVault {
     pub vault: Vault,
     pub history: History,
+    pub search: Search,
 }
 
 #[derive(Default)]
@@ -33,13 +35,14 @@ impl AppState {
     /// it also reopens on the next launch.
     pub fn open(&self, app: &AppHandle, vault: Vault, remember_it: bool) -> Result<(), String> {
         let history = History::open(app, &vault)?;
+        let search = Search::open(app, &vault)?;
         let root = vault.root().to_owned();
         {
             let mut open = self.lock();
             if let Some(previous) = open.as_ref() {
                 previous.history.snapshot(app, None)?;
             }
-            *open = Some(OpenVault { vault, history });
+            *open = Some(OpenVault { vault, history, search });
         }
         if remember_it { remember(app, &root) } else { Ok(()) }
     }
