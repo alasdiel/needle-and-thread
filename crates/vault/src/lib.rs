@@ -20,7 +20,7 @@ use needle_core::project::{ProjectConfig, ProjectKind, WorldConfig};
 use needle_core::settings::VaultSettings;
 
 pub use error::{Error, Result};
-pub use links::{Appearance, Backlink, LinkSource, Mention, NAME_FIELDS, NoteLinks, Renamed};
+pub use links::{Appearance, Backlink, HeaderName, LinkSource, Mention, NAME_FIELDS, NameHint, NoteLinks, Renamed, SceneNames};
 pub use notes::{NoteInfo, Notes};
 pub use project::{Placement, Project, SceneInfo};
 pub use world::World;
@@ -185,6 +185,45 @@ impl Vault {
         let config = WorldConfig { name: name.to_owned() };
         write_atomically(&root.join("world.toml"), config.to_toml().as_bytes())?;
         World::open(root, self.templates_path())
+    }
+
+    /// Changes a project's settings. A world it's put in must exist.
+    pub fn update_project(&self, slug: &str, edit: impl FnOnce(&mut ProjectConfig)) -> Result<Project> {
+        let mut project = self.project(slug)?;
+        let mut config = project.config.clone();
+        edit(&mut config);
+        config.title = match config.title.trim() {
+            "" => return Err(Error::Invalid("a project needs a title".into())),
+            title => title.to_owned(),
+        };
+        if let Some(world) = &config.world {
+            self.world(world)?;
+        }
+        project.save_config(config)?;
+        Ok(project)
+    }
+
+    /// Moves a note from `project` into the project's world, so every project in that world
+    /// can link to it. Links from this project keep working, since names are looked up in the
+    /// world after the project.
+    pub fn promote_note(&self, project: &Project, path: &str) -> Result<NoteInfo> {
+        let world = self
+            .world_of(project)?
+            .ok_or_else(|| Error::Invalid(format!("{} isn't in a world", project.config.title)))?;
+        let (from, to) = (project.notes(), world.notes());
+        let note = from.info(path)?;
+        let key = needle_core::links::name_key(&note.title);
+        if let Some(taken) = to.list()?.into_iter().find(|n| needle_core::links::name_key(&n.title) == key) {
+            return Err(Error::Invalid(format!("{} already has a note called “{}”", world.config.name, taken.title)));
+        }
+        let source = from.file_path(path)?;
+        let stem = source.file_stem().and_then(|s| s.to_str()).unwrap_or("note").to_owned();
+        let target = files::unique_file(&world.root().join(note.kind.folder()), &stem, "md");
+        // Copy, then remove: a crash in between leaves two copies, never none.
+        write_atomically(&target, &fs::read(&source)?)?;
+        fs::remove_file(&source)?;
+        let moved = target.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
+        to.info(&format!("{}/{moved}", note.kind.folder()))
     }
 
     /// The world `project` belongs to, if it names one.

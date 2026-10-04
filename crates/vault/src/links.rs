@@ -7,6 +7,7 @@
 use std::ops::Range;
 
 use needle_core::header::Header;
+use needle_core::project::NoteKind;
 use needle_core::links::{format_link, links, mentions, name_key, rewrite_links, snippet};
 use needle_core::names::{NameIndex, Owner, Resolution};
 use needle_core::scene::SceneFile;
@@ -73,7 +74,106 @@ pub struct Renamed {
     pub notes: Vec<(Owner, String)>,
 }
 
+/// A scene's header names (`pov`, `cast`, `places`, `threads`), each with the note it finds,
+/// and notes the scene's text names that its header doesn't list.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SceneNames {
+    pub fields: Vec<(&'static str, Vec<HeaderName>)>,
+    /// In the order the text first names them.
+    pub hints: Vec<NameHint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HeaderName {
+    pub name: String,
+    /// None if no note has that name (yet).
+    pub note: Option<NamedNote>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NameHint {
+    /// The field it would go in: `cast`, `places` or `threads`.
+    pub field: &'static str,
+    pub note: NamedNote,
+}
+
+/// The header field each type of note is listed in, if any.
+fn field_for(kind: NoteKind) -> Option<&'static str> {
+    match kind {
+        NoteKind::Character => Some("cast"),
+        NoteKind::Place => Some("places"),
+        NoteKind::Thread => Some("threads"),
+        _ => None,
+    }
+}
+
 impl Vault {
+    /// The names in a scene's header and the notes they find, plus hints: characters, places
+    /// and threads the text links to or mentions but the header doesn't list.
+    pub fn scene_names(&self, project: &Project, slug: &str) -> Result<SceneNames> {
+        let names = self.names(project)?;
+        let file = project.scene(slug)?;
+        let header = file.header()?;
+        let found = |name: &str| match names.resolve(name) {
+            Resolution::Found(note) => Some(note.clone()),
+            _ => None,
+        };
+        let fields: Vec<(&'static str, Vec<HeaderName>)> = SCENE_FIELDS
+            .into_iter()
+            .map(|field| {
+                let listed = header.list(field).into_iter().map(|name| HeaderName { note: found(&name), name }).collect();
+                (field, listed)
+            })
+            .collect();
+        let listed = |field: &str, note: &NamedNote| {
+            fields.iter().any(|(f, names)| *f == field && names.iter().any(|n| n.note.as_ref() == Some(note)))
+        };
+
+        let body = file.markdown();
+        let linked: Vec<(usize, NamedNote)> = links(&body)
+            .into_iter()
+            .filter_map(|l| found(l.target).map(|note| (l.range.start, note)))
+            .collect();
+        let world = project.config.world.as_deref();
+        let mut hints: Vec<(usize, NameHint)> = Vec::new();
+        for note in names.items() {
+            let nearby = match &note.owner {
+                Owner::Project(p) => *p == project.slug,
+                Owner::World(w) => Some(w.as_str()) == world,
+            };
+            let Some(field) = field_for(note.note.kind).filter(|_| nearby) else { continue };
+            if listed(field, note) {
+                continue;
+            }
+            let first_link = linked.iter().filter(|(_, n)| n == note).map(|(at, _)| *at).min();
+            let first_mention = mention_spots(&body, &note.note).first().map(|r| r.start);
+            if let Some(at) = first_link.into_iter().chain(first_mention).min() {
+                hints.push((at, NameHint { field, note: note.clone() }));
+            }
+        }
+        hints.sort_by_key(|(at, _)| *at);
+        Ok(SceneNames {
+            fields,
+            hints: hints.into_iter().map(|(_, hint)| hint).collect(),
+        })
+    }
+
+    /// Sets one of a scene's name fields. `pov` takes the first name, or is removed if there's
+    /// none; the lists keep the order given.
+    pub fn set_scene_names(&self, project: &Project, slug: &str, field: &str, names: &[String]) -> Result<()> {
+        let field = SCENE_FIELDS
+            .into_iter()
+            .find(|f| *f == field)
+            .ok_or_else(|| Error::Invalid(format!("{field:?} isn't a scene field")))?;
+        let names: Vec<&str> = names.iter().map(|n| n.trim()).filter(|n| !n.is_empty()).collect();
+        project.update_header(slug, |h| match (field, names.first()) {
+            ("pov", Some(pov)) => h.set_str("pov", pov),
+            ("pov", None) => h.remove("pov"),
+            (field, _) => h.set_list(field, &names),
+        })?;
+        Ok(())
+    }
+
     /// What points at the note `path` of `owner`, from inside `project`: its scenes, and its
     /// own and its world's notes.
     pub fn note_links(&self, project: &Project, owner: &Owner, path: &str) -> Result<NoteLinks> {

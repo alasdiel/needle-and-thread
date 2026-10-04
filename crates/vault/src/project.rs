@@ -73,6 +73,13 @@ impl Project {
         Notes::new(Owner::Project(self.slug.clone()), self.root.join("notes"), self.templates.clone())
     }
 
+    /// Saves new settings to `project.toml`. The file is the app's, so it's rewritten whole.
+    pub fn save_config(&mut self, config: ProjectConfig) -> Result<()> {
+        write_atomically(&self.root.join("project.toml"), config.to_toml().as_bytes())?;
+        self.config = config;
+        Ok(())
+    }
+
     pub fn outline(&self) -> Result<Outline> {
         match fs::read_to_string(self.root.join("outline.toml")) {
             Ok(text) => Ok(Outline::parse(&text)?),
