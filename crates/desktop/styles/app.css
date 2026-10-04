@@ -1125,6 +1125,8 @@ input.switch:checked {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  /* The envelope drawer waits just past the right edge. */
+  overflow: clip;
   /* The scene's envelope sits beside it or tucks into a tab, depending on this width. */
   container: main / inline-size;
 }
@@ -1735,13 +1737,34 @@ input.switch:checked {
   font-size: 14px;
 }
 
-/* Where there's no room beside the scene: a tab on the page's right edge. */
+/* Where there's no room beside the scene: a drawer on the page's right edge, with a tab as its
+   handle. Closed, it's pushed off the edge so only the tab shows. */
+.envelope-drawer {
+  position: absolute;
+  top: 64px;
+  right: 0;
+  z-index: 11;
+  display: none;
+  width: min(300px, calc(100% - 64px));
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.envelope-drawer.open {
+  transform: translateX(-14px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .envelope-drawer {
+    transition: none;
+  }
+}
+
 .envelope-tab {
   position: absolute;
-  top: 250px;
-  right: 0;
-  z-index: 4;
-  display: none;
+  top: 186px;
+  right: 100%;
+  display: flex;
   flex-direction: column;
   align-items: center;
   gap: 8px;
@@ -1778,13 +1801,13 @@ input.switch:checked {
 }
 
 .envelope-over {
-  position: absolute;
-  top: 64px;
-  right: 14px;
-  z-index: 11;
-  display: none;
-  width: min(300px, calc(100% - 28px));
   filter: drop-shadow(0 20px 28px var(--swatch-drop));
+}
+
+/* Hidden off the edge, it mustn't cast a shadow onto the page. */
+.envelope-drawer:not(.open) .envelope-over {
+  visibility: hidden;
+  transition: visibility 0s 0.3s;
 }
 
 .envelope-backdrop {
@@ -1796,12 +1819,11 @@ input.switch:checked {
     display: none;
   }
 
-  .envelope-tab,
-  .envelope-backdrop {
-    display: flex;
+  .envelope-drawer {
+    display: block;
   }
 
-  .envelope-over {
+  .envelope-backdrop {
     display: block;
   }
 }

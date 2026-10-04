@@ -1175,24 +1175,29 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                     </Show>
                 </div>
                 <Show when=has_scene>
-                    <button
-                        class="envelope-tab"
-                        aria-label="Scene details"
-                        aria-expanded=move || envelope_open.get().to_string()
-                        on:click=move |_| envelope_open.update(|o| *o = !*o)
-                    >
-                        <Icon glyph=Glyph::Mail size=16 />
-                        <span class="envelope-tab-label">"Notions"</span>
-                        {move || {
-                            let hints = scene_names.with(envelope::hint_count);
-                            (hints > 0).then(|| view! {
-                                <span class="envelope-tab-count" title="Named in the text but not listed">{format!("+{hints}")}</span>
-                            })
-                        }}
-                    </button>
+                    // Clicking anywhere else closes the drawer; the tab and the drawer sit above this.
                     <Show when=move || envelope_open.get()>
                         <div class="backdrop envelope-backdrop" on:click=move |_| envelope_open.set(false)></div>
-                        <div class="envelope-over">
+                    </Show>
+                    // A drawer on the page's right edge with the tab as its handle: closed, only the
+                    // tab shows; open, the envelope slides out with the tab riding along.
+                    <div class="envelope-drawer" class:open=move || envelope_open.get()>
+                        <button
+                            class="envelope-tab"
+                            aria-label="Scene details"
+                            aria-expanded=move || envelope_open.get().to_string()
+                            on:click=move |_| envelope_open.update(|o| *o = !*o)
+                        >
+                            <Icon glyph=Glyph::Mail size=16 />
+                            <span class="envelope-tab-label">"Notions"</span>
+                            {move || {
+                                let hints = scene_names.with(envelope::hint_count);
+                                (hints > 0).then(|| view! {
+                                    <span class="envelope-tab-count" title="Named in the text but not listed">{format!("+{hints}")}</span>
+                                })
+                            }}
+                        </button>
+                        <div class="envelope-over" inert=move || !envelope_open.get()>
                             <EnvelopeCard
                                 names=scene_names
                                 title=scene_title
@@ -1209,7 +1214,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                                 on_close=move |_| envelope_open.set(false)
                             />
                         </div>
-                    </Show>
+                    </div>
                 </Show>
             </section>
 
