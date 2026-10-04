@@ -30,7 +30,7 @@ Needle and Thread is a structure-first writing app for long fiction and long-for
 | Desktop app | Tauri 2 + Leptos, in Rust |
 | Editor | ProseMirror as a small JavaScript island (Rust has no mature rich-text editor) |
 | Editor feel | Like Medium: formatting shows as formatting, no visible Markdown symbols |
-| Look | A sewing-pattern bench. Each scene is drawn as a pattern piece (cutting line, stitching line, notches); cut lines, seams and stitches mark Split, Merge and scene breaks. The motifs stay in the app's frame, never in the text |
+| Look | A sewing-pattern bench. Each scene is drawn as a pattern piece (cutting line, stitching line, notches); cut lines, seams and stitches mark Split, Merge and scene breaks. Each note is a fabric swatch with pinked edges, pinned to the bench, with a smaller swatch beside it listing what links to it. A link to a note that doesn't exist yet is basted (long loose stitches). The motifs stay in the app's frame, never in the text |
 | Colours | From Gwen (League of Legends): aqua threads, saturated blues, violet. Dark, a Shadow Isles cutting mat, is the main look; light is pattern tissue. System, Light or Dark is chosen per computer |
 | Fonts | Bundled, all OFL: Literata for the text, Fraunces (soft and wonky) for titles, Alegreya SC for labels, Alegreya Sans for controls |
 | Typography as you type | Four separate settings, each explained in the app and on by default: curly double quotes, curly single quotes/apostrophes, `--` → em dash, `...` → ellipsis. They never rewrite existing text |
@@ -381,9 +381,11 @@ She owes him for the berth, and both of them know it.
   - Headings, bold, italic, underline (Ctrl+U, stored as `<u>…</u>`), quotes, lists, links, scene breaks and footnotes.
   - Markdown shortcuts as you type: `##`, `>`, `-`, `1.`, and `---` for a scene break (stored as `---`, shown as three stitches).
   - Shift+Enter in a list starts a sublist under the current item; elsewhere it's a line break.
-  - `[[` autocomplete, spellcheck and a live word count.
+  - `[[` suggests notes by title or alias as you type; Enter or Tab picks one.
+  - Clicking a link opens its note, offers to make one if there isn't one yet, or lets you choose between notes that share the name. Ctrl-click opens the note straight away.
+  - Spellcheck (which accepts the names in your notes' titles and aliases) and a live word count.
   - Focus mode hides the side panels.
-- **Notes**: the same editor, plus backlinks, appearances, unlinked mentions, and a small graph of what connects to the note.
+- **Notes**, in the sidebar's Notes tab, grouped by type: the same editor, on a swatch, with the title and aliases at the top. Beside it (below it in a narrow window) a smaller swatch lists the scenes that name the note in their header, the scenes and notes that link to it, and unlinked mentions, each with a **Link** button. The small graph of what connects to a note waits for the network view (phase 3).
 - **Search**: full text across the vault, filtered by project, status, POV, thread or note type.
 - **Command palette** (Ctrl+K) for every action.
 

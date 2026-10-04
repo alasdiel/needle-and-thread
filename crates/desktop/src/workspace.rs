@@ -1,18 +1,22 @@
-//! The main screen: projects and the outline on the left, the open scene in the middle drawn as
-//! a pattern piece, and the History or Markdown panel on the right.
+//! The main screen: projects with the outline or notes on the left, the open scene (drawn as a
+//! pattern piece) or note (a fabric swatch) in the middle, and the History or Markdown panel on
+//! the right.
 
 use leptos::{prelude::*, task::spawn_local};
+use needle_core::project::{NoteKind, ProjectKind};
 use needle_core::spell::Speller;
 
 use crate::editor::{Editor, EditorHandle, Typography};
 use crate::history::HistoryPanel;
 use crate::icons::{Glyph, Icon};
+use crate::links::{LinkBridge, name_words};
+use crate::notes::{self, LinksSwatch, NotesList, Pin};
 use crate::outline::{self, LiveWords, OutlineTree};
 use crate::pattern::{Grainline, Notches};
 use crate::settings::{Prefs, SettingsPanel};
 use crate::spell::SpellBridge;
 use crate::status::{self, StatusMark};
-use crate::tauri::{self, OutlineView, ProjectView, SceneView, VaultView};
+use crate::tauri::{self, NoteKey, NoteView, OutlineView, ProjectView, SceneView, VaultView};
 use crate::typography::TypographySettings;
 
 #[derive(Clone, PartialEq)]
@@ -26,6 +30,13 @@ enum SaveState {
 enum Panel {
     Markdown,
     History,
+}
+
+/// What the sidebar shows.
+#[derive(Clone, Copy, PartialEq)]
+enum Tab {
+    Outline,
+    Notes,
 }
 
 /// Scenes in reading order: chapters first, then unplaced ones.
@@ -81,10 +92,16 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let prefs = expect_context::<Prefs>();
     let editor = StoredValue::new_local(None::<EditorHandle>);
     let spell_bridge = StoredValue::new_local(None::<SpellBridge>);
+    let link_bridge = StoredValue::new_local(None::<LinkBridge>);
     let projects = RwSignal::new(vault.projects.clone());
     let project = RwSignal::new(vault.projects.first().map(|p| p.slug.clone()));
     let outline = RwSignal::new(None::<OutlineView>);
     let scene = RwSignal::new(None::<SceneView>);
+    // The open note; at most one of `scene` and `note` is set.
+    let note = RwSignal::new(None::<NoteView>);
+    let notes_list = RwSignal::new(Vec::<NoteView>::new());
+    let world = RwSignal::new(None::<(String, String)>);
+    let tab = RwSignal::new(Tab::Outline);
     let save_state = RwSignal::new(SaveState::Saved);
     let error = RwSignal::new(None::<String>);
     let spell_error = RwSignal::new(None::<String>);
@@ -119,6 +136,16 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let on_change = move |md: String, count: u32| {
         words.set(count as usize);
         markdown.set(md.clone());
+        if let Some(key) = note.with_untracked(|n| n.as_ref().map(NoteView::key)) {
+            save_state.set(SaveState::Saving);
+            spawn_local(async move {
+                save_state.set(match tauri::save_note(&key, &md).await {
+                    Ok(()) => SaveState::Saved,
+                    Err(e) => SaveState::Failed(e),
+                });
+            });
+            return;
+        }
         let (Some(p), Some(s)) = (project.get_untracked(), current()) else { return };
         live_words.set(Some((s.clone(), count as usize)));
         save_state.set(SaveState::Saving);
@@ -132,6 +159,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
 
     let close_scene = move || {
         scene.set(None);
+        note.set(None);
         editor.with_value(|h| {
             if let Some(h) = h {
                 h.set_content("");
@@ -141,8 +169,8 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         markdown.set(String::new());
     };
 
-    let open_scene = move |slug: String| {
-        let Some(p) = project.get_untracked() else { return };
+    // Before another scene or note loads: saves what's open and queues a snapshot of it.
+    let leave = move || {
         // Loading new text takes the cut line away with it.
         cutting.set(false);
         // Flushing saves the scene being left while it's still current; the snapshot is
@@ -159,11 +187,16 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                 }
             });
         }
-        if current().is_some() {
+        if current().is_some() || note.with_untracked(Option::is_some) {
             spawn_local(async {
                 let _ = tauri::snapshot_now().await;
             });
         }
+    };
+
+    let open_scene = move |slug: String| {
+        let Some(p) = project.get_untracked() else { return };
+        leave();
         spawn_local(async move {
             match tauri::open_scene(&p, &slug).await {
                 Ok(opened) => {
@@ -175,7 +208,9 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                             markdown.set(h.markdown());
                         }
                     });
+                    note.set(None);
                     scene.set(Some(opened.scene));
+                    tab.set(Tab::Outline);
                     save_state.set(SaveState::Saved);
                     // The piece is hidden while no scene is open (as during a split or merge), and
                     // a hidden editor can't take the cursor, so wait until it shows again.
@@ -194,6 +229,99 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
             }
         });
     };
+
+    let open_note = move |key: NoteKey| {
+        leave();
+        spawn_local(async move {
+            match tauri::open_note(&key).await {
+                Ok(opened) => {
+                    editor.with_value(|h| {
+                        if let Some(h) = h {
+                            h.set_content(&opened.markdown);
+                            words.set(h.word_count() as usize);
+                            markdown.set(h.markdown());
+                        }
+                    });
+                    scene.set(None);
+                    note.set(Some(opened.note));
+                    tab.set(Tab::Notes);
+                    // History follows scenes only, for now.
+                    panel.update(|p| {
+                        if *p == Some(Panel::History) {
+                            *p = None;
+                        }
+                    });
+                    save_state.set(SaveState::Saved);
+                    request_animation_frame(move || {
+                        editor.with_value(|h| {
+                            if let Some(h) = h {
+                                h.focus();
+                            }
+                        });
+                    });
+                }
+                Err(e) => report(e),
+            }
+        });
+    };
+
+    let load_notes = move |slug: String| {
+        spawn_local(async move {
+            match tauri::project_notes(&slug).await {
+                Ok(found) => {
+                    notes_list.set(found.notes);
+                    world.set(found.world);
+                }
+                Err(e) => report(e),
+            }
+        });
+    };
+
+    // Making a note from a link keeps you where you are; the link stops being basted.
+    let make_linked_note = move |title: String, kind: String| {
+        let Some(p) = project.get_untracked() else { return };
+        spawn_local(async move {
+            match tauri::create_note(&p, &kind, &title).await {
+                Ok(_) => load_notes(p),
+                Err(e) => report(e),
+            }
+        });
+    };
+
+    // Links and spelling follow the notes: called whenever the list changes, and once the
+    // bridges exist.
+    let note_labels = Memo::new(move |_| {
+        outline.with(|o| o.as_ref().map_or(ProjectKind::Fiction, |o| notes::project_kind(&o.project.kind)))
+    });
+    let share_notes = move || {
+        let Some(p) = project.get_untracked() else { return };
+        let kind = note_labels.get_untracked();
+        let world_slug = world.with_untracked(|w| w.as_ref().map(|(slug, _)| slug.clone()));
+        notes_list.with_untracked(|list| {
+            link_bridge.with_value(|b| {
+                if let Some(b) = b {
+                    b.set_notes(&p, world_slug.as_deref(), list, kind);
+                }
+            });
+            spell_bridge.with_value(|b| {
+                if let Some(b) = b {
+                    b.set_names(name_words(list));
+                }
+            });
+        });
+        editor.with_value(|h| {
+            if let Some(h) = h {
+                h.refresh_links();
+                h.recheck_spelling();
+            }
+        });
+    };
+    Effect::new(move |_| {
+        notes_list.track();
+        world.track();
+        note_labels.track();
+        share_notes();
+    });
 
     // An outline from the backend counts every saved word, so the live count can go.
     let set_outline = move |view: OutlineView| {
@@ -223,11 +351,13 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
 
     let load_project = move |slug: String| {
         flush();
+        load_notes(slug.clone());
         spawn_local(async move {
             match tauri::project_outline(&slug).await {
                 Ok(view) => {
                     let first = reading_order(&view).first().map(|s| s.slug.clone());
                     scene.set(None);
+                    note.set(None);
                     set_outline(view);
                     match first {
                         Some(first) => open_scene(first),
@@ -264,6 +394,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                         }
                     });
                     spell_bridge.set_value(Some(bridge));
+                    share_notes();
                 }
                 Err(e) => spell_error.set(Some(e)),
             }
@@ -271,6 +402,14 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     };
 
     let on_ready = move || {
+        let bridge = LinkBridge::new(open_note, make_linked_note);
+        editor.with_value(|h| {
+            if let Some(h) = h {
+                h.set_link_resolver(bridge.as_object());
+            }
+        });
+        link_bridge.set_value(Some(bridge));
+        share_notes();
         load_spellchecker();
         if let Some(p) = project.get_untracked() {
             load_project(p);
@@ -392,6 +531,69 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         save_state.set(SaveState::Saved);
     };
 
+    // --- Note actions ----------------------------------------------------------------------
+
+    let create_note = move |kind: String, title: String| {
+        let Some(p) = project.get_untracked() else { return };
+        spawn_local(async move {
+            match tauri::create_note(&p, &kind, &title).await {
+                Ok(created) => {
+                    load_notes(p);
+                    open_note(created.key());
+                }
+                Err(e) => report(e),
+            }
+        });
+    };
+
+    // Renaming rewrites links in other files, and maybe in this one, so the note is saved
+    // first and its text reloaded after.
+    let rename_note = move |title: String| {
+        let (Some(p), Some(key)) = (project.get_untracked(), note.with_untracked(|n| n.as_ref().map(NoteView::key))) else {
+            return;
+        };
+        flush();
+        spawn_local(async move {
+            match tauri::rename_note(&key, &title).await {
+                Ok(renamed) => {
+                    note.set(Some(renamed));
+                    load_notes(p);
+                    if let Ok(opened) = tauri::open_note(&key).await {
+                        let unchanged = editor.with_value(|h| h.as_ref().is_some_and(|h| h.markdown() == opened.markdown));
+                        if !unchanged && note.with_untracked(|n| n.as_ref().map(NoteView::key)) == Some(key) {
+                            editor.with_value(|h| {
+                                if let Some(h) = h {
+                                    h.set_content(&opened.markdown);
+                                }
+                            });
+                        }
+                    }
+                }
+                Err(e) => {
+                    // Put the old title back in the field.
+                    note.update(|_| {});
+                    report(e);
+                }
+            }
+        });
+    };
+
+    let set_aliases = move |text: String| {
+        let (Some(p), Some(key)) = (project.get_untracked(), note.with_untracked(|n| n.as_ref().map(NoteView::key))) else {
+            return;
+        };
+        let aliases: Vec<String> = text.split(',').map(|a| a.trim().to_owned()).filter(|a| !a.is_empty()).collect();
+        spawn_local(async move {
+            match tauri::set_note_aliases(&key, &aliases).await {
+                Ok(updated) => {
+                    note.set(Some(updated));
+                    load_notes(p);
+                }
+                Err(e) => report(e),
+            }
+        });
+    };
+
     // --- Projects and vaults ---------------------------------------------------------------
 
     let choose_project = move |slug: String| {
@@ -433,6 +635,13 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let target = Signal::derive(move || project.get().zip(scene.get().map(|s| s.slug)));
     let current_slug = Signal::derive(move || scene.get().map(|s| s.slug));
     let has_scene = move || scene.with(Option::is_some);
+    let has_note = move || note.with(Option::is_some);
+    let has_doc = move || has_scene() || has_note();
+    let project_kind = Signal::derive(move || {
+        outline.with(|o| o.as_ref().map_or(ProjectKind::Fiction, |o| notes::project_kind(&o.project.kind)))
+    });
+    let statuses = Signal::derive(move || outline.with(|o| o.as_ref().map(|o| o.statuses.clone()).unwrap_or_default()));
+    let current_note = Signal::derive(move || note.with(|n| n.as_ref().map(NoteView::key)));
     let current_place = move || {
         let slug = scene.with(|s| s.as_ref().map(|s| s.slug.clone()))?;
         outline.with(|o| o.as_ref().and_then(|o| place(o, &slug)))
@@ -453,7 +662,27 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let vault_name = vault.path.rsplit(['/', '\\']).find(|s| !s.is_empty()).unwrap_or(&vault.path).to_owned();
     let vault_title = format!("{}\nOpen another vault…", vault.path);
 
+    let note_breadcrumb = move || {
+        note.with(|n| {
+            n.as_ref().map(|n| {
+                let owner = match (&n.world, world.get()) {
+                    (true, Some((_, name))) => name,
+                    _ => "Notes".to_owned(),
+                };
+                let kind = NoteKind::parse(&n.kind).unwrap_or(NoteKind::Note).plural(project_kind.get());
+                view! {
+                    <span>{owner}</span>
+                    <Icon glyph=Glyph::ChevronRight size=12 />
+                    <span>{kind}</span>
+                }
+            })
+        })
+    };
+
     let breadcrumb = move || {
+        if has_note() {
+            return note_breadcrumb().map(IntoAny::into_any);
+        }
         current_place().map(|place| match place.chapter {
             None => view! { <span>"Not in the outline"</span> }.into_any(),
             Some(chapter) => view! {
@@ -504,6 +733,38 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         })
     };
 
+    // Rebuilt only when the note changes, like the scene's head.
+    let note_head = move || {
+        note.get().map(|n| {
+            let label = notes::kind_label(&n.kind, project_kind.get_untracked());
+            let owner = n.world.then(|| world.get_untracked().map(|(_, name)| format!("from {name}"))).flatten();
+            view! {
+                <header class="piece-head note-head">
+                    <div class="piece-label">
+                        <span>{label}</span>
+                        {owner.map(|o| view! { <span class="muted">{o}</span> })}
+                    </div>
+                    <input
+                        class="scene-name"
+                        aria-label="Note title"
+                        prop:value=n.title.clone()
+                        on:change=move |ev| rename_note(event_target_value(&ev))
+                    />
+                    <label class="aliases">
+                        <span class="aliases-label">"Also"</span>
+                        <input
+                            class="aliases-input"
+                            aria-label="Other names"
+                            placeholder="other names, separated by commas"
+                            prop:value=n.aliases.join(", ")
+                            on:change=move |ev| set_aliases(event_target_value(&ev))
+                        />
+                    </label>
+                </header>
+            }
+        })
+    };
+
     view! {
         <div class="workspace-grid">
             <aside class="sidebar">
@@ -541,19 +802,51 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                 <Show when=move || new_project.get().is_some()>
                     <NewProjectForm on_create=create_project on_cancel=move || new_project.set(None) />
                 </Show>
+                <div class="tabs" role="tablist" aria-label="Sidebar">
+                    <button
+                        role="tab"
+                        class="tab"
+                        aria-selected=move || (tab.get() == Tab::Outline).to_string()
+                        on:click=move |_| tab.set(Tab::Outline)
+                    >
+                        "Outline"
+                    </button>
+                    <button
+                        role="tab"
+                        class="tab"
+                        aria-selected=move || (tab.get() == Tab::Notes).to_string()
+                        on:click=move |_| tab.set(Tab::Notes)
+                    >
+                        "Notes"
+                    </button>
+                </div>
                 <div class="cut-rule" aria-hidden="true">
                     <Icon glyph=Glyph::Scissors size=14 />
                 </div>
-                <OutlineTree
-                    project=project
-                    outline=outline
-                    current=current_slug
-                    cutting=cutting
-                    live_words=live_words
-                    on_open=open_scene
-                    on_outline=apply
-                    on_error=report
-                />
+                // Both stay mounted, so switching keeps each one's scroll and state.
+                <div class="tab-panel" role="tabpanel" hidden=move || tab.get() != Tab::Outline>
+                    <OutlineTree
+                        project=project
+                        outline=outline
+                        current=current_slug
+                        cutting=cutting
+                        live_words=live_words
+                        on_open=open_scene
+                        on_outline=apply
+                        on_error=report
+                    />
+                </div>
+                <div class="tab-panel" role="tabpanel" hidden=move || tab.get() != Tab::Notes>
+                    <NotesList
+                        notes=notes_list
+                        project=project
+                        world=world
+                        kind=project_kind
+                        current=current_note
+                        on_open=open_note
+                        on_create=create_note
+                    />
+                </div>
                 <div class="cut-rule" aria-hidden="true">
                     <Icon glyph=Glyph::Scissors size=14 />
                 </div>
@@ -583,7 +876,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
             <section class="main">
                 <header class="topbar">
                     <nav class="breadcrumb" aria-label="Where this scene is">{breadcrumb}</nav>
-                    <Show when=has_scene>
+                    <Show when=has_doc>
                         <span class="save-state" class:error=move || matches!(save_state.get(), SaveState::Failed(_))>
                             {move || match save_state.get() {
                                 SaveState::Saved => view! { <Icon glyph=Glyph::Check size=14 /> "Saved" }.into_any(),
@@ -606,6 +899,8 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                                 <TypographySettings typography=typography />
                             </Show>
                         </div>
+                    </Show>
+                    <Show when=has_scene>
                         <button
                             class="icon-button"
                             title="History"
@@ -675,22 +970,43 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                         <span>{format!("Spellcheck unavailable: {e}")}</span>
                     </div>
                 })}
-                <div class="page" class:empty=move || !has_scene()>
-                    // The editor stays mounted while no scene is open; the piece is only hidden.
-                    <article class="pattern-piece piece">
-                        <Notches />
-                        <Grainline />
-                        {piece_head}
-                        <Editor
-                            handle=editor
-                            typography=typography
-                            on_change=on_change
-                            on_cut_confirm=on_cut_confirm
-                            on_cut_cancel=on_cut_cancel
-                            on_ready=on_ready
-                        />
-                    </article>
-                    <Show when=move || !has_scene()>
+                <div class="page" class:empty=move || !has_doc()>
+                    // A note's links swatch sits beside it when there's room, else below.
+                    <div class="bench">
+                        <div class="piece-holder" class:note-holder=has_note>
+                            // The editor stays mounted while nothing is open; the piece is only
+                            // hidden. A scene draws it as a pattern piece, a note as a swatch.
+                            <article class="piece" class:pattern-piece=has_scene class:swatch=has_note>
+                                <Show when=has_scene>
+                                    <Notches />
+                                    <Grainline />
+                                </Show>
+                                {piece_head}
+                                {note_head}
+                                <Editor
+                                    handle=editor
+                                    typography=typography
+                                    on_change=on_change
+                                    on_cut_confirm=on_cut_confirm
+                                    on_cut_cancel=on_cut_cancel
+                                    on_ready=on_ready
+                                />
+                            </article>
+                            <Show when=has_note>
+                                <Pin />
+                            </Show>
+                        </div>
+                        <Show when=has_note>
+                            <LinksSwatch
+                                project=project
+                                note=note
+                                statuses=statuses
+                                on_open_scene=open_scene
+                                on_open_note=open_note
+                            />
+                        </Show>
+                    </div>
+                    <Show when=move || !has_doc()>
                         <p class="empty-note">"No scene open. Pick one in the outline, or add one with the + on a chapter."</p>
                     </Show>
                 </div>

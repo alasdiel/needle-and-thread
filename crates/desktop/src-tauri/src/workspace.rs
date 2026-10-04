@@ -213,6 +213,22 @@ const SAMPLE: &[(&str, &str)] = &[
         "projects/tidewater/manuscript/long-chapter.md",
         include_str!("../../../../fixtures/sample-vault/projects/tidewater/manuscript/long-chapter.md"),
     ),
+    (
+        "projects/tidewater/notes/characters/mara-venn.md",
+        include_str!("../../../../fixtures/sample-vault/projects/tidewater/notes/characters/mara-venn.md"),
+    ),
+    (
+        "projects/tidewater/notes/characters/old-teodor.md",
+        include_str!("../../../../fixtures/sample-vault/projects/tidewater/notes/characters/old-teodor.md"),
+    ),
+    (
+        "projects/tidewater/notes/places/night-market.md",
+        include_str!("../../../../fixtures/sample-vault/projects/tidewater/notes/places/night-market.md"),
+    ),
+    (
+        "projects/tidewater/notes/threads/the-missing-ledger.md",
+        include_str!("../../../../fixtures/sample-vault/projects/tidewater/notes/threads/the-missing-ledger.md"),
+    ),
 ];
 
 fn write_sample(root: &Path) -> Result<(), String> {

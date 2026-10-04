@@ -121,6 +121,79 @@ pub struct Created {
     pub scene: String,
 }
 
+/// Which note: its owner (a project or, with `world`, a world folder) and its path there.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct NoteKey {
+    pub owner: String,
+    pub world: bool,
+    pub path: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct NoteView {
+    pub owner: String,
+    pub world: bool,
+    pub path: String,
+    pub id: String,
+    pub kind: String,
+    pub title: String,
+    pub aliases: Vec<String>,
+    pub summary: String,
+}
+
+impl NoteView {
+    pub fn key(&self) -> NoteKey {
+        NoteKey {
+            owner: self.owner.clone(),
+            world: self.world,
+            path: self.path.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct ProjectNotes {
+    pub notes: Vec<NoteView>,
+    /// The project's world, if it has one: (folder, name).
+    pub world: Option<(String, String)>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct OpenedNote {
+    pub note: NoteView,
+    pub markdown: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct NoteLinksView {
+    pub appears_in: Vec<AppearanceView>,
+    pub linked_from: Vec<BacklinkView>,
+    pub mentioned_in: Vec<MentionView>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct AppearanceView {
+    pub scene: SceneView,
+    pub fields: Vec<String>,
+}
+
+/// Exactly one of `scene` and `note` is set.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct BacklinkView {
+    pub scene: Option<SceneView>,
+    pub note: Option<NoteView>,
+    pub count: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct MentionView {
+    pub scene: SceneView,
+    pub count: usize,
+    pub before: String,
+    pub name: String,
+    pub after: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct VersionInfo {
     pub id: String,
@@ -230,6 +303,50 @@ pub async fn move_chapter(project: &str, chapter: &str, index: usize) -> Result<
 
 pub async fn remove_chapter(project: &str, chapter: &str) -> Result<OutlineView, String> {
     call("remove_chapter", chapter_args(project, chapter)).await
+}
+
+// --- Notes ------------------------------------------------------------------------------
+
+fn note_args(note: &NoteKey) -> Args {
+    Args::default()
+        .str("owner", &note.owner)
+        .set("world", note.world.into())
+        .str("path", &note.path)
+}
+
+pub async fn project_notes(project: &str) -> Result<ProjectNotes, String> {
+    call("project_notes", Args::default().str("project", project)).await
+}
+
+pub async fn open_note(note: &NoteKey) -> Result<OpenedNote, String> {
+    call("open_note", note_args(note)).await
+}
+
+pub async fn save_note(note: &NoteKey, markdown: &str) -> Result<(), String> {
+    call("save_note", note_args(note).str("markdown", markdown)).await
+}
+
+pub async fn create_note(project: &str, kind: &str, title: &str) -> Result<NoteView, String> {
+    call("create_note", Args::default().str("project", project).str("kind", kind).str("title", title)).await
+}
+
+pub async fn rename_note(note: &NoteKey, title: &str) -> Result<NoteView, String> {
+    call("rename_note", note_args(note).str("title", title)).await
+}
+
+pub async fn set_note_aliases(note: &NoteKey, aliases: &[String]) -> Result<NoteView, String> {
+    let list: js_sys::Array = aliases.iter().map(|a| JsValue::from_str(a)).collect();
+    call("set_note_aliases", note_args(note).set("aliases", list.into())).await
+}
+
+pub async fn note_links(project: &str, note: &NoteKey) -> Result<NoteLinksView, String> {
+    call("note_links", note_args(note).str("project", project)).await
+}
+
+/// Turns the first unlinked mention of the note in `scene` into a link. Returns whether there
+/// was one.
+pub async fn link_mention(project: &str, scene: &str, note: &NoteKey) -> Result<bool, String> {
+    call("link_mention", note_args(note).str("project", project).str("scene", scene)).await
 }
 
 // --- History ----------------------------------------------------------------------------

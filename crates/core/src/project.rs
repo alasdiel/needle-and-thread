@@ -112,6 +112,21 @@ impl NoteKind {
         }
     }
 
+    /// The heading over a group of this kind of note.
+    pub fn plural(self, project: ProjectKind) -> &'static str {
+        match (self, project) {
+            (Self::Character, _) => "Characters",
+            (Self::Place, _) => "Places",
+            (Self::Thread, ProjectKind::Fiction) => "Threads",
+            (Self::Thread, ProjectKind::Nonfiction) => "Arguments",
+            (Self::Source, _) => "Sources",
+            (Self::Event, ProjectKind::Fiction) => "Plot points",
+            (Self::Event, ProjectKind::Nonfiction) => "Events",
+            (Self::Relationship, _) => "Relationships",
+            (Self::Note, _) => "Other notes",
+        }
+    }
+
     pub fn parse(value: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|kind| kind.as_str() == value)
     }

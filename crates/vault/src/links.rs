@@ -129,6 +129,20 @@ impl Vault {
         Ok(found)
     }
 
+    /// Turns the first unlinked mention of a note in a scene into a link that shows the same
+    /// words. Returns whether there was one.
+    pub fn link_mention(&self, project: &Project, scene: &str, owner: &Owner, path: &str) -> Result<bool> {
+        let note = self.notes_of(owner)?.info(path)?;
+        project.edit_scene(scene, |file| {
+            let body = file.markdown();
+            if let Some(spot) = mention_spots(&body, &note).into_iter().next() {
+                let link = format_link(&note.title, Some(&body[spot.clone()]));
+                file.set_markdown(&format!("{}{link}{}", &body[..spot.start], &body[spot.end..]));
+            }
+            Ok(())
+        })
+    }
+
     /// Retitles a note and updates every link and header that names it by its title, in every
     /// project and world. Links keep the words they show: `[[Old Teodor]]` becomes
     /// `[[Teodor Brask|Old Teodor]]`, so renaming never changes the prose.

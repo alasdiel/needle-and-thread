@@ -16,6 +16,15 @@ pub enum Owner {
     World(String),
 }
 
+/// A note offered while typing a link, and the name of it that matched.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Suggestion<'a, T> {
+    pub item: &'a T,
+    /// The title or alias, as written.
+    pub name: &'a str,
+    pub alias: bool,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Resolution<'a, T> {
     Found(&'a T),
@@ -35,6 +44,8 @@ pub struct NameIndex<T> {
     tiers: [HashMap<String, Vec<usize>>; 4],
     /// `project/name` for every project, titles before aliases.
     qualified: [HashMap<String, Vec<usize>>; 2],
+    /// Every name in `tiers`, for suggestions: (tier, key, name as written, item).
+    names: Vec<(usize, String, String, usize)>,
 }
 
 impl<T> NameIndex<T> {
@@ -46,6 +57,7 @@ impl<T> NameIndex<T> {
             items: Vec::new(),
             tiers: Default::default(),
             qualified: Default::default(),
+            names: Vec::new(),
         }
     }
 
@@ -73,6 +85,7 @@ impl<T> NameIndex<T> {
             }
             if let Some(base) = base {
                 insert(&mut self.tiers[base + tier], key.clone());
+                self.names.push((base + tier, key.clone(), name.trim().to_owned(), index));
             }
             if let Owner::Project(p) = owner {
                 insert(&mut self.qualified[tier], format!("{}/{key}", name_key(p)));
@@ -91,6 +104,40 @@ impl<T> NameIndex<T> {
             }
         }
         Resolution::Missing
+    }
+
+    /// Notes whose title or an alias matches `query`, best first: names that start with it,
+    /// then names with a word that does, then names that contain it; within those, this
+    /// project's titles, its aliases, then the world's. An empty query lists titles A to Z.
+    pub fn suggest(&self, query: &str, limit: usize) -> Vec<Suggestion<'_, T>> {
+        let query = name_key(query);
+        let mut found: Vec<(usize, usize, &str, &str, usize)> = self
+            .names
+            .iter()
+            .filter_map(|(tier, key, name, item)| {
+                let rank = if key.starts_with(&query) {
+                    0
+                } else if key.split([' ', '-']).any(|word| word.starts_with(&query)) {
+                    1
+                } else if key.contains(&query) {
+                    2
+                } else {
+                    return None;
+                };
+                (!query.is_empty() || tier % 2 == 0).then_some((rank, *tier, key.as_str(), name.as_str(), *item))
+            })
+            .collect();
+        found.sort_by(|a, b| (a.0, a.1, a.2).cmp(&(b.0, b.1, b.2)));
+        found.dedup_by(|a, b| a.4 == b.4 && a.2 == b.2);
+        found
+            .into_iter()
+            .take(limit)
+            .map(|(_, tier, _, name, item)| Suggestion {
+                item: &self.items[item],
+                name,
+                alias: tier % 2 == 1,
+            })
+            .collect()
     }
 
     /// Every note added, in the order added.
@@ -170,6 +217,18 @@ mod tests {
         // A title still beats another note's alias.
         index.add(&project("tidewater"), "Teodor", &aliases(&["Joss"]), "teodor");
         assert_eq!(index.resolve("Joss"), Resolution::Found(&"joss note"));
+    }
+
+    #[test]
+    fn suggestions_put_the_best_matches_first() {
+        let index = index();
+        let names = |q: &str| index.suggest(q, 10).into_iter().map(|s| (s.name, s.alias)).collect::<Vec<_>>();
+        assert_eq!(names("mar"), [("Mara Venn", false), ("Mara", true), ("Mara", false)]);
+        assert_eq!(names("cap"), [("the Captain", true)]);
+        assert_eq!(names("eod"), [("Old Teodor", false)]);
+        // Typing nothing lists titles; other worlds and projects stay out.
+        assert_eq!(names(""), [("Mara Venn", false), ("Old Teodor", false), ("Mara", false), ("The Drowning", false)]);
+        assert_eq!(index.suggest("", 2).len(), 2);
     }
 
     #[test]

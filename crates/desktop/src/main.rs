@@ -3,6 +3,8 @@ mod appearance;
 mod editor;
 mod history;
 mod icons;
+mod links;
+mod notes;
 mod outline;
 mod pattern;
 mod settings;

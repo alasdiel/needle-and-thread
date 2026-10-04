@@ -208,6 +208,12 @@ fn the_sample_vault_opens_and_every_scene_is_placed() {
     assert_eq!(placed, files);
     let market = project.scene_info("night-market").unwrap();
     assert_eq!((market.title.as_str(), market.status.as_str()), ("The night market", "draft"));
+
+    let notes: Vec<String> = project.notes().list().unwrap().into_iter().map(|n| n.title).collect();
+    assert_eq!(notes, ["Mara Venn", "Old Teodor", "Night Market", "The missing ledger"]);
+    let mara = vault.note_links(project, &Owner::Project("tidewater".into()), "characters/mara-venn").unwrap();
+    assert_eq!(mara.appears_in.len(), 1);
+    assert_eq!(mara.linked_from.len(), 2, "both scenes");
 }
 
 #[test]
@@ -449,4 +455,19 @@ fn a_rename_can_not_take_another_notes_title() {
     let renamed = vault.rename_note(&here, "characters/mara-venn", "MARA VENN").unwrap();
     assert_eq!(renamed.note.title, "MARA VENN");
     assert!(renamed.scenes.is_empty());
+}
+
+#[test]
+fn linking_a_mention_keeps_the_words_shown() {
+    let (_dir, vault) = linked_vault();
+    let tidewater = vault.project("tidewater").unwrap();
+    let here = Owner::Project("tidewater".into());
+    assert!(vault.link_mention(&tidewater, "untitled-scene", &here, "characters/mara-venn").unwrap());
+    assert_eq!(
+        tidewater.scene("untitled-scene").unwrap().markdown(),
+        "[[Mara Venn|Mara]] met [[old teodor]].\n\nLater [[Mara Venn|Mara]] slept. Mara Venn’s boat rocked.\n"
+    );
+    assert!(vault.link_mention(&tidewater, "untitled-scene", &here, "characters/mara-venn").unwrap());
+    assert!(tidewater.scene("untitled-scene").unwrap().markdown().contains("[[Mara Venn]]’s boat"));
+    assert!(!vault.link_mention(&tidewater, "untitled-scene", &here, "characters/mara-venn").unwrap());
 }

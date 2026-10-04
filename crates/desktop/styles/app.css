@@ -36,6 +36,17 @@
   --shadow-color: light-dark(rgb(21 35 45 / 0.16), rgb(0 0 0 / 0.5));
   --piece-ring: light-dark(transparent, rgb(85 215 224 / 0.1));
   --piece-drop: light-dark(rgb(21 35 45 / 0.12), rgb(0 0 0 / 0.55));
+  --fabric: light-dark(#f6f4fd, #171a30); /* a note: violet-dyed cloth */
+  --weave: light-dark(rgb(91 63 168 / 0.07), rgb(167 151 237 / 0.07));
+  --fabric-2: light-dark(#f0f8f8, #12222b); /* the links beside it: aqua cloth */
+  --weave-2: light-dark(rgb(11 159 176 / 0.08), rgb(116 245 248 / 0.05));
+  --swatch-print: light-dark(#5b3fa8, #a797ed);
+  --swatch-print-soft: light-dark(rgb(91 63 168 / 0.45), rgb(167 151 237 / 0.42));
+  --swatch-drop: light-dark(rgb(21 35 45 / 0.16), rgb(0 0 0 / 0.5));
+  --pin: #8c42d8;
+  --pin-2: light-dark(#0a78bf, #14adf6);
+  --pin-shine: light-dark(#efe8fd, #d9ccfa);
+  --steel: light-dark(#7d8e97, #b9c8d0);
 
   /* Bundled in styles/fonts.css. */
   --font-text: Literata, Georgia, serif;
@@ -96,7 +107,12 @@ body {
 .add-chapter .add,
 .unplaced-head,
 .version-name,
-.grainline span {
+.grainline span,
+.tab,
+.notes-world,
+.links-head,
+.mention-more,
+.pill {
   font-family: var(--font-label);
   font-weight: 500;
   letter-spacing: 0.07em;
@@ -894,6 +910,168 @@ input.switch:checked {
   border-top-color: var(--thread) !important;
 }
 
+/* --- Sidebar tabs and the notes list -------------------------------------------------------- */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 0 12px;
+}
+
+.tab {
+  position: relative;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px 6px 0 0;
+  color: var(--muted);
+  font-size: 16px;
+  letter-spacing: 0.08em;
+}
+
+.tab:hover {
+  background: none;
+  color: var(--text);
+}
+
+.tab[aria-selected="true"] {
+  color: var(--text);
+}
+
+/* The thread under the open tab, like the one through the open scene. */
+.tab[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  bottom: 2px;
+  left: 8px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--thread);
+  box-shadow: 0 0 8px var(--thread-glow);
+}
+
+.tabs + .cut-rule {
+  padding-top: 4px;
+}
+
+.tab-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tab-panel[hidden] {
+  display: none;
+}
+
+.notes-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 10px 24px;
+}
+
+.notes-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.note-group {
+  margin-top: 12px;
+}
+
+.notes-world {
+  margin: 26px 8px 0;
+  padding-top: 12px;
+  border-top: 1px dashed var(--print-soft);
+  color: var(--swatch-print);
+  font-size: 16px;
+}
+
+.note-row {
+  position: relative;
+  display: flex;
+  border-radius: 0 6px 6px 0;
+}
+
+.note-row:hover {
+  background: var(--hover);
+}
+
+.note-row.current {
+  background: var(--blue-tint);
+}
+
+.note-row.current::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  bottom: -3px;
+  left: 13px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--thread);
+  box-shadow: 0 0 8px var(--thread-glow);
+}
+
+.note-title {
+  flex: 1;
+  min-width: 0;
+  gap: 9px;
+  padding: 6px 8px 6px 28px;
+  border: 0;
+  background: none;
+  font-size: 15px;
+  text-align: left;
+}
+
+.note-title:hover {
+  background: none;
+}
+
+.note-title .icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.note-row.current .note-title {
+  font-weight: 500;
+}
+
+.note-row.current .note-title .icon {
+  color: var(--blue);
+}
+
+.note-label {
+  overflow: hidden;
+  font-family: var(--font-ui);
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.notes-empty {
+  margin: 14px 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.new-note {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 0 4px;
+}
+
+.new-note .actions {
+  display: flex;
+  gap: 8px;
+}
+
 /* --- Main column ---------------------------------------------------------------------------- */
 
 .main {
@@ -967,6 +1145,22 @@ input.switch:checked {
 
 .page.empty .piece {
   display: none;
+}
+
+/* The open piece, and for a note its links beside it, or below when there's no room. */
+.bench {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 48px 36px;
+}
+
+.piece-holder {
+  position: relative;
+  flex: 1 1 520px;
+  min-width: 0;
+  max-width: 700px;
 }
 
 .piece {
@@ -1055,6 +1249,268 @@ input.switch:checked {
 
 .needle-prose:focus-visible {
   outline: none;
+}
+
+/* --- Notes, as fabric swatches -------------------------------------------------------------- */
+
+/* Pinked edges: a zigzag cut on all four sides, as pinking shears leave on cloth. The mask
+   clips everything inside, so shadows and pins go on the holder around a swatch. */
+.swatch {
+  --tooth: 16px;
+  --half: calc(var(--tooth) / 2);
+  --pinking:
+    conic-gradient(from 135deg at 50% 0, #000 90deg, #0000 0) 0 0 / var(--tooth) var(--half) repeat-x,
+    conic-gradient(from -45deg at 50% 100%, #000 90deg, #0000 0) 0 100% / var(--tooth) var(--half) repeat-x,
+    conic-gradient(from 45deg at 0 50%, #000 90deg, #0000 0) 0 0 / var(--half) var(--tooth) repeat-y,
+    conic-gradient(from 225deg at 100% 50%, #000 90deg, #0000 0) 100% 0 / var(--half) var(--tooth) repeat-y,
+    linear-gradient(#000 0 0) 50% 50% / calc(100% - var(--tooth)) calc(100% - var(--tooth)) no-repeat;
+  position: relative;
+  background-color: var(--fabric);
+  background-image:
+    repeating-linear-gradient(45deg, var(--weave) 0 1px, transparent 1px 6px),
+    repeating-linear-gradient(-45deg, var(--weave) 0 1px, transparent 1px 6px);
+  -webkit-mask: var(--pinking);
+  mask: var(--pinking);
+}
+
+/* The stitching just inside the edge. */
+.swatch::before {
+  content: "";
+  position: absolute;
+  inset: 22px;
+  border: 1.5px dashed var(--swatch-print-soft);
+  pointer-events: none;
+}
+
+.note-holder {
+  max-width: 640px;
+  margin-top: 22px;
+  filter: drop-shadow(0 20px 28px var(--swatch-drop));
+}
+
+/* Notes are short, so the swatch fits its text rather than a scene's tall page. */
+.piece.swatch {
+  min-height: 0;
+  padding: 52px 60px 0;
+}
+
+.piece.swatch .needle-prose {
+  min-height: 120px;
+  padding-bottom: 64px;
+}
+
+.pin {
+  position: absolute;
+  top: -22px;
+  left: 30px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.pin-head {
+  fill: var(--pin);
+}
+
+.pin-blue .pin-head {
+  fill: var(--pin-2);
+}
+
+.pin-shine {
+  fill: var(--pin-shine);
+}
+
+.pin-shaft {
+  stroke: var(--steel);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.note-head .piece-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--swatch-print);
+}
+
+.note-head .piece-label .muted {
+  font-size: 14px;
+}
+
+.aliases {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-family: var(--font-label);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.07em;
+}
+
+.aliases-label {
+  text-transform: lowercase;
+}
+
+.aliases-input {
+  flex: 1;
+  min-width: 0;
+  padding: 1px 6px;
+  border: 1px dashed transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  letter-spacing: 0.04em;
+}
+
+.aliases-input::placeholder {
+  color: var(--faint);
+}
+
+.aliases-input:hover {
+  border-color: var(--swatch-print-soft);
+}
+
+.aliases-input:focus {
+  outline: none;
+  border-color: var(--swatch-print);
+}
+
+/* What links to a note: a smaller aqua swatch, pinned on slightly crooked. */
+.links-holder {
+  position: relative;
+  flex: 1 1 280px;
+  min-width: 0;
+  max-width: 640px;
+  margin-top: 52px;
+  transform: rotate(0.8deg);
+  filter: drop-shadow(0 20px 28px var(--swatch-drop));
+}
+
+.links-holder .pin {
+  left: calc(50% - 30px);
+  top: -20px;
+}
+
+.links-swatch {
+  --tooth: 12px;
+  padding: 38px 40px 40px;
+  background-color: var(--fabric-2);
+  background-image:
+    repeating-linear-gradient(45deg, var(--weave-2) 0 1px, transparent 1px 6px),
+    repeating-linear-gradient(-45deg, var(--weave-2) 0 1px, transparent 1px 6px);
+}
+
+.links-swatch::before {
+  inset: 16px;
+  border-color: var(--print-soft);
+}
+
+.links-title {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--print);
+  font-size: 15.5px;
+}
+
+.links-title .muted {
+  overflow: hidden;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.links-head {
+  position: relative;
+  margin: 20px 0 4px;
+  color: var(--muted);
+  font-size: 14.5px;
+}
+
+.link-row {
+  position: relative;
+  display: flex;
+  width: calc(100% + 16px);
+  gap: 9px;
+  margin: 0 -8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  font-size: 15px;
+  text-align: left;
+}
+
+.link-row .icon,
+.link-row .status-mark {
+  flex: none;
+  color: var(--muted);
+}
+
+.link-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mention {
+  position: relative;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px dashed var(--print-soft);
+  border-radius: 6px;
+}
+
+.mention-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mention-scene {
+  min-width: 0;
+  padding: 0;
+  color: var(--text);
+  font-size: 14.5px;
+}
+
+.pill {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--print-soft);
+  border-radius: 999px;
+  font-size: 14px;
+}
+
+.mention-text {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font: 15px/1.55 var(--font-text);
+}
+
+.mention-text b {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.mention-more {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.links-empty {
+  position: relative;
+  margin: 16px 0 0;
+  color: var(--muted);
 }
 
 /* --- Split and Merge -------------------------------------------------------------------------
