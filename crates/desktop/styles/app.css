@@ -55,6 +55,14 @@
   --mark: light-dark(rgb(11 159 176 / 0.16), rgb(116 245 248 / 0.16)); /* search matches */
   --scrim: light-dark(rgb(21 35 45 / 0.25), rgb(5 10 14 / 0.55));
 
+  /* The type scale: small caps in two sizes, the interface font in two, titles in four. */
+  --size-label: 14.5px; /* small-caps headings and labels */
+  --size-label-small: 13px; /* small caps on chips, pills and minor labels */
+  --size-ui: 15px; /* rows, menus, buttons, inputs */
+  --size-ui-small: 14px; /* secondary text and chips */
+  --size-count: 13px; /* numbers beside rows */
+  --size-title-small: 18px;
+
   /* Bundled in styles/fonts.css. */
   --font-text: Literata, Georgia, serif;
   --font-title: Fraunces, Georgia, serif;
@@ -86,7 +94,9 @@ body {
   display: flex;
   flex-direction: column;
   color: var(--text);
-  font: 15px/1.4 var(--font-ui);
+  font: var(--size-ui) / 1.45 var(--font-ui);
+  /* Alegreya Sans sets tight; a little tracking keeps small interface text from crowding. */
+  letter-spacing: 0.015em;
   /* Tissue gets printed dots, the mat a grid; each theme's other pattern is transparent. */
   background-color: var(--mat);
   background-image:
@@ -145,6 +155,15 @@ body {
   font-family: var(--font-title);
   font-weight: 600;
   font-variation-settings: "SOFT" 100, "WONK" 1;
+  letter-spacing: normal;
+}
+
+.needle-prose,
+.search-hit-snippet,
+.mention-text,
+.setting-example,
+.palette-field input {
+  letter-spacing: normal;
 }
 
 .muted {
@@ -201,7 +220,7 @@ button.quiet:hover {
 
 button.small {
   padding: 3px 10px;
-  font-size: 14px;
+  font-size: var(--size-ui-small);
 }
 
 button.link {
@@ -358,7 +377,7 @@ input.switch:checked {
 
 .field-label {
   color: var(--muted);
-  font-size: 13.5px;
+  font-size: var(--size-label-small);
 }
 
 .segmented.two {
@@ -378,7 +397,7 @@ input.switch:checked {
 
 .panel h2 {
   margin: 0 0 8px;
-  font-size: 17px;
+  font-size: var(--size-title-small);
 }
 
 .panel h2:not(:first-child) {
@@ -419,7 +438,7 @@ input.switch:checked {
 
 .setting-description {
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--size-ui-small);
 }
 
 .menu {
@@ -459,7 +478,7 @@ input.switch:checked {
 }
 
 .menu-note {
-  font-size: 13px;
+  font-size: var(--size-count);
 }
 
 .menu hr {
@@ -535,7 +554,7 @@ input.switch:checked {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 14px 0 10px;
+  padding: 0 18px 0 16px;
   color: var(--print);
 }
 
@@ -701,7 +720,7 @@ input.switch:checked {
 .project-meta {
   overflow: hidden;
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--size-label-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -729,7 +748,7 @@ input.switch:checked {
   min-width: 0;
   gap: 8px;
   padding: 6px;
-  font-size: 14px;
+  font-size: var(--size-ui-small);
   text-align: left;
 }
 
@@ -765,7 +784,7 @@ input.switch:checked {
   gap: 6px;
   padding: 0 8px 6px;
   color: var(--print);
-  font-size: 15px;
+  font-size: var(--size-label);
 }
 
 .part-head .count {
@@ -785,7 +804,7 @@ input.switch:checked {
   align-items: center;
   gap: 9px;
   min-height: 32px;
-  padding: 2px 2px 2px 8px;
+  padding: 2px 8px;
   border-top: 2px solid transparent;
   border-radius: 6px;
   cursor: grab;
@@ -815,9 +834,8 @@ input.switch:checked {
 
 .count {
   margin-left: auto;
-  padding-right: 6px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--size-count);
   font-variant-numeric: tabular-nums;
 }
 
@@ -853,6 +871,7 @@ input.switch:checked {
   position: relative;
   display: flex;
   align-items: center;
+  padding-right: 8px;
   border-top: 2px solid transparent;
   border-radius: 0 6px 6px 0;
 }
@@ -885,7 +904,7 @@ input.switch:checked {
   padding: 6px 0 6px 36px;
   border: 0;
   background: none;
-  font-size: 15px;
+  font-size: var(--size-ui);
   text-align: left;
 }
 
@@ -922,7 +941,7 @@ input.switch:checked {
   padding-left: 36px;
   border-top: 2px solid transparent;
   color: var(--faint);
-  font-size: 14px;
+  font-size: var(--size-ui-small);
   font-style: italic;
 }
 
@@ -936,7 +955,7 @@ input.switch:checked {
   padding: 6px 8px;
   border: 0;
   color: var(--muted);
-  font-size: 15px;
+  font-size: var(--size-label);
 }
 
 .add-chapter .add:hover {
@@ -946,7 +965,7 @@ input.switch:checked {
 .unplaced-head {
   margin: 22px 8px 6px;
   color: var(--muted);
-  font-size: 15px;
+  font-size: var(--size-label);
 }
 
 .inline-edit {
@@ -965,7 +984,7 @@ input.switch:checked {
 .tabs {
   display: flex;
   gap: 4px;
-  padding: 0 12px;
+  padding: 0 8px;
 }
 
 .tab {
@@ -975,7 +994,7 @@ input.switch:checked {
   border: 0;
   border-radius: 6px 6px 0 0;
   color: var(--muted);
-  font-size: 16px;
+  font-size: var(--size-label);
   letter-spacing: 0.08em;
 }
 
@@ -1038,7 +1057,7 @@ input.switch:checked {
   padding-top: 12px;
   border-top: 1px dashed var(--print-soft);
   color: var(--swatch-print);
-  font-size: 16px;
+  font-size: var(--size-label);
 }
 
 .note-row {
@@ -1060,7 +1079,7 @@ input.switch:checked {
   position: absolute;
   top: -5px;
   bottom: -3px;
-  left: 13px;
+  left: 17px;
   width: 2px;
   border-radius: 2px;
   background: var(--thread);
@@ -1070,11 +1089,11 @@ input.switch:checked {
 .note-title {
   flex: 1;
   min-width: 0;
-  gap: 9px;
-  padding: 6px 8px 6px 28px;
+  gap: 8px;
+  padding: 6px 8px 6px 36px;
   border: 0;
   background: none;
-  font-size: 15px;
+  font-size: var(--size-ui);
   text-align: left;
 }
 
@@ -1098,7 +1117,6 @@ input.switch:checked {
 .note-label {
   overflow: hidden;
   font-family: var(--font-ui);
-  letter-spacing: 0;
   text-overflow: ellipsis;
   text-transform: none;
   white-space: nowrap;
@@ -1107,14 +1125,14 @@ input.switch:checked {
 .notes-empty {
   margin: 14px 8px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--size-ui-small);
 }
 
 .new-note {
   display: grid;
   gap: 6px;
   margin-top: 14px;
-  padding: 0 4px;
+  padding: 0 8px;
 }
 
 .new-note .actions {
@@ -1136,7 +1154,7 @@ input.switch:checked {
   align-items: center;
   gap: 8px;
   height: 36px;
-  margin: 10px 12px 0;
+  margin: 10px 18px 0;
   padding: 0 10px;
   border: 1px solid var(--print-soft);
   border-radius: 8px;
@@ -1169,7 +1187,7 @@ kbd {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
-  padding: 8px 12px;
+  padding: 8px 18px;
 }
 
 /* A chip that toggles, or picks through an invisible select laid over it. */
@@ -1183,7 +1201,7 @@ kbd {
   border: 1px solid var(--rule);
   border-radius: 999px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--size-label-small);
   cursor: pointer;
 }
 
@@ -1224,14 +1242,14 @@ kbd {
   justify-content: space-between;
   padding: 14px 8px 4px;
   color: var(--print);
-  font-size: 15px;
+  font-size: var(--size-label);
 }
 
 .search-hit {
   position: relative;
   display: block;
   width: 100%;
-  padding: 7px 8px 8px 28px;
+  padding: 7px 8px 8px 36px;
   border: 0;
   border-radius: 0 6px 6px 0;
   text-align: left;
@@ -1247,7 +1265,7 @@ kbd {
   position: absolute;
   top: -5px;
   bottom: -3px;
-  left: 13px;
+  left: 17px;
   width: 2px;
   border-radius: 2px;
   background: var(--thread);
@@ -1257,7 +1275,7 @@ kbd {
 .search-hit-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
 }
 
 .search-hit-head .icon,
@@ -1270,7 +1288,7 @@ kbd {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-size: 15px;
+  font-size: var(--size-ui);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1284,7 +1302,7 @@ kbd {
   max-width: 45%;
   overflow: hidden;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--size-label-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1294,10 +1312,24 @@ kbd {
   display: none;
 }
 
-/* Under the title, not the icon: 13 px of icon and 8 px of gap. */
+/* ...and for chips in a row, so they sit in an even grid. */
+.search-side .search-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.search-side .search-chip {
+  justify-content: center;
+}
+
+.search-list .search-hit-snippet {
+  -webkit-line-clamp: 3;
+}
+
+/* Under the title, not the icon: 13 px of icon and 9 px of gap. */
 .search-hit-snippet {
   display: -webkit-box;
-  margin: 3px 0 0 21px;
+  margin: 3px 0 0 22px;
   overflow: hidden;
   color: var(--muted);
   font: 13.5px/1.45 var(--font-text);
@@ -1371,7 +1403,7 @@ kbd {
 .palette .search-chip {
   height: 26px;
   padding: 0 9px;
-  font-size: 13.5px;
+  font-size: var(--size-label-small);
 }
 
 .palette-results {
@@ -1404,13 +1436,27 @@ kbd {
 }
 
 .palette .search-hit-title {
-  font-size: 15.5px;
+  font-size: var(--size-ui);
   font-weight: 500;
 }
 
 .palette /* The sidebar is too narrow for a chapter beside each title; it shows on hover instead. */
 .search-list .search-hit-sub {
   display: none;
+}
+
+/* ...and for chips in a row, so they sit in an even grid. */
+.search-side .search-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.search-side .search-chip {
+  justify-content: center;
+}
+
+.search-list .search-hit-snippet {
+  -webkit-line-clamp: 3;
 }
 
 .search-hit-snippet {
@@ -1424,7 +1470,7 @@ kbd {
   padding: 10px 18px 14px;
   border-top: 1px solid var(--rule);
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--size-count);
 }
 
 .palette-keys b {
@@ -1463,7 +1509,7 @@ kbd {
   gap: 8px;
   overflow: hidden;
   color: var(--muted);
-  font-size: 15px;
+  font-size: var(--size-label);
   white-space: nowrap;
 }
 
@@ -1477,7 +1523,7 @@ kbd {
   gap: 5px;
   margin-right: 10px;
   color: var(--muted);
-  font-size: 15px;
+  font-size: var(--size-label);
 }
 
 .save-state.error {
@@ -1542,7 +1588,7 @@ kbd {
 
 .piece-label {
   color: var(--print);
-  font-size: 15.5px;
+  font-size: var(--size-label);
 }
 
 .scene-name {
@@ -1572,7 +1618,7 @@ kbd {
   gap: 12px;
   margin-top: 14px;
   color: var(--muted);
-  font-size: 15px;
+  font-size: var(--size-label);
 }
 
 .status-pill {
@@ -1698,7 +1744,7 @@ kbd {
 }
 
 .note-head .piece-label .muted {
-  font-size: 14px;
+  font-size: var(--size-label-small);
 }
 
 .aliases {
@@ -1708,7 +1754,7 @@ kbd {
   margin-top: 10px;
   color: var(--muted);
   font-family: var(--font-label);
-  font-size: 15px;
+  font-size: var(--size-label);
   font-weight: 500;
   letter-spacing: 0.07em;
 }
@@ -1779,12 +1825,12 @@ kbd {
   justify-content: space-between;
   gap: 12px;
   color: var(--print);
-  font-size: 15.5px;
+  font-size: var(--size-label);
 }
 
 .links-title .muted {
   overflow: hidden;
-  font-size: 14px;
+  font-size: var(--size-label-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1793,7 +1839,7 @@ kbd {
   position: relative;
   margin: 20px 0 4px;
   color: var(--muted);
-  font-size: 14.5px;
+  font-size: var(--size-label-small);
 }
 
 .link-row {
@@ -1805,7 +1851,7 @@ kbd {
   padding: 6px 8px;
   border: 0;
   border-radius: 6px;
-  font-size: 15px;
+  font-size: var(--size-ui);
   text-align: left;
 }
 
@@ -1842,7 +1888,7 @@ kbd {
   min-width: 0;
   padding: 0;
   color: var(--text);
-  font-size: 14.5px;
+  font-size: var(--size-ui-small);
 }
 
 .pill {
@@ -1851,7 +1897,7 @@ kbd {
   padding: 0 10px;
   border: 1px solid var(--print-soft);
   border-radius: 999px;
-  font-size: 14px;
+  font-size: var(--size-label-small);
 }
 
 .mention-text {
@@ -1869,7 +1915,7 @@ kbd {
   display: block;
   margin-top: 4px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--size-label-small);
 }
 
 .links-empty {
@@ -1916,16 +1962,16 @@ kbd {
   justify-content: space-between;
   gap: 10px;
   color: var(--print);
-  font-size: 14px;
+  font-size: var(--size-label);
 }
 
 .envelope-head .muted {
-  font-size: 13px;
+  font-size: var(--size-label-small);
 }
 
 .envelope-title {
   margin-top: 2px;
-  font-size: 19px;
+  font-size: var(--size-title-small);
   line-height: 1.2;
 }
 
@@ -1938,7 +1984,7 @@ kbd {
 .envelope-label {
   margin: 14px 0 6px;
   color: var(--muted);
-  font-size: 13.5px;
+  font-size: var(--size-label-small);
 }
 
 .envelope-close {
@@ -1982,7 +2028,7 @@ kbd {
   padding: 0 2px 0 9px;
   border: 0;
   background: none;
-  font-size: 14px;
+  font-size: var(--size-ui-small);
   white-space: nowrap;
 }
 
@@ -2034,7 +2080,7 @@ kbd {
   border: 1px dashed var(--hint-border);
   border-radius: 6px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--size-ui-small);
   font-style: italic;
 }
 
@@ -2049,16 +2095,17 @@ kbd {
   border: 1px solid var(--print-soft);
   border-radius: 6px;
   background: var(--piece);
-  font-size: 14px;
+  font-size: var(--size-ui-small);
 }
 
 /* Where there's no room beside the scene: a drawer on the page's right edge, with a tab as its
    handle. Closed, it's pushed off the edge so only the tab shows. */
+/* Below side panels (which slide over the page in a narrow window) and menus. */
 .envelope-drawer {
   position: absolute;
   top: 64px;
   right: 0;
-  z-index: 11;
+  z-index: 4;
   display: none;
   width: min(300px, calc(100% - 64px));
   transform: translateX(100%);
@@ -2098,7 +2145,7 @@ kbd {
 }
 
 .envelope-tab-label {
-  font-size: 13.5px;
+  font-size: var(--size-label-small);
   letter-spacing: 0.1em;
   writing-mode: vertical-rl;
 }
@@ -2126,6 +2173,7 @@ kbd {
 }
 
 .envelope-backdrop {
+  z-index: 3;
   display: none;
 }
 
@@ -2327,7 +2375,7 @@ kbd {
   border: 1px dashed var(--print-soft);
   border-radius: 6px;
   color: var(--muted);
-  font-size: 14.5px;
+  font-size: var(--size-ui);
   font-style: italic;
 }
 
@@ -2379,7 +2427,7 @@ kbd {
 .panel-head h2 {
   flex: 1;
   margin: 0;
-  font-size: 18px;
+  font-size: var(--size-title-small);
 }
 
 .panel-head .back {
@@ -2494,7 +2542,7 @@ kbd {
 
 .version-words {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--size-count);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2505,13 +2553,13 @@ kbd {
   border-radius: 999px;
   background: color-mix(in srgb, var(--link) 16%, transparent);
   color: var(--link);
-  font-size: 14px;
+  font-size: var(--size-label-small);
 }
 
 .version-message {
   grid-column: 2 / 4;
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--size-ui-small);
 }
 
 .version-heading {
@@ -2523,7 +2571,7 @@ kbd {
 
 .version-heading h3 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--size-title-small);
 }
 
 .history-panel .actions {
@@ -2547,7 +2595,7 @@ kbd {
 .legend {
   margin: 18px 0 8px;
   color: var(--muted);
-  font-size: 14px;
+  font-size: var(--size-ui-small);
 }
 
 .diff {

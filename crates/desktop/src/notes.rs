@@ -74,7 +74,7 @@ pub fn NotesList(
         view! {
             <li class="note-row" class:current=is_current>
                 <button class="note-title" title=note.summary.clone() on:click=move |_| on_open(key.clone())>
-                    <Icon glyph=kind_glyph(&note.kind) size=15 />
+                    <Icon glyph=kind_glyph(&note.kind) size=14 />
                     <span class="note-label">{note.title.clone()}</span>
                 </button>
             </li>

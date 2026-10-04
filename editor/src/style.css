@@ -19,6 +19,7 @@
 }
 
 .needle-prose {
+  letter-spacing: normal;
   max-width: 680px;
   margin: 0 auto;
   padding: 56px 24px 40vh;
