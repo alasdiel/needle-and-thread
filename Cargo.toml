@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/vault", "crates/vcs", "crates/desktop", "crates/desktop/src-tauri"]
+members = ["crates/core", "crates/vault", "crates/vcs", "crates/index", "crates/desktop", "crates/desktop/src-tauri"]
 # The desktop frontend only builds for wasm32 (via trunk), so plain `cargo build`/`cargo test`
 # at the root skips it.
-default-members = ["crates/core", "crates/vault", "crates/vcs", "crates/desktop/src-tauri"]
+default-members = ["crates/core", "crates/vault", "crates/vcs", "crates/index", "crates/desktop/src-tauri"]
 
 [workspace.package]
 version = "0.1.0"
@@ -30,4 +30,5 @@ opt-level = 3
 needle-core = { path = "crates/core" }
 needle-vault = { path = "crates/vault" }
 needle-vcs = { path = "crates/vcs" }
+needle-index = { path = "crates/index" }
 serde = { version = "1", features = ["derive"] }

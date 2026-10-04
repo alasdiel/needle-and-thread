@@ -29,6 +29,44 @@ pub(crate) fn visible_text(markdown: &str) -> String {
     out
 }
 
+/// A scene or note as plain text, for searching and quoting: what a reader sees, without
+/// Markdown's markers. Paragraphs stay on lines of their own; scene breaks become blank lines.
+pub fn plain_text(markdown: &str) -> String {
+    let mut out = String::with_capacity(markdown.len());
+    for line in visible_text(markdown).lines() {
+        let trimmed = line.trim();
+        if matches!(trimmed, "---" | "***" | "* * *") {
+            out.push('\n');
+            continue;
+        }
+        let mut text = trimmed.trim_start_matches('>').trim_start();
+        text = text.trim_start_matches('#').trim_start();
+        if let Some(rest) = text.strip_prefix("- ").or_else(|| text.strip_prefix("+ ")) {
+            text = rest;
+        } else if let Some((number, rest)) = text.split_once(". ")
+            && !number.is_empty()
+            && number.chars().all(|c| c.is_ascii_digit())
+        {
+            text = rest;
+        }
+        let mut chars = text.chars().peekable();
+        while let Some(c) = chars.next() {
+            match c {
+                // Emphasis markers, and the backslash of an escaped character.
+                '*' => {}
+                '\\' => {
+                    if let Some(next) = chars.next() {
+                        out.push(next);
+                    }
+                }
+                c => out.push(c),
+            }
+        }
+        out.push('\n');
+    }
+    out
+}
+
 /// Counts words the way the editor does: runs of letters or digits, joined across an inner
 /// apostrophe or hyphen ("don't", "well-known").
 pub fn count_words(text: &str) -> usize {
@@ -61,6 +99,12 @@ mod tests {
         assert_eq!(count_words("Mara’s ship—the *Gull*—sank."), 5);
         assert_eq!(count_words("don't stop, well-known 1998"), 4);
         assert_eq!(count_words("trailing - dash and 'quotes'"), 4);
+    }
+
+    #[test]
+    fn plain_text_drops_markdown_markers() {
+        let md = "## The *harbour*\n\n> [[Mara Venn|Mara]] said \\*no\\*.\n\n---\n\n- one\n1. two <u>three</u>\n";
+        assert_eq!(plain_text(md), "The harbour\n\nMara said *no*.\n\n\n\none\ntwo three\n");
     }
 
     #[test]

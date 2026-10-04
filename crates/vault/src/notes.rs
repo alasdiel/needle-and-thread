@@ -72,12 +72,11 @@ impl Notes {
         Ok(file)
     }
 
-    /// Every note, sorted by type and then title. A note with a header that can't be read is
-    /// still listed, under its file name, so a typo never hides it.
-    pub fn list(&self) -> Result<Vec<NoteInfo>> {
-        let mut notes = Vec::new();
+    /// Every note's path, without reading any of them, in no particular order.
+    pub fn paths(&self) -> Result<Vec<String>> {
+        let mut paths = Vec::new();
         if !self.root.is_dir() {
-            return Ok(notes);
+            return Ok(paths);
         }
         for entry in fs::read_dir(&self.root)? {
             let path = entry?.path();
@@ -86,15 +85,21 @@ impl Notes {
             };
             if path.is_dir() {
                 for inner in fs::read_dir(&path)? {
-                    let inner = inner?.path();
-                    if let Some(stem) = markdown_stem(&inner) {
-                        notes.push(self.info(&format!("{name}/{stem}"))?);
+                    if let Some(stem) = markdown_stem(&inner?.path()) {
+                        paths.push(format!("{name}/{stem}"));
                     }
                 }
             } else if let Some(stem) = markdown_stem(&path) {
-                notes.push(self.info(stem)?);
+                paths.push(stem.to_owned());
             }
         }
+        Ok(paths)
+    }
+
+    /// Every note, sorted by type and then title. A note with a header that can't be read is
+    /// still listed, under its file name, so a typo never hides it.
+    pub fn list(&self) -> Result<Vec<NoteInfo>> {
+        let mut notes = self.paths()?.iter().map(|path| self.info(path)).collect::<Result<Vec<_>>>()?;
         let rank = |kind: NoteKind| NoteKind::ALL.iter().position(|k| *k == kind);
         notes.sort_by_cached_key(|n| (rank(n.kind), n.title.to_lowercase(), n.path.clone()));
         Ok(notes)
