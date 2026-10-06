@@ -6,6 +6,7 @@ use leptos::{prelude::*, task::spawn_local};
 use needle_core::project::{NoteKind, ProjectKind};
 use needle_core::spell::Speller;
 
+use crate::closing::BeforeClose;
 use crate::editor::{Editor, EditorHandle, Typography};
 use crate::envelope::{self, EnvelopeCard};
 use crate::history::HistoryPanel;
@@ -140,7 +141,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let pending_seam = StoredValue::new(None::<u32>);
     let revision = RwSignal::new(0u32);
     let new_project = RwSignal::new(None::<String>);
-    tauri::listen("snapshot-taken", move || {
+    let _ = tauri::listen("snapshot-taken", move || {
         revision.try_update(|r| *r += 1);
     });
 
@@ -154,32 +155,56 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     };
     let report = move |e: String| error.set(Some(e));
 
+    // The latest save, resolved once it's done. Saves land in order (see `save_scene`), so by
+    // then every earlier one is done too.
+    let last_save = StoredValue::new_local(None::<js_sys::Promise>);
     let on_change = move |md: String, count: u32| {
         words.set(count as usize);
         markdown.set(md.clone());
-        if let Some(key) = note.with_untracked(|n| n.as_ref().map(NoteView::key)) {
-            save_state.set(SaveState::Saving);
-            spawn_local(async move {
-                save_state.set(match tauri::save_note(&key, &md).await {
-                    Ok(()) => SaveState::Saved,
-                    Err(e) => SaveState::Failed(e),
-                });
-            });
-            return;
-        }
-        let (Some(p), Some(s)) = (project.get_untracked(), current()) else { return };
-        live_words.set(Some((s.clone(), count as usize)));
+        let save: tauri::LocalFuture<Result<(), String>> =
+            if let Some(key) = note.with_untracked(|n| n.as_ref().map(NoteView::key)) {
+                Box::pin(async move { tauri::save_note(&key, &md).await })
+            } else {
+                let (Some(p), Some(s)) = (project.get_untracked(), current()) else { return };
+                live_words.set(Some((s.clone(), count as usize)));
+                Box::pin(async move {
+                    let saved = tauri::save_scene(&p, &s, &md).await;
+                    if saved.is_ok() {
+                        names_revision.update(|r| *r += 1);
+                    }
+                    saved
+                })
+            };
         save_state.set(SaveState::Saving);
-        spawn_local(async move {
-            save_state.set(match tauri::save_scene(&p, &s, &md).await {
-                Ok(()) => {
-                    names_revision.update(|r| *r += 1);
-                    SaveState::Saved
-                }
+        let save = wasm_bindgen_futures::future_to_promise(async move {
+            save_state.set(match save.await {
+                Ok(()) => SaveState::Saved,
                 Err(e) => SaveState::Failed(e),
             });
+            Ok(wasm_bindgen::JsValue::UNDEFINED)
         });
+        last_save.set_value(Some(save));
     };
+
+    // Before the window closes: saves what's being typed and waits for it to land.
+    BeforeClose::set(move || {
+        Box::pin(async move {
+            flush();
+            // The editor counts a failed save as done, so after one it's tried again.
+            if matches!(save_state.get_untracked(), SaveState::Failed(_))
+                && let Some((md, count)) = editor.with_value(|h| h.as_ref().map(|h| (h.markdown(), h.word_count())))
+            {
+                on_change(md, count);
+            }
+            if let Some(save) = last_save.get_value() {
+                let _ = wasm_bindgen_futures::JsFuture::from(save).await;
+            }
+            match save_state.try_get_untracked() {
+                Some(SaveState::Failed(e)) => Err(e),
+                _ => Ok(()),
+            }
+        })
+    });
 
     let close_scene = move || {
         scene.set(None);

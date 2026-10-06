@@ -1,5 +1,6 @@
 use leptos::{prelude::*, task::spawn_local};
 
+use crate::closing::BeforeClose;
 use crate::settings::Prefs;
 use crate::tauri::{self, VaultView};
 use crate::welcome::Welcome;
@@ -15,6 +16,7 @@ pub fn App() -> impl IntoView {
     let prefs = Prefs::load();
     provide_context(prefs);
     Effect::new(move |_| prefs.appearance.get().apply());
+    BeforeClose::provide();
 
     spawn_local(async move {
         match tauri::current_vault().await {

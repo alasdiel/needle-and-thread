@@ -20,12 +20,14 @@ extern "C" {
 /// A boxed future, for passing commands around (they run on the browser's single thread).
 pub type LocalFuture<T> = Pin<Box<dyn Future<Output = T>>>;
 
-/// Calls `handler` every time the backend emits `event`, for the rest of the app's life.
-pub fn listen(event: &str, mut handler: impl FnMut() + 'static) {
+/// Calls `handler` every time the backend emits `event`, for the rest of the app's life. The
+/// promise resolves once the listener is in place.
+pub fn listen(event: &str, mut handler: impl FnMut() + 'static) -> js_sys::Promise {
     let closure = Closure::<dyn FnMut(JsValue)>::new(move |_payload: JsValue| handler());
-    let _ = listen_js(event, &closure);
+    let listening = listen_js(event, &closure);
     // The listener lives as long as the window, so its closure must too.
     closure.forget();
+    listening
 }
 
 /// Command arguments. Tauri matches them to the Rust parameters by name.
@@ -504,4 +506,16 @@ pub async fn spell_dictionary() -> Result<SpellDictionary, String> {
 
 pub async fn add_to_dictionary(word: &str) -> Result<(), String> {
     call("add_to_dictionary", Args::default().str("word", word)).await
+}
+
+// --- Closing ----------------------------------------------------------------------------
+
+/// Tells the backend to hold closes until `finish_close` from now on.
+pub async fn close_listening() -> Result<(), String> {
+    call("close_listening", Args::default()).await
+}
+
+/// Lets the window close, or with `error`, asks whether to close without the latest changes.
+pub async fn finish_close(error: Option<&str>) -> Result<(), String> {
+    call("finish_close", Args::default().opt("error", error)).await
 }
