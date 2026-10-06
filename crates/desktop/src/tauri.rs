@@ -348,6 +348,10 @@ pub async fn set_scene_status(project: &str, scene: &str, status: &str) -> Resul
     call("set_scene_status", scene_args(project, scene).str("status", status)).await
 }
 
+pub async fn set_scene_summary(project: &str, scene: &str, summary: &str) -> Result<OutlineView, String> {
+    call("set_scene_summary", scene_args(project, scene).str("summary", summary)).await
+}
+
 pub async fn cut_scene(project: &str, scene: &str) -> Result<OutlineView, String> {
     call("cut_scene", scene_args(project, scene)).await
 }

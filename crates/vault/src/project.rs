@@ -226,6 +226,16 @@ impl Project {
         info(slug, &scene)
     }
 
+    /// Sets a scene's summary, as one paragraph (line breaks become spaces). An empty summary
+    /// takes the field out of the header.
+    pub fn set_summary(&self, slug: &str, summary: &str) -> Result<SceneInfo> {
+        let summary = summary.split_whitespace().collect::<Vec<_>>().join(" ");
+        self.update_header(slug, |h| match summary.as_str() {
+            "" => h.remove("summary"),
+            summary => h.set_str("summary", summary),
+        })
+    }
+
     /// Moves a scene to the cut bin (`cut/`), noting when and from where, and takes it out of
     /// the outline. Nothing is deleted.
     pub fn cut_scene(&self, slug: &str) -> Result<PathBuf> {

@@ -552,6 +552,18 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         });
     };
 
+    let set_summary = move |summary: String| {
+        with_scene(&move |p, s| {
+            let summary = summary.clone();
+            spawn_local(async move {
+                match tauri::set_scene_summary(&p, &s, &summary).await {
+                    Ok(view) => apply(view),
+                    Err(e) => report(e),
+                }
+            });
+        });
+    };
+
     let set_status = move |status: String| {
         with_scene(&move |p, s| {
             let status = status.clone();
@@ -807,6 +819,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let has_scene = move || scene.with(Option::is_some);
     let has_note = move || note.with(Option::is_some);
     let scene_title = Signal::derive(move || scene.with(|s| s.as_ref().map(|s| s.title.clone()).unwrap_or_default()));
+    let scene_summary = Signal::derive(move || scene.with(|s| s.as_ref().map(|s| s.summary.clone()).unwrap_or_default()));
     let has_doc = move || has_scene() || has_note();
     let project_kind = Signal::derive(move || {
         outline.with(|o| o.as_ref().map_or(ProjectKind::Fiction, |o| notes::project_kind(&o.project.kind)))
@@ -1314,11 +1327,13 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                                 <EnvelopeCard
                                     names=scene_names
                                     title=scene_title
+                                    summary=scene_summary
                                     piece=piece_number
                                     notes=notes_list
                                     kind=project_kind
                                     place="beside"
                                     on_set=set_scene_names
+                                    on_summary=set_summary
                                     on_open_note=open_note
                                     on_make_note=make_linked_note
                                 />
@@ -1365,11 +1380,13 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                             <EnvelopeCard
                                 names=scene_names
                                 title=scene_title
+                                summary=scene_summary
                                 piece=piece_number
                                 notes=notes_list
                                 kind=project_kind
                                 place="over"
                                 on_set=set_scene_names
+                                on_summary=set_summary
                                 on_open_note=move |key| {
                                     envelope_open.set(false);
                                     open_note(key);

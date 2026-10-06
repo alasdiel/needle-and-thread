@@ -329,6 +329,12 @@ pub fn set_scene_status(state: State<'_, AppState>, project: String, scene: Stri
     change(&state, &project, |p| p.update_header(&scene, |h| h.set_str("status", &status))).map(|(_, o)| o)
 }
 
+/// Sets a scene's summary; an empty one is taken out of its header.
+#[tauri::command]
+pub fn set_scene_summary(state: State<'_, AppState>, project: String, scene: String, summary: String) -> Result<OutlineView, String> {
+    change(&state, &project, |p| p.set_summary(&scene, &summary)).map(|(_, o)| o)
+}
+
 #[tauri::command]
 pub fn cut_scene(state: State<'_, AppState>, project: String, scene: String) -> Result<OutlineView, String> {
     change(&state, &project, |p| p.cut_scene(&scene)).map(|(_, o)| o)

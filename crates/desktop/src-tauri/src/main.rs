@@ -54,6 +54,7 @@ fn main() {
             workspace::create_scene,
             workspace::rename_scene,
             workspace::set_scene_status,
+            workspace::set_scene_summary,
             workspace::cut_scene,
             workspace::split_scene,
             workspace::merge_scene,

@@ -122,6 +122,23 @@ fn header_edits_keep_the_text_and_other_fields() {
 }
 
 #[test]
+fn a_summary_is_one_paragraph_and_an_empty_one_is_removed() {
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    project.save_body("untitled-scene", "Text.\n").unwrap();
+    let path = project.scene_path("untitled-scene").unwrap();
+
+    let info = project.set_summary("untitled-scene", "  Mara trades the compass\nand  learns the ledger has left port. ").unwrap();
+    assert_eq!(info.summary, "Mara trades the compass and learns the ledger has left port.");
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(text.contains("summary = \"Mara trades the compass and learns the ledger has left port.\""), "{text}");
+    assert!(text.ends_with("+++\n\nText.\n"), "{text}");
+
+    assert_eq!(project.set_summary("untitled-scene", " \n ").unwrap().summary, "");
+    assert!(!fs::read_to_string(&path).unwrap().contains("summary"));
+}
+
+#[test]
 fn cutting_a_scene_moves_it_to_the_bin() {
     let (_dir, vault) = vault();
     let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();

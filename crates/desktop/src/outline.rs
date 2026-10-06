@@ -153,7 +153,10 @@ pub fn OutlineTree(
         let slug = scene.slug.clone();
         let key = format!("scene:{slug}");
         let progress = status::progress(&scene.status, &statuses);
-        let tooltip = format!("Status: {}", scene.status);
+        let tooltip = match scene.summary.as_str() {
+            "" => format!("Status: {}", scene.status),
+            summary => format!("{summary}\nStatus: {}", scene.status),
+        };
         let is_current = {
             let slug = slug.clone();
             move || current.get().as_deref() == Some(slug.as_str())

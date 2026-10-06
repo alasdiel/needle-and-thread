@@ -1975,6 +1975,46 @@ kbd {
   line-height: 1.2;
 }
 
+/* The scene's summary: printed on the card until clicked, then a field in the same place and
+   type, so the text doesn't move. */
+.envelope-summary,
+.envelope-summary-field {
+  display: block;
+  width: 100%;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font: italic var(--size-ui) / 1.5 var(--font-text);
+  letter-spacing: normal;
+  text-align: left;
+  cursor: text;
+}
+
+.envelope-summary:hover {
+  border-radius: 3px;
+  outline: 1px dashed var(--print-soft);
+  outline-offset: 4px;
+  background: none;
+}
+
+.envelope-summary.empty {
+  color: var(--muted);
+}
+
+.envelope-summary-field {
+  width: calc(100% + 18px);
+  margin: 6px -9px 0;
+  padding: 1px 8px;
+  border: 1px solid var(--print-soft);
+  border-radius: 6px;
+  background: var(--piece);
+  overflow: hidden;
+  resize: none;
+}
+
 .envelope-rule {
   margin: 12px 0 0;
   border: 0;
