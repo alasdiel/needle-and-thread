@@ -1,4 +1,5 @@
-//! History panel: a scene's snapshots, what changed since each one, and restoring or naming them.
+//! History panel: a scene's or note's snapshots, what changed since each one, and restoring or
+//! naming them.
 
 use leptos::{prelude::*, task::spawn_local};
 use needle_core::diff::{self, Kind, Segment};
@@ -7,12 +8,49 @@ use wasm_bindgen::JsValue;
 use crate::editor::EditorHandle;
 use crate::icons::{Glyph, Icon};
 use crate::outline::format_words;
-use crate::tauri::{self, VersionInfo};
+use crate::tauri::{self, NoteKey, VersionInfo};
+
+/// What the History panel follows: the open scene or note.
+#[derive(Clone, Debug, PartialEq)]
+pub enum HistoryTarget {
+    Scene { project: String, scene: String },
+    Note(NoteKey),
+}
+
+impl HistoryTarget {
+    async fn versions(&self) -> Result<Vec<VersionInfo>, String> {
+        match self {
+            Self::Scene { project, scene } => tauri::scene_history(project, scene).await,
+            Self::Note(note) => tauri::note_history(note).await,
+        }
+    }
+
+    async fn version(&self, id: &str) -> Result<String, String> {
+        match self {
+            Self::Scene { project, scene } => tauri::scene_version(project, scene, id).await,
+            Self::Note(note) => tauri::note_version(note, id).await,
+        }
+    }
+
+    async fn restore(&self, id: &str, label: &str) -> Result<String, String> {
+        match self {
+            Self::Scene { project, scene } => tauri::restore_version(project, scene, id, label).await,
+            Self::Note(note) => tauri::restore_note_version(note, id, label).await,
+        }
+    }
+
+    fn noun(&self) -> &'static str {
+        match self {
+            Self::Scene { .. } => "scene",
+            Self::Note(_) => "note",
+        }
+    }
+}
 
 #[component]
 pub fn HistoryPanel(
-    /// The open scene, as (project, scene).
-    #[prop(into)] target: Signal<Option<(String, String)>>,
+    /// The open scene or note.
+    #[prop(into)] target: Signal<Option<HistoryTarget>>,
     /// Bumped whenever a snapshot is taken or named.
     #[prop(into)] revision: Signal<u32>,
     editor: StoredValue<Option<EditorHandle>, LocalStorage>,
@@ -29,9 +67,9 @@ pub fn HistoryPanel(
 
     Effect::new(move |_| {
         revision.track();
-        let Some((project, scene)) = target.get() else { return };
+        let Some(doc) = target.get() else { return };
         spawn_local(async move {
-            match tauri::scene_history(&project, &scene).await {
+            match doc.versions().await {
                 Ok(list) => versions.set(list),
                 Err(e) => error.set(Some(e)),
             }
@@ -52,7 +90,7 @@ pub fn HistoryPanel(
     };
 
     let select = move |version: VersionInfo| {
-        let Some((project, scene)) = target.get_untracked() else { return };
+        let Some(doc) = target.get_untracked() else { return };
         let current = editor.with_value(|h| h.as_ref().map(EditorHandle::markdown)).unwrap_or_default();
         let id = version.id.clone();
         changes.set(None);
@@ -60,7 +98,7 @@ pub fn HistoryPanel(
         name_input.set(version.name.clone().unwrap_or_default());
         selected.set(Some(version));
         spawn_local(async move {
-            match tauri::scene_version(&project, &scene, &id).await {
+            match doc.version(&id).await {
                 Ok(old) => changes.set(Some(diff::words(&old, &current))),
                 Err(e) => error.set(Some(e)),
             }
@@ -68,11 +106,11 @@ pub fn HistoryPanel(
     };
 
     let restore = move |_| {
-        let (Some((project, scene)), Some(version)) = (target.get_untracked(), selected.get_untracked()) else { return };
+        let (Some(doc), Some(version)) = (target.get_untracked(), selected.get_untracked()) else { return };
         flush_editor();
         let label = time_label(version.time);
         spawn_local(async move {
-            match tauri::restore_version(&project, &scene, &version.id, &label).await {
+            match doc.restore(&version.id, &label).await {
                 Ok(markdown) => {
                     selected.set(None);
                     on_restore(markdown);
@@ -142,7 +180,9 @@ pub fn HistoryPanel(
             </div>
             <div class="panel-body">
                 <Show when=move || versions.with(Vec::is_empty)>
-                    <p class="muted">"No snapshots of this scene yet."</p>
+                    <p class="muted">
+                        {move || format!("No snapshots of this {} yet.", target.with(|t| t.as_ref().map_or("scene", HistoryTarget::noun)))}
+                    </p>
                 </Show>
                 <ol class="versions">
                     <For each=move || versions.get() key=|v| (v.id.clone(), v.name.clone()) children=row />

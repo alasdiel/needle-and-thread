@@ -2,18 +2,19 @@
 
 use std::{
     env,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{Mutex, MutexGuard},
     thread,
     time::{Duration, Instant},
 };
 
-use needle_core::{scene::SceneFile, settings::SnapshotSettings, words::count_markdown_words};
+use needle_core::{names::Owner, scene::SceneFile, settings::SnapshotSettings, words::count_markdown_words};
 use needle_vault::Vault;
 use needle_vcs::{Scheduler, Vault as Repo};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::notes;
 use crate::state::{AppState, OpenVault, OrString};
 
 /// Tells the frontend to refresh the History panel.
@@ -95,6 +96,15 @@ pub fn start_timer(app: AppHandle) {
 /// A scene's path relative to the vault, as the history stores it.
 fn scene_path(open: &OpenVault, project: &str, scene: &str) -> Result<PathBuf, String> {
     let path = open.vault.project(project).or_string()?.scene_path(scene).or_string()?;
+    relative(open, &path)
+}
+
+/// A note's path relative to the vault. Like a scene's, it never changes once made.
+fn note_path(open: &OpenVault, owner: &Owner, path: &str) -> Result<PathBuf, String> {
+    relative(open, &open.vault.notes_of(owner).or_string()?.file_path(path).or_string()?)
+}
+
+fn relative(open: &OpenVault, path: &Path) -> Result<PathBuf, String> {
     path.strip_prefix(open.vault.root()).map(PathBuf::from).or_string()
 }
 
@@ -109,40 +119,53 @@ pub struct VersionInfo {
 
 #[tauri::command]
 pub fn scene_history(state: State<'_, AppState>, project: String, scene: String) -> Result<Vec<VersionInfo>, String> {
-    state.with(|open| {
-        let path = scene_path(open, &project, &scene)?;
-        let repo = open.history.repo();
-        repo.history(&path)
-            .or_string()?
-            .into_iter()
-            .map(|v| {
-                let text = repo.read(&v.id, &path).or_string()?.unwrap_or_default();
-                Ok(VersionInfo {
-                    words: count_markdown_words(&SceneFile::parse(&text).markdown()),
-                    id: v.id,
-                    time: v.time,
-                    message: v.message,
-                    name: v.name,
-                })
+    state.with(|open| versions(open, &scene_path(open, &project, &scene)?))
+}
+
+#[tauri::command]
+pub fn note_history(state: State<'_, AppState>, owner: String, world: bool, path: String) -> Result<Vec<VersionInfo>, String> {
+    state.with(|open| versions(open, &note_path(open, &notes::owner(owner, world), &path)?))
+}
+
+/// The snapshots that changed the file at `path`, newest first.
+fn versions(open: &OpenVault, path: &Path) -> Result<Vec<VersionInfo>, String> {
+    let repo = open.history.repo();
+    repo.history(path)
+        .or_string()?
+        .into_iter()
+        .map(|v| {
+            let text = repo.read(&v.id, path).or_string()?.unwrap_or_default();
+            Ok(VersionInfo {
+                words: count_markdown_words(&SceneFile::parse(&text).markdown()),
+                id: v.id,
+                time: v.time,
+                message: v.message,
+                name: v.name,
             })
-            .collect()
-    })
+        })
+        .collect()
 }
 
 /// The scene's text as of version `id`, without its header.
 #[tauri::command]
 pub fn scene_version(state: State<'_, AppState>, project: String, scene: String, id: String) -> Result<String, String> {
-    state.with(|open| version_text(open, &project, &scene, &id))
+    state.with(|open| version_text(open, &scene_path(open, &project, &scene)?, &id, "scene"))
 }
 
-fn version_text(open: &OpenVault, project: &str, scene: &str, id: &str) -> Result<String, String> {
-    let path = scene_path(open, project, scene)?;
+/// The note's text as of version `id`, without its header.
+#[tauri::command]
+pub fn note_version(state: State<'_, AppState>, owner: String, world: bool, path: String, id: String) -> Result<String, String> {
+    state.with(|open| version_text(open, &note_path(open, &notes::owner(owner, world), &path)?, &id, "note"))
+}
+
+/// `what` names the file in the error, "scene" or "note".
+fn version_text(open: &OpenVault, path: &Path, id: &str, what: &str) -> Result<String, String> {
     let text = open
         .history
         .repo()
-        .read(id, &path)
+        .read(id, path)
         .or_string()?
-        .ok_or("that version doesn't contain this scene")?;
+        .ok_or_else(|| format!("that version doesn't contain this {what}"))?;
     Ok(SceneFile::parse(&text).markdown())
 }
 
@@ -164,12 +187,43 @@ pub fn restore_version(
     label: String,
 ) -> Result<String, String> {
     state.with(|open| {
-        open.history.snapshot(&app, None)?;
-        let markdown = version_text(open, &project, &scene, &id)?;
-        open.vault.project(&project).or_string()?.save_body(&scene, &markdown).or_string()?;
-        open.history.snapshot(&app, Some(&format!("Restored {scene} to {label}")))?;
+        let markdown = version_text(open, &scene_path(open, &project, &scene)?, &id, "scene")?;
+        restore(&app, open, &format!("Restored {scene} to {label}"), || {
+            open.vault.project(&project).or_string()?.save_body(&scene, &markdown).or_string()
+        })?;
         Ok(markdown)
     })
+}
+
+/// Like `restore_version`, for a note: its header (title, aliases) stays.
+#[tauri::command]
+pub fn restore_note_version(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    owner: String,
+    world: bool,
+    path: String,
+    id: String,
+    label: String,
+) -> Result<String, String> {
+    let owner = notes::owner(owner, world);
+    state.with(|open| {
+        let markdown = version_text(open, &note_path(open, &owner, &path)?, &id, "note")?;
+        let name = path.rsplit_once('/').map_or(path.as_str(), |(_, stem)| stem);
+        restore(&app, open, &format!("Restored {name} to {label}"), || {
+            open.vault.notes_of(&owner).or_string()?.save_body(&path, &markdown).or_string()
+        })?;
+        Ok(markdown)
+    })
+}
+
+/// Writes a version back with `save`, between a snapshot of the text it replaces (so that's
+/// never lost) and one with `message`.
+fn restore(app: &AppHandle, open: &OpenVault, message: &str, save: impl FnOnce() -> Result<bool, String>) -> Result<(), String> {
+    open.history.snapshot(app, None)?;
+    save()?;
+    open.history.snapshot(app, Some(message))?;
+    Ok(())
 }
 
 #[tauri::command]

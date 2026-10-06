@@ -476,6 +476,19 @@ pub async fn restore_version(project: &str, scene: &str, id: &str, label: &str) 
     call("restore_version", scene_args(project, scene).str("id", id).str("label", label)).await
 }
 
+pub async fn note_history(note: &NoteKey) -> Result<Vec<VersionInfo>, String> {
+    call("note_history", note_args(note)).await
+}
+
+pub async fn note_version(note: &NoteKey, id: &str) -> Result<String, String> {
+    call("note_version", note_args(note).str("id", id)).await
+}
+
+/// Returns the restored text. `label` describes the version in the snapshot message.
+pub async fn restore_note_version(note: &NoteKey, id: &str, label: &str) -> Result<String, String> {
+    call("restore_note_version", note_args(note).str("id", id).str("label", label)).await
+}
+
 pub async fn name_version(id: &str, name: &str) -> Result<(), String> {
     call("name_version", Args::default().str("id", id).str("name", name)).await
 }

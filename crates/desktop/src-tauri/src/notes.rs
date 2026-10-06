@@ -80,7 +80,8 @@ fn named_view(named: NamedNote) -> NoteView {
     note_view(&named.owner, named.note)
 }
 
-fn owner(slug: String, world: bool) -> Owner {
+/// Whose note a command means: a world folder's with `world`, else a project's.
+pub fn owner(slug: String, world: bool) -> Owner {
     if world { Owner::World(slug) } else { Owner::Project(slug) }
 }
 

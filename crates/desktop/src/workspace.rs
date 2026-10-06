@@ -9,7 +9,7 @@ use needle_core::spell::Speller;
 use crate::closing::BeforeClose;
 use crate::editor::{Editor, EditorHandle, Typography};
 use crate::envelope::{self, EnvelopeCard};
-use crate::history::HistoryPanel;
+use crate::history::{HistoryPanel, HistoryTarget};
 use crate::icons::{Glyph, Icon};
 use crate::links::{LinkBridge, name_words};
 use crate::notes::{self, LinksSwatch, NotesList, Pin};
@@ -306,12 +306,6 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                     if tab.get_untracked() != Tab::Search {
                         tab.set(Tab::Notes);
                     }
-                    // History follows scenes only, for now.
-                    panel.update(|p| {
-                        if *p == Some(Panel::History) {
-                            *p = None;
-                        }
-                    });
                     save_state.set(SaveState::Saved);
                     request_animation_frame(move || {
                         editor.with_value(|h| {
@@ -780,7 +774,11 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     // --- What the views show ---------------------------------------------------------------
 
     let toggle = move |which: Panel| panel.update(|p| *p = if *p == Some(which) { None } else { Some(which) });
-    let target = Signal::derive(move || project.get().zip(scene.get().map(|s| s.slug)));
+    // A memo, so retitling the note or changing the scene's status doesn't reload the history.
+    let target = Memo::new(move |_| match note.get() {
+        Some(n) => Some(HistoryTarget::Note(n.key())),
+        None => project.get().zip(scene.get()).map(|(project, s)| HistoryTarget::Scene { project, scene: s.slug }),
+    });
     let current_slug = Signal::derive(move || scene.get().map(|s| s.slug));
     let has_scene = move || scene.with(Option::is_some);
     let has_note = move || note.with(Option::is_some);
@@ -1132,8 +1130,6 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                                 <TypographySettings typography=typography />
                             </Show>
                         </div>
-                    </Show>
-                    <Show when=has_scene>
                         <button
                             class="icon-button"
                             title="History"
@@ -1143,6 +1139,8 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                         >
                             <Icon glyph=Glyph::History size=17 />
                         </button>
+                    </Show>
+                    <Show when=has_scene>
                         <div class="popover-anchor">
                             <button
                                 class="icon-button"
