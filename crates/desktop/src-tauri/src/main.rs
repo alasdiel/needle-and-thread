@@ -71,6 +71,7 @@ fn main() {
             notes::note_links,
             notes::link_mention,
             notes::promote_note,
+            notes::cut_note,
             notes::project_settings,
             notes::update_project,
             notes::scene_names,

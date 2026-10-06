@@ -235,6 +235,17 @@ pub fn link_mention(
     })
 }
 
+/// Moves a note to its owner's cut bin.
+#[tauri::command]
+pub fn cut_note(state: State<'_, AppState>, owner: String, world: bool, path: String) -> Result<(), String> {
+    let owner = self::owner(owner, world);
+    state.with(|open| {
+        open.vault.notes_of(&owner).or_string()?.cut(&path).or_string()?;
+        open.history.edited();
+        Ok(())
+    })
+}
+
 /// Moves a project's note into the project's world.
 #[tauri::command]
 pub fn promote_note(state: State<'_, AppState>, project: String, path: String) -> Result<NoteView, String> {

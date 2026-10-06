@@ -70,7 +70,7 @@ impl Project {
 
     /// The project's own notes, in `notes/`.
     pub fn notes(&self) -> Notes {
-        Notes::new(Owner::Project(self.slug.clone()), self.root.join("notes"), self.templates.clone())
+        Notes::new(Owner::Project(self.slug.clone()), self.root.join("notes"), self.root.join("cut"), self.templates.clone())
     }
 
     /// Saves new settings to `project.toml`. The file is the app's, so it's rewritten whole.

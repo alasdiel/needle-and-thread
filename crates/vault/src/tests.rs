@@ -127,6 +127,31 @@ fn cutting_a_scene_moves_it_to_the_bin() {
 }
 
 #[test]
+fn cutting_a_note_moves_it_to_its_owners_bin() {
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    let mara = project.notes().create(NoteKind::Character, "Mara Venn").unwrap();
+    project.notes().save_body(&mara.path, "Harbor pilot.\n").unwrap();
+    let cut = project.notes().cut(&mara.path).unwrap();
+
+    assert!(project.notes().list().unwrap().is_empty());
+    assert!(cut.starts_with(project.root().join("cut")));
+    let text = fs::read_to_string(cut).unwrap();
+    assert!(text.contains("cut_at = \"20"), "{text}");
+    assert!(text.contains("cut_from_note = \"characters/mara-venn\""), "{text}");
+    assert!(text.ends_with("Harbor pilot.\n"));
+
+    // A world keeps its notes in its own folder, so its bin is there too, and isn't a type.
+    let world = vault.create_world("Glass Coast").unwrap();
+    let teodor = world.notes().create(NoteKind::Character, "Old Teodor").unwrap();
+    world.notes().create(NoteKind::Place, "Night Market").unwrap();
+    let cut = world.notes().cut(&teodor.path).unwrap();
+    assert!(cut.starts_with(world.root().join("cut")));
+    let left: Vec<_> = world.notes().list().unwrap().into_iter().map(|n| n.title).collect();
+    assert_eq!(left, ["Night Market"]);
+}
+
+#[test]
 fn splitting_puts_the_rest_in_a_new_scene_after() {
     let (_dir, vault) = vault();
     let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();

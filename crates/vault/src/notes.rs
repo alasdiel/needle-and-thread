@@ -5,6 +5,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use needle_core::header::Header;
 use needle_core::id::{make_id, slugify};
@@ -13,7 +14,7 @@ use needle_core::project::NoteKind;
 use needle_core::scene::SceneFile;
 
 use crate::doc;
-use crate::files::{checked_name, unique_file, write_atomically};
+use crate::files::{checked_name, unique_file, utc_iso, utc_stamp, write_atomically};
 use crate::Result;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +34,8 @@ pub struct NoteInfo {
 pub struct Notes {
     owner: Owner,
     root: PathBuf,
+    /// The owner's cut bin. A world's sits beside its type folders, so listing skips it.
+    bin: PathBuf,
     templates: PathBuf,
 }
 
@@ -52,8 +55,8 @@ const DEFAULT_TEMPLATES: [(NoteKind, &str); 7] = [
 const OWN_FIELDS: [&str; 3] = ["id", "type", "title"];
 
 impl Notes {
-    pub(crate) fn new(owner: Owner, root: PathBuf, templates: PathBuf) -> Self {
-        Self { owner, root, templates }
+    pub(crate) fn new(owner: Owner, root: PathBuf, bin: PathBuf, templates: PathBuf) -> Self {
+        Self { owner, root, bin, templates }
     }
 
     pub fn owner(&self) -> &Owner {
@@ -80,6 +83,9 @@ impl Notes {
         }
         for entry in fs::read_dir(&self.root)? {
             let path = entry?.path();
+            if path == self.bin {
+                continue;
+            }
             let Some(name) = path.file_name().and_then(|n| n.to_str()).filter(|n| !n.starts_with('.')) else {
                 continue;
             };
@@ -140,6 +146,25 @@ impl Notes {
         write_atomically(&file, note.to_string().as_bytes())?;
         let stem = markdown_stem(&file).unwrap_or_default();
         Ok(info(&format!("{}/{stem}", kind.folder()), &note))
+    }
+
+    /// Moves a note to its owner's cut bin (`cut/`), noting when and where it was. Nothing is
+    /// deleted; links to it show as missing until a note has that name again.
+    pub fn cut(&self, path: &str) -> Result<PathBuf> {
+        let file = self.file_path(path)?;
+        let mut note = self.read(path)?;
+        let now = SystemTime::now();
+        let mut header = note.header()?;
+        header.set_str("cut_at", &utc_iso(now));
+        header.set_str("cut_from_note", path);
+        note.set_header(&header);
+
+        // Copy, then remove: a crash in between leaves two copies, never none.
+        let stem = path.rsplit_once('/').map_or(path, |(_, stem)| stem);
+        let cut_path = unique_file(&self.bin, &format!("{}-{stem}", utc_stamp(now)), "md");
+        write_atomically(&cut_path, note.to_string().as_bytes())?;
+        fs::remove_file(file)?;
+        Ok(cut_path)
     }
 
     /// Changes a note with `edit`, writing it back if anything changed.

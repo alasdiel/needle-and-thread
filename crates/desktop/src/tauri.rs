@@ -408,6 +408,10 @@ pub async fn create_note(project: &str, kind: &str, title: &str) -> Result<NoteV
     call("create_note", Args::default().str("project", project).str("kind", kind).str("title", title)).await
 }
 
+pub async fn cut_note(note: &NoteKey) -> Result<(), String> {
+    call("cut_note", note_args(note)).await
+}
+
 pub async fn rename_note(note: &NoteKey, title: &str) -> Result<NoteView, String> {
     call("rename_note", note_args(note).str("title", title)).await
 }

@@ -760,6 +760,30 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         });
     };
 
+    // Like cutting a scene: the next note in the list opens in its place.
+    let cut_note = move || {
+        let (Some(p), Some(n)) = (project.get_untracked(), note.get_untracked()) else { return };
+        let key = n.key();
+        let next = notes_list.with_untracked(|list| {
+            let i = list.iter().position(|x| x.key() == key)?;
+            list.get(i + 1).or_else(|| i.checked_sub(1).and_then(|j| list.get(j))).map(NoteView::key)
+        });
+        flush();
+        spawn_local(async move {
+            match tauri::cut_note(&key).await {
+                Ok(()) => {
+                    note.set(None);
+                    load_notes(p);
+                    match next {
+                        Some(next) => open_note(next),
+                        None => close_scene(),
+                    }
+                }
+                Err(e) => report(e),
+            }
+        });
+    };
+
     let open_other_vault = move |_| {
         flush();
         spawn_local(async move {
@@ -1226,6 +1250,14 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                                             </button>
                                         }
                                     }}
+                                    <hr />
+                                    <button role="menuitem" on:click=move |_| {
+                                        show_note_menu.set(false);
+                                        cut_note();
+                                    }>
+                                        <Icon glyph=Glyph::Basket />
+                                        "Move to the cut bin"
+                                    </button>
                                     <Show when=move || prefs.markdown_panel.get()>
                                         <hr />
                                         <button role="menuitem" on:click=move |_| {

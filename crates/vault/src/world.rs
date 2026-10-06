@@ -43,6 +43,6 @@ impl World {
     }
 
     pub fn notes(&self) -> Notes {
-        Notes::new(Owner::World(self.slug.clone()), self.root.clone(), self.templates.clone())
+        Notes::new(Owner::World(self.slug.clone()), self.root.clone(), self.root.join("cut"), self.templates.clone())
     }
 }
