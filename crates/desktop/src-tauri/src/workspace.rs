@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use needle_core::project::ProjectKind;
+use needle_core::settings::{TypographyRule, TypographySettings};
 use needle_vault::{Placement, Project, SceneInfo, Vault};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
@@ -17,6 +18,7 @@ use crate::state::{AppState, OpenVault, OrString};
 pub struct VaultView {
     path: String,
     projects: Vec<ProjectView>,
+    typography: TypographySettings,
 }
 
 #[derive(Serialize, Clone)]
@@ -94,6 +96,7 @@ fn vault_view(vault: &Vault) -> Result<VaultView, String> {
     Ok(VaultView {
         path: vault.root().to_string_lossy().into_owned(),
         projects: vault.projects().or_string()?.iter().map(project_view).collect(),
+        typography: vault.settings().or_string()?.typography,
     })
 }
 
@@ -189,6 +192,12 @@ pub fn open_sample_vault(app: AppHandle, state: State<'_, AppState>) -> Result<V
     let view = vault_view(&vault)?;
     state.open(&app, vault, true)?;
     Ok(view)
+}
+
+/// Switches one of the automatic typography changes, for the whole vault.
+#[tauri::command]
+pub fn set_typography(state: State<'_, AppState>, rule: TypographyRule, on: bool) -> Result<(), String> {
+    state.with(|open| open.vault.set_typography(rule, on).or_string())
 }
 
 fn pick_folder(app: &AppHandle, title: &str) -> Option<PathBuf> {

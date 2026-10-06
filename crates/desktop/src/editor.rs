@@ -82,26 +82,8 @@ impl EditorHandle {
     }
 }
 
-/// Automatic typography changes, each switchable on its own. Mirrors `Typography` in
-/// editor/src/inputrules.ts.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Typography {
-    pub double_quotes: bool,
-    pub single_quotes: bool,
-    pub em_dash: bool,
-    pub ellipsis: bool,
-}
-
-impl Default for Typography {
-    fn default() -> Self {
-        Self {
-            double_quotes: true,
-            single_quotes: true,
-            em_dash: true,
-            ellipsis: true,
-        }
-    }
-}
+/// The vault's automatic typography changes, as the editor's options take them.
+pub use needle_core::settings::TypographySettings as Typography;
 
 fn options(typography: Typography) -> Object {
     let rules = Object::new();

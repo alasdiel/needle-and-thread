@@ -7,7 +7,7 @@ use needle_core::project::{NoteKind, ProjectKind};
 use needle_core::spell::Speller;
 
 use crate::closing::BeforeClose;
-use crate::editor::{Editor, EditorHandle, Typography};
+use crate::editor::{Editor, EditorHandle};
 use crate::envelope::{self, EnvelopeCard};
 use crate::history::{HistoryPanel, HistoryTarget};
 use crate::icons::{Glyph, Icon};
@@ -127,7 +127,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let words = RwSignal::new(0usize);
     let live_words = RwSignal::<LiveWords>::new(None);
     let markdown = RwSignal::new(String::new());
-    let typography = RwSignal::new(Typography::default());
+    let typography = RwSignal::new(vault.typography);
     let show_typography = RwSignal::new(false);
     let show_settings = RwSignal::new(false);
     let show_scene_menu = RwSignal::new(false);

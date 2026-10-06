@@ -46,6 +46,7 @@ fn main() {
             workspace::open_vault,
             workspace::create_vault,
             workspace::open_sample_vault,
+            workspace::set_typography,
             workspace::create_project,
             workspace::project_outline,
             workspace::open_scene,

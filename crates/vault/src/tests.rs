@@ -3,6 +3,7 @@ use std::fs;
 use needle_core::names::{Owner, Resolution};
 use needle_core::outline::Chapter;
 use needle_core::project::{NoteKind, ProjectKind};
+use needle_core::settings::TypographyRule;
 use tempfile::TempDir;
 
 use super::*;
@@ -31,6 +32,16 @@ fn creating_a_vault_is_idempotent_and_only_vaults_open() {
     assert_eq!(fs::read_to_string(vault.root().join(".needle/vault.toml")).unwrap(), settings);
     assert!(Vault::open(dir.path()).is_err());
     assert_eq!(vault.settings().unwrap().statuses, ["idea", "draft", "revised", "done"]);
+}
+
+#[test]
+fn typography_switches_are_saved_in_the_vault_settings() {
+    let (_dir, vault) = vault();
+    let path = vault.root().join(".needle/vault.toml");
+    let before = fs::read_to_string(&path).unwrap();
+    vault.set_typography(TypographyRule::EmDash, false).unwrap();
+    assert!(!vault.settings().unwrap().typography.em_dash);
+    assert_eq!(fs::read_to_string(&path).unwrap(), before.replace("em_dash = true", "em_dash = false"));
 }
 
 #[test]

@@ -1,51 +1,54 @@
-//! Settings panel for the automatic typography changes, one switch each.
+//! Settings panel for the automatic typography changes, one switch each, saved in the vault.
 
-use leptos::prelude::*;
+use leptos::{prelude::*, task::spawn_local};
+use needle_core::settings::TypographyRule;
 
 use crate::editor::Typography;
+use crate::tauri;
 
 struct Rule {
+    rule: TypographyRule,
     label: &'static str,
     example: &'static str,
     /// Only for what the example doesn't already show.
     note: Option<&'static str>,
-    get: fn(&Typography) -> bool,
-    set: fn(&mut Typography, bool),
 }
 
 const RULES: [Rule; 4] = [
     Rule {
+        rule: TypographyRule::DoubleQuotes,
         label: "Curly double quotes",
         example: "\"Hi\" → “Hi”",
         note: None,
-        get: |t| t.double_quotes,
-        set: |t, on| t.double_quotes = on,
     },
     Rule {
+        rule: TypographyRule::SingleQuotes,
         label: "Curly single quotes",
         example: "'it's' → ‘it’s’",
         note: Some("Includes apostrophes."),
-        get: |t| t.single_quotes,
-        set: |t, on| t.single_quotes = on,
     },
     Rule {
+        rule: TypographyRule::EmDash,
         label: "Em dash",
         example: "-- → —",
         note: Some("--- on its own line is still a scene break."),
-        get: |t| t.em_dash,
-        set: |t, on| t.em_dash = on,
     },
     Rule {
+        rule: TypographyRule::Ellipsis,
         label: "Ellipsis",
         example: "... → …",
         note: None,
-        get: |t| t.ellipsis,
-        set: |t, on| t.ellipsis = on,
     },
 ];
 
 #[component]
 pub fn TypographySettings(typography: RwSignal<Typography>) -> impl IntoView {
+    let error = RwSignal::new(None::<String>);
+    let switch = move |rule: TypographyRule, on: bool| {
+        typography.update(|t| t.set(rule, on));
+        // The panel may have closed by the time the save finishes.
+        spawn_local(async move { error.try_set(tauri::set_typography(rule, on).await.err()); });
+    };
     let rules = RULES
         .iter()
         .map(|rule| {
@@ -59,8 +62,8 @@ pub fn TypographySettings(typography: RwSignal<Typography>) -> impl IntoView {
                     <input
                         type="checkbox"
                         class="switch"
-                        prop:checked=move || (rule.get)(&typography.get())
-                        on:change=move |ev| typography.update(|t| (rule.set)(t, event_target_checked(&ev)))
+                        prop:checked=move || typography.get().is_on(rule.rule)
+                        on:change=move |ev| switch(rule.rule, event_target_checked(&ev))
                     />
                 </label>
             }
@@ -71,6 +74,7 @@ pub fn TypographySettings(typography: RwSignal<Typography>) -> impl IntoView {
         <div class="panel" role="dialog" aria-label="Typography">
             <h2>"As you type"</h2>
             {rules}
+            {move || error.get().map(|e| view! { <p class="error">{format!("Couldn't save this: {e}")}</p> })}
         </div>
     }
 }

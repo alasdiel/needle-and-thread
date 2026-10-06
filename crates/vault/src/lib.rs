@@ -17,7 +17,7 @@ use needle_core::id::{make_id, slugify};
 use needle_core::names::{NameIndex, Owner};
 use needle_core::outline::{Chapter, Outline};
 use needle_core::project::{ProjectConfig, ProjectKind, WorldConfig};
-use needle_core::settings::VaultSettings;
+use needle_core::settings::{self, TypographyRule, VaultSettings};
 
 pub use error::{Error, Result};
 pub use links::{Appearance, Backlink, HeaderName, LinkSource, Mention, NAME_FIELDS, NameHint, NoteLinks, Renamed, SceneNames};
@@ -90,6 +90,13 @@ impl Vault {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(VaultSettings::default()),
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// Switches one of the automatic typography changes for the whole vault.
+    pub fn set_typography(&self, rule: TypographyRule, on: bool) -> Result<()> {
+        let path = self.root.join(SETTINGS);
+        let text = settings::set_typography(&fs::read_to_string(&path)?, rule, on).map_err(Error::Invalid)?;
+        Ok(write_atomically(&path, text.as_bytes())?)
     }
 
     /// Templates for new notes, one per type (`character.md`…), written out on first use.

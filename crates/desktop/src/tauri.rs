@@ -3,10 +3,12 @@
 use std::{future::Future, pin::Pin};
 
 use js_sys::{Object, Reflect};
+use needle_core::settings::TypographyRule;
 use serde::{Deserialize, de::DeserializeOwned};
 use wasm_bindgen::prelude::*;
 
 use crate::appearance::Appearance;
+use crate::editor::Typography;
 
 #[wasm_bindgen]
 extern "C" {
@@ -75,6 +77,7 @@ fn scene_args(project: &str, scene: &str) -> Args {
 pub struct VaultView {
     pub path: String,
     pub projects: Vec<ProjectView>,
+    pub typography: Typography,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -292,6 +295,10 @@ pub async fn create_vault() -> Result<Option<VaultView>, String> {
 
 pub async fn open_sample_vault() -> Result<VaultView, String> {
     call("open_sample_vault", Args::default()).await
+}
+
+pub async fn set_typography(rule: TypographyRule, on: bool) -> Result<(), String> {
+    call("set_typography", Args::default().str("rule", rule.key()).set("on", on.into())).await
 }
 
 pub async fn create_project(title: &str, kind: &str) -> Result<ProjectView, String> {
