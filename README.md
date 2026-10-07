@@ -15,7 +15,7 @@ Built releases will also come later.
 - Each scene's summary, POV, cast, places and threads on an envelope beside it, with hints for names the text uses but doesn't list
 - Worlds: characters, places and history shared by a series of projects
 - Search across scenes and notes (Ctrl+K, or the Search tab), filtered by status, POV or thread
-- Automatic snapshots (git under the hood), with history, compare and restore for every scene and note
+- Automatic snapshots (git under the hood), with history by day and session, compare, restore, and putting back a single removed passage, for every scene and note
 - A sewing-pattern look, light or dark
 
 ## Run it

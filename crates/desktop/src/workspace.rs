@@ -1624,7 +1624,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
 
             {move || match panel.get() {
                 Some(Panel::History) => Some(view! {
-                    <HistoryPanel target=target revision=revision editor=editor on_restore=on_restore on_close=move || panel.set(None) />
+                    <HistoryPanel target=target text=markdown revision=revision editor=editor on_restore=on_restore on_close=move || panel.set(None) />
                 }.into_any()),
                 Some(Panel::Bin) => Some(view! {
                     <BinPanel

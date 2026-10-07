@@ -14,6 +14,7 @@ import { type HighlightMeta, highlightKey, highlightPlugin } from "./highlight.t
 import { type LinkMeta, type LinkResolver, linkSuggestPlugin, linksKey, linksPlugin } from "./links.ts";
 import { countWords, parseMarkdown, serializeMarkdown } from "./markdown.ts";
 import { openSelectionMenu, openSpellMenu } from "./menu.ts";
+import { changeTo } from "./putback.ts";
 import {
   type CutCallbacks,
   SEAM_MS,
@@ -175,6 +176,17 @@ export class Editor {
     this.view.dispatch(tr);
     this.view.focus();
     return atSpot;
+  }
+
+  /** Changes the document to `markdown` in one edit (so Undo takes it back) that touches only
+   * what differs, and selects that. For putting a passage back from History. Returns whether
+   * anything changed. */
+  applyMarkdown(markdown: string): boolean {
+    const tr = changeTo(this.view.state, parseMarkdown(markdown));
+    if (!tr) return false;
+    this.view.dispatch(tr);
+    this.view.focus();
+    return true;
   }
 
   getMarkdown(): string {

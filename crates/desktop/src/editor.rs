@@ -42,6 +42,11 @@ extern "C" {
     #[wasm_bindgen(method, js_name = recheckSpelling)]
     pub fn recheck_spelling(this: &EditorHandle);
 
+    /// Changes the text to `markdown` in one edit that Undo takes back, touching only what
+    /// differs, and selects that. Returns whether anything changed.
+    #[wasm_bindgen(method, js_name = applyMarkdown)]
+    pub fn apply_markdown(this: &EditorHandle, markdown: &str) -> bool;
+
     #[wasm_bindgen(method, js_name = getMarkdown)]
     pub fn markdown(this: &EditorHandle) -> String;
 

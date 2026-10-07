@@ -6,12 +6,11 @@ use needle_core::project::ProjectKind;
 use needle_core::words::plain_text;
 use wasm_bindgen::JsValue;
 
+use crate::history::{clock_of, day_label};
 use crate::icons::{Glyph, Icon};
 use crate::notes::{kind_glyph, kind_label};
 use crate::outline::format_words;
 use crate::tauri::CutView;
-
-const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /// When something was cut, in local time: its day ("Today", "Yesterday", "Oct 2") and time.
 fn when(cut_at: &str) -> (String, String) {
@@ -19,20 +18,7 @@ fn when(cut_at: &str) -> (String, String) {
     if date.get_time().is_nan() {
         return ("Earlier".to_owned(), String::new());
     }
-    let day_of = |d: &js_sys::Date| (d.get_full_year(), d.get_month(), d.get_date());
-    let today = js_sys::Date::new_0();
-    let yesterday = js_sys::Date::new_0();
-    yesterday.set_date(today.get_date() - 1);
-    let day = if day_of(&date) == day_of(&today) {
-        "Today".to_owned()
-    } else if day_of(&date) == day_of(&yesterday) {
-        "Yesterday".to_owned()
-    } else if date.get_full_year() == today.get_full_year() {
-        format!("{} {}", MONTHS[date.get_month() as usize % 12], date.get_date())
-    } else {
-        format!("{} {}, {}", MONTHS[date.get_month() as usize % 12], date.get_date(), date.get_full_year())
-    };
-    (day, format!("{:02}:{:02}", date.get_hours(), date.get_minutes()))
+    (day_label(&date), clock_of(&date))
 }
 
 #[component]

@@ -266,6 +266,9 @@ All of these timings can be changed in `vault.toml`.
   - snapshots are grouped by session and day
   - word-level changes are highlighted
   - you can restore a whole version or copy back just one passage
+  - a session is snapshots less than 30 minutes apart, within one day. Each folds into one row ("13:05 – 14:32 · 4 snapshots · +31 words"); the latest is open, and named versions show even in a closed one
+  - each snapshot shows the words it added or took out from this file, not the vault-wide message
+  - **Put back:** click a removed passage in a version's changes, then Put back. It goes back where it was, as one edit that Undo takes back. If something replaced it, both stay, the old passage first, so nothing is lost. Words rewritten together show as one removal and one addition, so a rewritten sentence goes back whole
 - Commit messages are written automatically, e.g. "Edited The night market (+312 words)".
 - Old snapshots are kept forever because text is tiny. The panel groups them so the list stays readable.
 - History is never rewritten, and the app never force-pushes.

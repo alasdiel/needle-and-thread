@@ -3,6 +3,7 @@
 
 pub mod diff;
 pub mod header;
+pub mod history;
 pub mod id;
 pub mod links;
 pub mod names;

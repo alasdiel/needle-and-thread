@@ -151,6 +151,7 @@ body {
 .panel h2,
 .panel-head h2,
 .version-heading h3,
+.history-day,
 .bin-day,
 .typography-button {
   font-family: var(--font-title);
@@ -2526,11 +2527,25 @@ kbd {
   overflow-wrap: anywhere;
 }
 
-/* History: each version is a stop on a thread. */
+/* History: each snapshot is a stop on a thread, grouped by day and writing session. */
+.history-day {
+  margin: 16px 6px 6px;
+  font-size: var(--size-title-small);
+}
+
+.history-day:first-of-type {
+  margin-top: 2px;
+}
+
 .versions {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+/* A session's snapshots hang off it, a step in, on a thread of their own. */
+.versions .versions {
+  margin-left: 18px;
 }
 
 .version-item {
@@ -2551,13 +2566,26 @@ kbd {
   top: 22px;
 }
 
-.version-item:last-child::before {
+.version-item:last-child::before,
+.version-item.session:has(+ .nested:last-child)::before {
   bottom: auto;
   height: 22px;
 }
 
-.version-item:only-child::before {
+.version-item:only-child::before,
+.version-item.session:first-child:has(+ .nested:last-child)::before,
+.version-item.nested:last-child::before {
   display: none;
+}
+
+/* Within a session the thread runs on from the session's row. */
+.versions .versions > .version-item:first-child::before {
+  top: 0;
+}
+
+.versions .versions > .version-item:only-child::before {
+  display: block;
+  height: 22px;
 }
 
 .version {
@@ -2587,7 +2615,7 @@ kbd {
   background: var(--side);
 }
 
-.version-item:first-child .version-dot {
+.version-item.newest .version-dot {
   border-color: var(--thread);
   background: var(--thread);
   box-shadow: 0 0 6px var(--thread-glow);
@@ -2600,11 +2628,36 @@ kbd {
   border: 2px solid var(--link);
 }
 
+/* A session is a bobbin on the thread; the one being written now is wound with it. */
+.session-mark {
+  grid-row: 1 / 4;
+  justify-self: center;
+  width: 11px;
+  height: 17px;
+  margin-top: 2px;
+  border: 1.5px solid var(--faint);
+  border-radius: 6px;
+  background: var(--side);
+}
+
+.session.current .session-mark {
+  border-color: var(--thread);
+}
+
+.session-chevron {
+  display: inline-flex;
+  margin-top: 3px;
+  color: var(--muted);
+}
+
 .version-time {
   font-weight: 500;
 }
 
-.version-words {
+.version-counts {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
   color: var(--muted);
   font-size: var(--size-count);
   font-variant-numeric: tabular-nums;
@@ -2620,7 +2673,7 @@ kbd {
   font-size: var(--size-label-small);
 }
 
-.version-message {
+.version-summary {
   grid-column: 2 / 4;
   color: var(--muted);
   font-size: var(--size-ui-small);
@@ -2672,8 +2725,61 @@ kbd {
   overflow-wrap: anywhere;
 }
 
-.diff span {
+.diff {
+  position: relative;
+}
+
+.diff > span {
   color: var(--muted);
+}
+
+/* A removed passage that can go back: click it for Put back. */
+.diff del.can-put-back {
+  cursor: pointer;
+}
+
+.diff del.can-put-back:hover {
+  background: color-mix(in srgb, var(--del) 26%, transparent);
+}
+
+.diff del.picked {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
+/* Put back, under the passage's last line; it slides left rather than leave the box. */
+.put-back {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  pointer-events: none;
+}
+
+.put-back-indent {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.put-back-bubble {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px 5px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--raise);
+  box-shadow: 0 6px 24px var(--shadow-color);
+  font: var(--size-ui) / 1.45 var(--font-ui);
+  letter-spacing: 0.015em;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.put-back-bubble .muted {
+  font-size: var(--size-ui-small);
 }
 
 /* Added text is underlined and removed text struck through, so the colours aren't the only cue. */
