@@ -11,6 +11,7 @@ use needle_core::project::ProjectConfig;
 use needle_core::scene::SceneFile;
 use needle_core::words::count_markdown_words;
 
+use crate::bin::{self, Bin, CutItem, CutKind, Passage};
 use crate::doc;
 use crate::files::{checked_name, unique_file, utc_iso, utc_stamp, write_atomically};
 use crate::notes::Notes;
@@ -71,6 +72,11 @@ impl Project {
     /// The project's own notes, in `notes/`.
     pub fn notes(&self) -> Notes {
         Notes::new(Owner::Project(self.slug.clone()), self.root.join("notes"), self.root.join("cut"), self.templates.clone())
+    }
+
+    /// The project's cut bin, in `cut/`. Its notes are binned there too.
+    pub fn bin(&self) -> Bin {
+        Bin::new(Owner::Project(self.slug.clone()), self.root.join("cut"))
     }
 
     /// Saves new settings to `project.toml`. The file is the app's, so it's rewritten whole.
@@ -242,17 +248,21 @@ impl Project {
         let path = self.scene_path(slug)?;
         let mut scene = self.scene(slug)?;
         let mut outline = self.outline()?;
-        let chapter = outline
-            .locate(slug)
-            .map(|(c, _)| &outline.chapters[c])
-            .map(|c| if c.title.is_empty() { c.id.clone() } else { c.title.clone() });
+        let place = outline.locate(slug).map(|(c, i)| {
+            let chapter = &outline.chapters[c];
+            let title = if chapter.title.is_empty() { chapter.id.clone() } else { chapter.title.clone() };
+            // Empty when it was the chapter's first scene.
+            let after = i.checked_sub(1).map(|j| chapter.scenes[j].clone()).unwrap_or_default();
+            (title, after)
+        });
 
         let now = SystemTime::now();
         let mut header = scene.header()?;
         header.set_str("cut_at", &utc_iso(now));
         header.set_str("cut_from_scene", slug);
-        if let Some(chapter) = chapter {
+        if let Some((chapter, after)) = place {
             header.set_str("cut_from_chapter", &chapter);
+            header.set_str("cut_after_scene", &after);
         }
         scene.set_header(&header);
 
@@ -265,6 +275,57 @@ impl Project {
         }
         fs::remove_file(path)?;
         Ok(cut_path)
+    }
+
+    /// Moves a passage cut from `scene` into the bin, as a file of its own.
+    pub fn cut_passage(&self, scene: &str, passage: &Passage) -> Result<CutItem> {
+        if passage.markdown.trim().is_empty() {
+            return Err(Error::Invalid("there's no text to cut".into()));
+        }
+        let title = self.scene_info(scene)?.title;
+        let now = SystemTime::now();
+        let file = bin::passage_file(passage, &utc_iso(now), scene, &title);
+        let bin = self.bin();
+        let name = bin.add(&format!("{}-{scene}-passage", utc_stamp(now)), &file)?;
+        bin.item(&name)
+    }
+
+    /// Puts a scene from the bin back in the manuscript, under its old name if that's free, and
+    /// back in the outline: after the scene it followed, else in its chapter (first, if it was
+    /// first), else among the scenes the outline doesn't place.
+    pub fn restore_scene(&self, name: &str) -> Result<SceneInfo> {
+        let bin = self.bin();
+        if bin.item(name)?.kind != CutKind::Scene {
+            return Err(Error::Invalid(format!("{name} isn't a scene")));
+        }
+        let (scene, cut) = bin.take_out(name)?;
+        let header = scene.header()?;
+        let stem = cut
+            .str("cut_from_scene")
+            .filter(|s| checked_name(s).is_ok())
+            .map_or_else(|| slugify(header.title().unwrap_or(name)), str::to_owned);
+        let path = unique_file(&self.root.join("manuscript"), &stem, "md");
+        let slug = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_owned();
+        // Copy, then place, then remove: a crash midway leaves a duplicate, never a loss.
+        write_atomically(&path, scene.to_string().as_bytes())?;
+
+        let mut outline = self.outline()?;
+        let after = cut.str("cut_after_scene");
+        let chapter = cut
+            .str("cut_from_chapter")
+            .and_then(|name| outline.chapters.iter().find(|c| c.title == name || c.id == name))
+            .map(|c| c.id.clone());
+        let placed = match (after, chapter) {
+            (Some(after), _) if outline.locate(after).is_some() => outline.insert_scene_after(after, &slug).map(|_| true)?,
+            (Some(""), Some(chapter)) => outline.insert_scene(&chapter, 0, &slug).map(|_| true)?,
+            (_, Some(chapter)) => outline.insert_scene(&chapter, usize::MAX, &slug).map(|_| true)?,
+            (_, None) => false,
+        };
+        if placed {
+            self.save_outline(&outline)?;
+        }
+        fs::remove_file(bin.file_path(name)?)?;
+        info(&slug, &scene)
     }
 
     /// Splits a scene in two: `before` stays, `after` becomes a new scene right after it.

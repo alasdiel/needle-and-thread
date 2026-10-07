@@ -64,8 +64,8 @@ pub struct OpenedScene {
 
 #[derive(Serialize)]
 pub struct Created {
-    outline: OutlineView,
-    scene: String,
+    pub(crate) outline: OutlineView,
+    pub(crate) scene: String,
 }
 
 impl From<SceneInfo> for SceneView {
@@ -131,7 +131,7 @@ fn outline_view(open: &OpenVault, project: &Project) -> Result<OutlineView, Stri
 
 /// Runs `edit` on a project and returns its updated outline, counting it as an edit for
 /// snapshots.
-fn change<T>(
+pub(crate) fn change<T>(
     state: &AppState,
     project: &str,
     edit: impl FnOnce(&Project) -> needle_vault::Result<T>,

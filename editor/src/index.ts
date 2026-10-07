@@ -4,14 +4,16 @@
 import "./style.css";
 import type { Node } from "prosemirror-model";
 import { history } from "prosemirror-history";
+import { keymap } from "prosemirror-keymap";
 import { EditorState, type Plugin, Selection, TextSelection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
+import { type Passage, cutPassage, restorePassage } from "./bin.ts";
 import { type Typography, buildInputRules, defaultTypography } from "./inputrules.ts";
 import { buildKeymaps } from "./keymap.ts";
 import { type HighlightMeta, highlightKey, highlightPlugin } from "./highlight.ts";
 import { type LinkMeta, type LinkResolver, linkSuggestPlugin, linksKey, linksPlugin } from "./links.ts";
 import { countWords, parseMarkdown, serializeMarkdown } from "./markdown.ts";
-import { openSpellMenu } from "./menu.ts";
+import { openSelectionMenu, openSpellMenu } from "./menu.ts";
 import {
   type CutCallbacks,
   SEAM_MS,
@@ -25,7 +27,8 @@ import {
 } from "./pattern.ts";
 import { type SpellMeta, type Spellchecker, spellcheckKey, spellcheckPlugin } from "./spellcheck.ts";
 
-export type { LinkResolver, Spellchecker, Typography };
+export type { LinkResolver, Passage, Spellchecker, Typography };
+export { hasSpot } from "./bin.ts";
 
 export interface EditorOptions {
   typography?: Partial<Typography>;
@@ -34,12 +37,18 @@ export interface EditorOptions {
 export interface MountOptions extends EditorOptions, Partial<CutCallbacks> {
   /** Called with the document's Markdown once typing pauses for `debounceMs`. */
   onChange?: (markdown: string, words: number) => void;
+  /** Called with a passage just cut to the bin, which the app then stores. */
+  onCutToBin?: (passage: Passage) => void;
   debounceMs?: number;
 }
 
 export class Editor {
   private readonly view: EditorView;
   private readonly onChange: (markdown: string, words: number) => void;
+  private readonly onCutToBin: (passage: Passage) => void;
+  // Only scenes have a bin to cut to.
+  private binEnabled = false;
+  private readonly binKeys = keymap({ "Shift-Mod-x": () => this.cutToBin() });
   private readonly cutCallbacks: CutCallbacks;
   private readonly debounceMs: number;
   private typography: Typography;
@@ -63,6 +72,7 @@ export class Editor {
 
   constructor(el: HTMLElement, markdown: string, options: MountOptions = {}) {
     this.onChange = options.onChange ?? (() => {});
+    this.onCutToBin = options.onCutToBin ?? (() => {});
     this.cutCallbacks = {
       onCutConfirm: options.onCutConfirm ?? (() => {}),
       onCutCancel: options.onCutCancel ?? (() => {}),
@@ -82,7 +92,8 @@ export class Editor {
           this.flush();
           return false;
         },
-        contextmenu: (view, event) => openSpellMenu(view, event),
+        contextmenu: (view, event) =>
+          (this.binEnabled && openSelectionMenu(view, event, () => this.cutToBin())) || openSpellMenu(view, event),
       },
     });
   }
@@ -139,6 +150,31 @@ export class Editor {
   recheckSpelling(): void {
     const meta: SpellMeta = { recheck: true };
     this.view.dispatch(this.view.state.tr.setMeta(spellcheckKey, meta));
+  }
+
+  /** Offers "Cut to bin" (and its shortcut) or not: on for scenes, off for notes. */
+  setBinEnabled(on: boolean): void {
+    this.binEnabled = on;
+  }
+
+  /** Takes the selected text out and hands it to `onCutToBin`. False if nothing's selected. */
+  cutToBin(): boolean {
+    if (!this.binEnabled) return false;
+    const cut = cutPassage(this.view.state);
+    if (!cut) return false;
+    this.view.dispatch(cut.tr);
+    this.view.focus();
+    this.onCutToBin(cut.passage);
+    return true;
+  }
+
+  /** Puts a passage from the bin back where it came from if that place is still there, and
+   * otherwise at the cursor, then selects it. Returns whether it found the place. */
+  restorePassage(passage: Passage): boolean {
+    const { tr, atSpot } = restorePassage(this.view.state, passage);
+    this.view.dispatch(tr);
+    this.view.focus();
+    return atSpot;
   }
 
   getMarkdown(): string {
@@ -206,6 +242,7 @@ export class Editor {
     return [
       this.cutLine,
       this.linkSuggest,
+      this.binKeys,
       buildInputRules(this.typography),
       ...this.keymaps,
       this.history,

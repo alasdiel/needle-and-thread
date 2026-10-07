@@ -151,6 +151,7 @@ body {
 .panel h2,
 .panel-head h2,
 .version-heading h3,
+.bin-day,
 .typography-button {
   font-family: var(--font-title);
   font-weight: 600;
@@ -1478,6 +1479,29 @@ kbd {
   font-weight: 500;
 }
 
+/* The cut bin's basket, with how many pieces are in it. */
+.bin-button {
+  position: relative;
+}
+
+.bin-count {
+  position: absolute;
+  top: 1px;
+  right: -1px;
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--blue);
+  color: var(--on-blue);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
 /* --- Main column ---------------------------------------------------------------------------- */
 
 .main {
@@ -2668,4 +2692,120 @@ del {
   background: color-mix(in srgb, var(--del) 16%, transparent);
   color: var(--del);
   text-decoration-thickness: 1px;
+}
+
+/* The cut bin: each piece a scrap of the page, cut out along a dashed line. */
+.panel-icon {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.bin-empty {
+  margin: 4px 6px;
+}
+
+.bin-day {
+  margin: 14px 6px 8px;
+  font-size: var(--size-title-small);
+}
+
+.bin-day:first-of-type {
+  margin-top: 2px;
+}
+
+.bin-pieces {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.bin-piece {
+  padding: 12px 14px 10px;
+  border: 1px dashed var(--print-soft);
+  border-radius: 2px;
+  background: var(--piece);
+  box-shadow: 0 6px 14px var(--piece-drop);
+}
+
+.bin-excerpt {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  font: 15px / 1.55 var(--font-text);
+  letter-spacing: normal;
+  white-space: pre-line;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.bin-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 600 17px / 1.25 var(--font-title);
+  font-variation-settings: "SOFT" 100, "WONK" 1;
+  letter-spacing: normal;
+}
+
+.bin-title .icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.bin-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: var(--size-ui-small);
+}
+
+.bin-meta span:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.bin-words {
+  font-size: var(--size-count);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bin-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* After something goes into the bin: a note at the foot of the page, with Undo. */
+.notice {
+  position: absolute;
+  bottom: 26px;
+  left: 50%;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100% - 32px);
+  padding: 7px 8px 7px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--raise);
+  box-shadow: 0 12px 32px var(--shadow-color);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.notice > .icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.notice > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

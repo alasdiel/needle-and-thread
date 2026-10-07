@@ -191,6 +191,30 @@
   cursor: pointer;
 }
 
+.needle-menu button.with-parts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.needle-menu .menu-icon {
+  display: inline-grid;
+  flex: none;
+  width: 15px;
+  color: var(--prose-muted);
+}
+
+.needle-menu kbd {
+  margin-left: auto;
+  padding: 0 0 0 18px;
+  border: 0;
+  background: none;
+  color: var(--prose-muted);
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
 .needle-menu button:hover:not(:disabled),
 .needle-menu button:focus-visible {
   background: var(--menu-hover);

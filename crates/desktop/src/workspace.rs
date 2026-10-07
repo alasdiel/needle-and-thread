@@ -2,12 +2,15 @@
 //! pattern piece) or note (a fabric swatch) in the middle, and the History or Markdown panel on
 //! the right.
 
+use std::time::Duration;
+
 use leptos::{prelude::*, task::spawn_local};
 use needle_core::project::{NoteKind, ProjectKind};
 use needle_core::spell::Speller;
 
+use crate::bin::BinPanel;
 use crate::closing::BeforeClose;
-use crate::editor::{Editor, EditorHandle};
+use crate::editor::{self, Editor, EditorHandle};
 use crate::envelope::{self, EnvelopeCard};
 use crate::history::{HistoryPanel, HistoryTarget};
 use crate::icons::{Glyph, Icon};
@@ -20,7 +23,7 @@ use crate::search::{Search, SearchPalette, SearchSidebar};
 use crate::settings::{Prefs, SettingsPanel};
 use crate::spell::SpellBridge;
 use crate::status::{self, StatusMark};
-use crate::tauri::{self, HitView, NoteKey, NoteView, OutlineView, ProjectView, SceneNamesView, SceneView, VaultView};
+use crate::tauri::{self, CutView, HitView, NoteKey, NoteView, OutlineView, Passage, ProjectView, SceneNamesView, SceneView, VaultView};
 use crate::typography::TypographySettings;
 
 #[derive(Clone, PartialEq)]
@@ -34,7 +37,22 @@ enum SaveState {
 enum Panel {
     Markdown,
     History,
+    Bin,
 }
+
+/// A note at the foot of the page: something just went into the cut bin, with Undo, or came
+/// back from it somewhere other than its old place.
+#[derive(Clone, PartialEq)]
+struct Notice {
+    text: &'static str,
+    /// What Undo puts back.
+    undo: Option<CutView>,
+    /// Tells notices apart, so an old one's timer doesn't close a newer one.
+    id: u32,
+}
+
+/// How long a notice stays.
+const NOTICE: Duration = Duration::from_secs(8);
 
 /// What the sidebar shows.
 #[derive(Clone, Copy, PartialEq)]
@@ -155,6 +173,51 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     };
     let report = move |e: String| error.set(Some(e));
 
+    // The open project's cut bin, and the notice after something goes in.
+    let bin_items = RwSignal::new(Vec::<CutView>::new());
+    let notice = RwSignal::new(None::<Notice>);
+    let notices = StoredValue::new(0u32);
+    // A passage to put back once its scene has opened.
+    let pending_passage = StoredValue::new(None::<CutView>);
+
+    let load_bin = move |slug: String| {
+        spawn_local(async move {
+            match tauri::bin_items(&slug).await {
+                Ok(items) => bin_items.set(items),
+                Err(e) => report(e),
+            }
+        });
+    };
+
+    let show_notice = move |text: &'static str, undo: Option<CutView>| {
+        let id = notices.get_value() + 1;
+        notices.set_value(id);
+        notice.set(Some(Notice { text, undo, id }));
+        set_timeout(
+            move || {
+                if notice.try_with_untracked(|n| n.as_ref().map(|n| n.id)) == Some(Some(id)) {
+                    notice.try_set(None);
+                }
+            },
+            NOTICE,
+        );
+    };
+
+    // After a scene or note goes into the bin: shows it there, with Undo for the piece `is_it`
+    // picks out.
+    let binned = move |project: String, is_it: Box<dyn Fn(&CutView) -> bool>| {
+        spawn_local(async move {
+            match tauri::bin_items(&project).await {
+                Ok(items) => {
+                    let undo = items.iter().find(|item| is_it(item)).cloned();
+                    bin_items.set(items);
+                    show_notice("Moved to the cut bin", undo);
+                }
+                Err(e) => report(e),
+            }
+        });
+    };
+
     // The latest save, resolved once it's done. Saves land in order (see `save_scene`), so by
     // then every earlier one is done too.
     let last_save = StoredValue::new_local(None::<js_sys::Promise>);
@@ -206,12 +269,36 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         })
     });
 
+    // Puts a passage from the bin back into the open scene: in its old place if that's still
+    // there, else at the cursor. It leaves the bin once the scene is saved with it.
+    let put_back = move |item: CutView| {
+        let (Some(p), Some(passage)) = (project.get_untracked(), item.passage.clone()) else { return };
+        let Some(at_spot) = editor.with_value(|h| h.as_ref().map(|h| h.restore_passage(&passage))) else { return };
+        flush();
+        if !at_spot {
+            show_notice("Its old place had changed, so it went in at the cursor", None);
+        }
+        spawn_local(async move {
+            if let Some(save) = last_save.get_value() {
+                let _ = wasm_bindgen_futures::JsFuture::from(save).await;
+            }
+            if matches!(save_state.get_untracked(), SaveState::Failed(_)) {
+                return;
+            }
+            match tauri::remove_from_bin(&item).await {
+                Ok(()) => load_bin(p),
+                Err(e) => report(e),
+            }
+        });
+    };
+
     let close_scene = move || {
         scene.set(None);
         note.set(None);
         editor.with_value(|h| {
             if let Some(h) = h {
                 h.set_content("");
+                h.set_bin_enabled(false);
             }
         });
         words.set(0);
@@ -251,9 +338,11 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                 Ok(opened) => {
                     let seam = pending_seam.try_update_value(Option::take).flatten();
                     let terms = pending_terms.try_update_value(Option::take).flatten();
+                    let passage = pending_passage.try_update_value(Option::take).flatten();
                     editor.with_value(|h| {
                         if let Some(h) = h {
                             h.set_content(&opened.markdown);
+                            h.set_bin_enabled(true);
                             h.set_highlights(&terms_array(terms.as_deref().unwrap_or_default()), false);
                             words.set(h.word_count() as usize);
                             markdown.set(h.markdown());
@@ -280,6 +369,9 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                                 }
                             }
                         });
+                        if let Some(item) = passage {
+                            put_back(item);
+                        }
                     });
                 }
                 Err(e) => report(e),
@@ -296,6 +388,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                     editor.with_value(|h| {
                         if let Some(h) = h {
                             h.set_content(&opened.markdown);
+                            h.set_bin_enabled(false);
                             h.set_highlights(&terms_array(terms.as_deref().unwrap_or_default()), false);
                             words.set(h.word_count() as usize);
                             markdown.set(h.markdown());
@@ -437,6 +530,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let load_project_at = move |slug: String, target: Option<String>| {
         flush();
         load_notes(slug.clone());
+        load_bin(slug.clone());
         spawn_local(async move {
             match tauri::project_outline(&slug).await {
                 Ok(view) => {
@@ -617,6 +711,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                     Ok(view) => {
                         apply(view);
                         scene.set(None);
+                        load_bin(p);
                         open_scene(s);
                     }
                     Err(e) => {
@@ -634,6 +729,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
             spawn_local(async move {
                 match tauri::cut_scene(&p, &s).await {
                     Ok(view) => {
+                        binned(p, Box::new(move |item| item.kind == "scene" && item.scene.as_deref() == Some(s.as_str())));
                         scene.set(None);
                         set_outline(view);
                         match next {
@@ -656,6 +752,82 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         });
         markdown.set(md);
         save_state.set(SaveState::Saved);
+    };
+
+    // --- The cut bin -----------------------------------------------------------------------
+
+    // The editor has taken the passage out of the scene; it goes into the bin, or back if it
+    // can't.
+    let cut_to_bin = move |passage: Passage| {
+        let (Some(p), Some(s)) = (project.get_untracked(), current()) else { return };
+        spawn_local(async move {
+            match tauri::cut_passage(&p, &s, &passage).await {
+                Ok(item) => {
+                    load_bin(p);
+                    show_notice("Moved to the cut bin", Some(item));
+                }
+                Err(e) if current().as_ref() == Some(&s) => {
+                    editor.with_value(|h| {
+                        if let Some(h) = h {
+                            h.restore_passage(&passage);
+                        }
+                    });
+                    report(format!("Couldn't put it in the cut bin, so it's back in the scene: {e}"));
+                }
+                Err(e) => report(format!("Couldn't put this in the cut bin ({e}): {}", passage.markdown.trim())),
+            }
+        });
+    };
+
+    // A passage goes back into its own scene, opened if need be, when its old place is still
+    // there. Otherwise it goes in at the cursor in the open scene.
+    let restore_passage = move |item: CutView| {
+        let (Some(p), Some(passage)) = (project.get_untracked(), item.passage.clone()) else { return };
+        let open = current();
+        let source = item.scene.clone().filter(|s| outline.with_untracked(|o| o.as_ref().is_some_and(|o| find(o, s).is_some())));
+        match source {
+            Some(source) if open.as_ref() == Some(&source) => put_back(item),
+            Some(source) => spawn_local(async move {
+                let found = tauri::open_scene(&p, &source).await.is_ok_and(|o| editor::has_spot(&o.markdown, &passage));
+                if found || open.is_none() {
+                    pending_passage.set_value(Some(item));
+                    open_scene(source);
+                } else {
+                    put_back(item);
+                }
+            }),
+            None if open.is_some() => put_back(item),
+            None => report("Its scene is gone. Open a scene and put the cursor where it should go.".to_owned()),
+        }
+    };
+
+    let restore_from_bin = move |item: CutView| {
+        let Some(p) = project.get_untracked() else { return };
+        notice.set(None);
+        match item.kind.as_str() {
+            "passage" => restore_passage(item),
+            "note" => spawn_local(async move {
+                match tauri::restore_note(&item).await {
+                    Ok(restored) => {
+                        load_bin(p.clone());
+                        load_notes(p);
+                        open_note(restored.key());
+                    }
+                    Err(e) => report(e),
+                }
+            }),
+            _ => spawn_local(async move {
+                flush();
+                match tauri::restore_scene(&p, &item.name).await {
+                    Ok(created) => {
+                        load_bin(p);
+                        apply(created.outline);
+                        open_scene(created.scene);
+                    }
+                    Err(e) => report(e),
+                }
+            }),
+        }
     };
 
     // --- Note actions ----------------------------------------------------------------------
@@ -784,6 +956,11 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         spawn_local(async move {
             match tauri::cut_note(&key).await {
                 Ok(()) => {
+                    let title = n.title.clone();
+                    binned(
+                        p.clone(),
+                        Box::new(move |item| item.kind == "note" && item.title == title && item.owner == key.owner && item.world == key.world),
+                    );
                     note.set(None);
                     load_notes(p);
                     match next {
@@ -1123,6 +1300,18 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                         <Icon glyph=Glyph::Folder size=15 />
                         <span>{vault_name}</span>
                     </button>
+                    <button
+                        class="icon-button bin-button"
+                        title="Cut bin"
+                        aria-label="Cut bin"
+                        class:active=move || panel.get() == Some(Panel::Bin)
+                        on:click=move |_| toggle(Panel::Bin)
+                    >
+                        <Icon glyph=Glyph::Basket />
+                        <Show when=move || !bin_items.with(Vec::is_empty)>
+                            <span class="bin-count">{move || bin_items.with(Vec::len)}</span>
+                        </Show>
+                    </button>
                     <div class="popover-anchor">
                         <button
                             class="icon-button"
@@ -1315,6 +1504,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                                     on_change=on_change
                                     on_cut_confirm=on_cut_confirm
                                     on_cut_cancel=on_cut_cancel
+                                    on_cut_to_bin=cut_to_bin
                                     on_ready=on_ready
                                 />
                             </article>
@@ -1397,6 +1587,23 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                         </div>
                     </div>
                 </Show>
+                {move || notice.get().map(|n| {
+                    view! {
+                        <div class="notice" role="status">
+                            <Icon glyph=Glyph::Basket size=15 />
+                            <span>{n.text}</span>
+                            {n.undo.map(|item| view! {
+                                <button class="small" on:click=move |_| restore_from_bin(item.clone())>"Undo"</button>
+                                <button class="small quiet" on:click=move |_| {
+                                    notice.set(None);
+                                    panel.set(Some(Panel::Bin));
+                                }>
+                                    "Open the bin"
+                                </button>
+                            })}
+                        </div>
+                    }
+                })}
             </section>
 
             <Show when=move || palette_open.get()>
@@ -1418,6 +1625,15 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
             {move || match panel.get() {
                 Some(Panel::History) => Some(view! {
                     <HistoryPanel target=target revision=revision editor=editor on_restore=on_restore on_close=move || panel.set(None) />
+                }.into_any()),
+                Some(Panel::Bin) => Some(view! {
+                    <BinPanel
+                        items=bin_items
+                        kind=project_kind
+                        scene_title=move |slug: &str| outline.with(|o| o.as_ref().and_then(|o| find(o, slug)).map(|s| s.title))
+                        on_restore=restore_from_bin
+                        on_close=move || panel.set(None)
+                    />
                 }.into_any()),
                 Some(Panel::Markdown) if prefs.markdown_panel.get() => Some(view! {
                     <aside class="side-panel markdown-panel">

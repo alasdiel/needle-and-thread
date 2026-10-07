@@ -59,7 +59,7 @@ pub struct MentionView {
     after: String,
 }
 
-fn note_view(owner: &Owner, note: NoteInfo) -> NoteView {
+pub(crate) fn note_view(owner: &Owner, note: NoteInfo) -> NoteView {
     let (slug, world) = match owner {
         Owner::Project(slug) => (slug.clone(), false),
         Owner::World(slug) => (slug.clone(), true),

@@ -215,9 +215,29 @@ Each type has its own template: an ordinary note in `.needle/templates/` (`chara
 
 ### Cut bin
 
-- Select text and choose **Cut to bin** (or use its shortcut). The passage moves into `cut/` as its own file, which records the scene it came from and the sentence around it.
-- Deleted scenes go into the bin whole, with `cut_at`, `cut_from_scene` and `cut_from_chapter` added to their header. Merging two scenes bins the second one, so its header survives.
-- The bin is searchable. **Restore** puts a passage back where it came from if that spot still exists, or at the cursor if it doesn't.
+- Select text and choose **Cut to bin** from the right-click menu, or press Ctrl+Shift+X. The passage moves into `cut/` as its own file, which records the scene it came from and the sentence around it. A note at the foot of the page offers Undo.
+- Deleted scenes go into the bin whole, with `cut_at`, `cut_from_scene`, `cut_from_chapter` and `cut_after_scene` (the scene before it, empty if it was first) added to their header. Merging two scenes bins the second one, so its header survives. Deleted notes go in whole too, with `cut_at` and `cut_from_note`.
+- The basket at the foot of the sidebar opens the bin as a panel on the right, newest first and grouped by day. A passage shows its first lines; a scene or note shows its title.
+- **Restore** puts a passage back where it came from if that spot still exists, or at the cursor if it doesn't. A scene goes back after the scene it followed (or first in its chapter), else at the end of its chapter, else among the scenes the outline doesn't place. A note goes back to its old path, or beside it if a new note has taken the name.
+- The bin is searchable.
+
+A passage's file:
+
+```markdown
++++
+cut_at = "2026-10-07T14:20:00Z"
+cut_from_scene = "night-market"
+cut_from_title = "The night market"
+text_before = "Mara walked the length of it twice. "
+text_after = " She kept the compass wrapped in her sleeve."
+starts_paragraph = false
+ends_paragraph = false
++++
+
+The smell of the harbor came in under everything: tar, salt, the sweet rot of fruit nobody had sold.
+```
+
+Restore looks for `text_before` and `text_after` side by side (in one paragraph, or in neighbouring ones when the passage began or ended a paragraph), ignoring differences in spacing. If they're found exactly once, that's the spot.
 
 ### Status labels
 

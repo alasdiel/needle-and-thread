@@ -13,9 +13,10 @@ use needle_core::names::Owner;
 use needle_core::project::NoteKind;
 use needle_core::scene::SceneFile;
 
+use crate::bin::{Bin, CutKind};
 use crate::doc;
 use crate::files::{checked_name, unique_file, utc_iso, utc_stamp, write_atomically};
-use crate::Result;
+use crate::{Error, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NoteInfo {
@@ -165,6 +166,34 @@ impl Notes {
         write_atomically(&cut_path, note.to_string().as_bytes())?;
         fs::remove_file(file)?;
         Ok(cut_path)
+    }
+
+    /// The owner's cut bin, where its notes go when they're cut.
+    pub fn bin(&self) -> Bin {
+        Bin::new(self.owner.clone(), self.bin.clone())
+    }
+
+    /// Puts a note from the bin back where it was, or beside it if that name is taken now.
+    pub fn restore(&self, name: &str) -> Result<NoteInfo> {
+        let bin = self.bin();
+        if bin.item(name)?.kind != CutKind::Note {
+            return Err(Error::Invalid(format!("{name} isn't a note")));
+        }
+        let (note, cut) = bin.take_out(name)?;
+        let shown = info(name, &note);
+        let (folder, stem) = match cut.str("cut_from_note").map(|p| p.rsplit_once('/').unwrap_or(("", p))) {
+            Some((folder, stem)) if (folder.is_empty() || checked_name(folder).is_ok()) && checked_name(stem).is_ok() => {
+                (folder.to_owned(), stem.to_owned())
+            }
+            _ => (shown.kind.folder().to_owned(), slugify(&shown.title)),
+        };
+        let file = unique_file(&self.root.join(&folder), &stem, "md");
+        // Copy, then remove: a crash in between leaves two copies, never none.
+        write_atomically(&file, note.to_string().as_bytes())?;
+        fs::remove_file(bin.file_path(name)?)?;
+        let stem = markdown_stem(&file).unwrap_or_default();
+        let path = if folder.is_empty() { stem.to_owned() } else { format!("{folder}/{stem}") };
+        Ok(info(&path, &note))
     }
 
     /// Changes a note with `edit`, writing it back if anything changed.

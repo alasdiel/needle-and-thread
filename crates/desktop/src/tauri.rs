@@ -4,7 +4,7 @@ use std::{future::Future, pin::Pin};
 
 use js_sys::{Object, Reflect};
 use needle_core::settings::TypographyRule;
-use serde::{Deserialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use wasm_bindgen::prelude::*;
 
 use crate::appearance::Appearance;
@@ -277,6 +277,42 @@ pub struct SpellDictionary {
     pub personal_words: Vec<String>,
 }
 
+/// Something in the cut bin.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct CutView {
+    /// The project or world folder whose bin it's in.
+    pub owner: String,
+    pub world: bool,
+    /// Its file's name in `cut/`.
+    pub name: String,
+    /// "passage", "scene" or "note".
+    pub kind: String,
+    /// When it was cut, as `2026-10-03T16:15:00Z`.
+    pub cut_at: String,
+    /// A scene's or note's title; for a passage, its scene's title when it was cut.
+    pub title: String,
+    /// The scene a passage came from.
+    pub scene: Option<String>,
+    pub chapter: Option<String>,
+    pub note_kind: Option<String>,
+    pub words: usize,
+    pub passage: Option<Passage>,
+}
+
+/// A passage cut from a scene, as the editor makes it and the bin stores it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Passage {
+    pub markdown: String,
+    pub text_before: String,
+    pub text_after: String,
+    pub starts_paragraph: bool,
+    pub ends_paragraph: bool,
+    #[serde(default)]
+    pub starts_with_space: bool,
+    #[serde(default)]
+    pub ends_with_space: bool,
+}
+
 // --- Vaults and projects ----------------------------------------------------------------
 
 pub async fn current_vault() -> Result<Option<VaultView>, String> {
@@ -506,6 +542,37 @@ pub async fn restore_note_version(note: &NoteKey, id: &str, label: &str) -> Resu
 
 pub async fn name_version(id: &str, name: &str) -> Result<(), String> {
     call("name_version", Args::default().str("id", id).str("name", name)).await
+}
+
+// --- The cut bin ------------------------------------------------------------------------
+
+pub async fn bin_items(project: &str) -> Result<Vec<CutView>, String> {
+    call("bin_items", Args::default().str("project", project)).await
+}
+
+pub async fn cut_passage(project: &str, scene: &str, passage: &Passage) -> Result<CutView, String> {
+    let passage = serde_wasm_bindgen::to_value(passage).map_err(|e| e.to_string())?;
+    call("cut_passage", scene_args(project, scene).set("passage", passage)).await
+}
+
+/// Takes a passage out of the bin, once it's back in its scene.
+pub async fn remove_from_bin(item: &CutView) -> Result<(), String> {
+    call("remove_from_bin", bin_args(item)).await
+}
+
+pub async fn restore_scene(project: &str, name: &str) -> Result<Created, String> {
+    call("restore_scene", Args::default().str("project", project).str("name", name)).await
+}
+
+pub async fn restore_note(item: &CutView) -> Result<NoteView, String> {
+    call("restore_note", bin_args(item)).await
+}
+
+fn bin_args(item: &CutView) -> Args {
+    Args::default()
+        .str("owner", &item.owner)
+        .set("world", item.world.into())
+        .str("name", &item.name)
 }
 
 // --- Settings ---------------------------------------------------------------------------

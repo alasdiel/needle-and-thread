@@ -1,6 +1,7 @@
 // Prevents an extra console window on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod bin;
 mod closing;
 mod history;
 mod notes;
@@ -64,6 +65,11 @@ fn main() {
             workspace::set_chapter_part,
             workspace::move_chapter,
             workspace::remove_chapter,
+            bin::bin_items,
+            bin::cut_passage,
+            bin::remove_from_bin,
+            bin::restore_scene,
+            bin::restore_note,
             notes::project_notes,
             notes::open_note,
             notes::save_note,

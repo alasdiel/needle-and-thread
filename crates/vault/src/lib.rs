@@ -2,6 +2,7 @@
 //! Everything is plain files (see docs/DESIGN.md §4); this crate is the only code that reads or
 //! writes them.
 
+mod bin;
 mod doc;
 mod error;
 mod files;
@@ -19,6 +20,7 @@ use needle_core::outline::{Chapter, Outline};
 use needle_core::project::{ProjectConfig, ProjectKind, WorldConfig};
 use needle_core::settings::{self, TypographyRule, VaultSettings};
 
+pub use bin::{Bin, CutItem, CutKind, Passage};
 pub use error::{Error, Result};
 pub use links::{Appearance, Backlink, HeaderName, LinkSource, Mention, NAME_FIELDS, NameHint, NoteLinks, Renamed, SceneNames};
 pub use notes::{NoteInfo, Notes};
@@ -259,6 +261,25 @@ impl Vault {
     pub fn names(&self, project: &Project) -> Result<NameIndex<NamedNote>> {
         let notes = self.reachable_notes(project)?;
         Ok(links::index(&notes, &project.slug, project.config.world.as_deref()))
+    }
+
+    /// What a project's cut bin holds, with the notes cut from its world, the most recently cut
+    /// first.
+    pub fn bin_items(&self, project: &Project) -> Result<Vec<CutItem>> {
+        let mut items = project.bin().list()?;
+        if let Some(world) = self.world_of(project)? {
+            items.extend(world.bin().list()?);
+            items.sort_by(|a, b| (&b.cut_at, &b.name).cmp(&(&a.cut_at, &a.name)));
+        }
+        Ok(items)
+    }
+
+    /// The cut bin of a project or world.
+    pub fn bin_of(&self, owner: &Owner) -> Result<Bin> {
+        match owner {
+            Owner::Project(slug) => Ok(self.project(slug)?.bin()),
+            Owner::World(slug) => Ok(self.world(slug)?.bin()),
+        }
     }
 
     /// The notes of a project or world.
