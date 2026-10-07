@@ -7,12 +7,12 @@ Built releases will also come later.
 
 ## What works
 
-- A Medium-style editor that saves plain Markdown as you pause (and on closing the window), with spellcheck and optional smart typography
+- A Medium-style editor that saves plain Markdown as you pause (and on closing the window), with spellcheck and optional smart typography (each switch saved with the vault)
 - An outline of parts, chapters and scenes: drag to restructure, split and merge scenes
 - A cut bin instead of deleting: cut a passage (right-click, or Ctrl+Shift+X), a scene or a note, and restore it later to where it was
 - Notes for characters, places, threads, sources, plot points and anything else, each type starting from a template you can edit
 - `[[Links]]` to notes, suggested as you type. Renaming a note keeps every link to it, and each note lists what links to it and where it's mentioned without a link
-- Each scene's POV, cast, places and threads, with hints for names the text uses but doesn't list
+- Each scene's summary, POV, cast, places and threads on an envelope beside it, with hints for names the text uses but doesn't list
 - Worlds: characters, places and history shared by a series of projects
 - Search across scenes and notes (Ctrl+K, or the Search tab), filtered by status, POV or thread
 - Automatic snapshots (git under the hood), with history, compare and restore for every scene and note
