@@ -4,6 +4,7 @@
 use leptos::{prelude::*, task::spawn_local};
 
 use crate::appearance::Appearance;
+use crate::backup::{Backup, BackupSettings};
 use crate::icons::Icon;
 use crate::tauri;
 
@@ -73,6 +74,7 @@ pub fn SettingsPanel() -> impl IntoView {
                     })
                     .collect_view()}
             </div>
+            {use_context::<Backup>().map(|backup| view! { <BackupSettings backup=backup /> })}
             <h2>"Developer"</h2>
             <label class="setting">
                 <span class="setting-text">

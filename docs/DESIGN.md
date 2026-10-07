@@ -277,6 +277,9 @@ All of these timings can be changed in `vault.toml`.
 ### Sync
 
 - **Phase 1:** a plain backup push to GitHub after each snapshot, so your work leaves this machine from day one.
+  - Set up in Settings › Backup: the repository's SSH address (`git@github.com:you/novel.git`) and an **After each snapshot** switch, both kept in `vault.toml` under `[backup]`. **Back up now** pushes at once, and the vault also backs up when it opens.
+  - It pushes over SSH with your own keys, built in (libgit2 with libssh2): those in ssh-agent, then `~/.ssh/id_ed25519`, `id_ecdsa` or `id_rsa` without a passphrase. The server's key must already be in `~/.ssh/known_hosts` (connect once with `ssh -T git@github.com`). `~/.ssh/config` isn't read.
+  - Beside "Saved": "· backed up", "· backing up…", or "· not backed up" in red, with the reason on hover; a click opens the settings. Pushes never force, so a repository with history this vault lacks is refused and left as it is.
 - **Phase 4:** full two-way sync.
   - The app pulls when it starts and every few minutes after.
   - Local snapshots are rebased onto whatever came from GitHub. That's usually phone ideas, which can't conflict.

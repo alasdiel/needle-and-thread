@@ -522,6 +522,38 @@ pub async fn snapshot_now() -> Result<bool, String> {
     call("snapshot_now", Args::default()).await
 }
 
+/// How the vault's backup is doing; see `BackupStatus` in src-tauri/src/backup.rs.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum BackupStatus {
+    Waiting,
+    Pushing,
+    /// Seconds since the Unix epoch.
+    Done { at: i64 },
+    Failed { at: i64, error: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct BackupView {
+    /// The repository's SSH address; empty for no backup.
+    pub remote: String,
+    pub after_snapshot: bool,
+    pub status: BackupStatus,
+}
+
+pub async fn backup() -> Result<BackupView, String> {
+    call("backup", Args::default()).await
+}
+
+/// Saves the backup's address and switch, and backs up straight away if there's an address.
+pub async fn set_backup(remote: &str, after_snapshot: bool) -> Result<(), String> {
+    call("set_backup", Args::default().str("remote", remote).set("afterSnapshot", after_snapshot.into())).await
+}
+
+pub async fn back_up_now() -> Result<(), String> {
+    call("back_up_now", Args::default()).await
+}
+
 /// Returns the restored text. `label` describes the version in the snapshot message.
 pub async fn restore_version(project: &str, scene: &str, id: &str, label: &str) -> Result<String, String> {
     call("restore_version", scene_args(project, scene).str("id", id).str("label", label)).await

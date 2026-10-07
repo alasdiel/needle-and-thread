@@ -7,6 +7,7 @@ use leptos::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Glyph {
+    Alert,
     Back,
     Basket,
     Book,
@@ -40,6 +41,7 @@ pub enum Glyph {
 impl Glyph {
     fn paths(self) -> &'static str {
         match self {
+            Self::Alert => r#"<circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/>"#,
             Self::Back => r#"<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>"#,
             Self::Basket => {
                 r#"<path d="M4 10h16l-1.5 9.2a1 1 0 0 1-1 .8h-11a1 1 0 0 1-1-.8L4 10Z"/><path d="M8.5 10 11 4"/><path d="M15.5 10 13 4"/><path d="M9 14v3"/><path d="M12 14v3"/><path d="M15 14v3"/>"#

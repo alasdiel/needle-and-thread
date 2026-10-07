@@ -16,6 +16,7 @@ Built releases will also come later.
 - Worlds: characters, places and history shared by a series of projects
 - Search across scenes and notes (Ctrl+K, or the Search tab), filtered by status, POV or thread
 - Automatic snapshots (git under the hood), with history by day and session, compare, restore, and putting back a single removed passage, for every scene and note
+- Backup to GitHub over SSH after each snapshot, with its status beside "Saved"
 - A sewing-pattern look, light or dark
 
 ## Run it

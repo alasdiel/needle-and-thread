@@ -14,6 +14,7 @@ use needle_vcs::{Scheduler, Vault as Repo};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::backup::Backup;
 use crate::notes;
 use crate::state::{AppState, OpenVault, OrString};
 
@@ -23,18 +24,28 @@ const SNAPSHOT_EVENT: &str = "snapshot-taken";
 pub struct History {
     repo: Mutex<Repo>,
     scheduler: Mutex<Scheduler>,
+    backup: Backup,
 }
 
 impl History {
-    /// Opens (or starts) the vault's history and snapshots anything changed outside the app.
+    /// Opens (or starts) the vault's history, snapshots anything changed outside the app, and
+    /// backs up if the vault does.
     pub fn open(app: &AppHandle, vault: &Vault) -> Result<Self, String> {
         let settings = vault.settings().or_string()?;
         let history = Self {
             repo: Mutex::new(Repo::open_or_init(vault.root()).or_string()?),
             scheduler: Mutex::new(scheduler(settings.snapshots)),
+            backup: Backup::new(vault.root().to_owned(), settings.backup.clone()),
         };
-        history.snapshot(app, None)?;
+        // A snapshot backs up by itself; without one, back up anyway, in case the last try failed.
+        if !history.snapshot(app, None)? && settings.backup.is_on() {
+            history.backup.push(app);
+        }
         Ok(history)
+    }
+
+    pub fn backup(&self) -> &Backup {
+        &self.backup
     }
 
     pub fn edited(&self) {
@@ -55,6 +66,7 @@ impl History {
         self.scheduler().taken();
         if taken {
             let _ = app.emit(SNAPSHOT_EVENT, ());
+            self.backup.after_snapshot(app);
         }
         Ok(taken)
     }

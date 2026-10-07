@@ -179,3 +179,25 @@ fn never_overwrites_snapshots_made_elsewhere() {
     vault.snapshot(None).unwrap();
     assert!(vault.push(&url, None).is_err());
 }
+
+/// Pushes a clone's history back to where it came from over SSH, which changes nothing there but
+/// checks the keys are found and accepted. Run it with a clone of a test repository:
+/// `NEEDLE_TEST_CLONE=/path/to/clone NEEDLE_TEST_REMOTE=git@github.com:you/test.git cargo test -p needle-vcs -- --ignored ssh`
+#[test]
+#[ignore]
+fn pushes_over_ssh() {
+    let (Ok(clone), Ok(remote)) = (std::env::var("NEEDLE_TEST_CLONE"), std::env::var("NEEDLE_TEST_REMOTE")) else {
+        panic!("set NEEDLE_TEST_CLONE and NEEDLE_TEST_REMOTE");
+    };
+    Vault::open_or_init(Path::new(&clone)).unwrap().push(&remote, None).unwrap();
+}
+
+#[test]
+fn push_problems_are_in_plain_words() {
+    let refused = Error::new(ErrorCode::NotFastForward, ErrorClass::Reference, "cannot push because…");
+    assert!(push_problem(&refused, "git@github.com:me/novel.git").contains("nothing was sent or overwritten"));
+    let unknown = Error::new(ErrorCode::Certificate, ErrorClass::Ssh, "invalid or unknown remote ssh hostkey");
+    assert!(push_problem(&unknown, "ssh://git@example.org/me/novel.git").contains("ssh -T git@example.org"));
+    let offline = Error::new(ErrorCode::GenericError, ErrorClass::Net, "failed to resolve address");
+    assert_eq!(push_problem(&offline, "git@github.com:me/novel.git"), "couldn't reach github.com: failed to resolve address");
+}

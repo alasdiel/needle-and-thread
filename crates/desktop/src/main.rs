@@ -1,5 +1,6 @@
 mod app;
 mod appearance;
+mod backup;
 mod bin;
 mod closing;
 mod editor;

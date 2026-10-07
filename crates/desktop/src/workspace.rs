@@ -9,6 +9,7 @@ use leptos::{prelude::*, task::spawn_local};
 use needle_core::project::{NoteKind, ProjectKind};
 use needle_core::spell::Speller;
 
+use crate::backup::{Backup, BackupMark};
 use crate::bin::BinPanel;
 use crate::closing::BeforeClose;
 use crate::editor::{self, Editor, EditorHandle};
@@ -160,6 +161,8 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let pending_seam = StoredValue::new(None::<u32>);
     let revision = RwSignal::new(0u32);
     let new_project = RwSignal::new(None::<String>);
+    let backup = Backup::load();
+    provide_context(backup);
     let _ = tauri::listen("snapshot-taken", move || {
         revision.try_update(|r| *r += 1);
     });
@@ -1387,6 +1390,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                                 SaveState::Saving => "Saving…".into_any(),
                                 SaveState::Failed(e) => format!("Couldn't save: {e}").into_any(),
                             }}
+                            <BackupMark backup=backup on_open=move || show_settings.set(true) />
                         </span>
                         <div class="popover-anchor">
                             <button

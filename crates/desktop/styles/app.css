@@ -438,6 +438,40 @@ input.switch:checked {
   font: 14px/1.5 var(--font-text);
 }
 
+.backup-remote {
+  padding: 5px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--piece);
+  font: 14px/1.5 ui-monospace, "JetBrains Mono", "DejaVu Sans Mono", monospace;
+  letter-spacing: 0;
+}
+
+.backup-remote::placeholder {
+  color: var(--faint);
+}
+
+.backup-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 6px;
+  border-top: 1px solid var(--rule);
+}
+
+.backup-status-text {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--size-ui-small);
+}
+
+.backup-status-text.error {
+  color: var(--error);
+}
+
 .setting-description {
   color: var(--muted);
   font-size: var(--size-ui-small);
@@ -1549,6 +1583,29 @@ kbd {
   margin-right: 10px;
   color: var(--muted);
   font-size: var(--size-label);
+}
+
+/* Beside "Saved": how the backup to GitHub is doing; a click opens its settings. */
+.backup-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.backup-mark::before {
+  content: "·";
+}
+
+.backup-mark.error {
+  color: var(--error);
 }
 
 .save-state.error {

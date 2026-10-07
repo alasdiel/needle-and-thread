@@ -1,6 +1,7 @@
 // Prevents an extra console window on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod backup;
 mod bin;
 mod closing;
 mod history;
@@ -95,6 +96,9 @@ fn main() {
             history::restore_version,
             history::restore_note_version,
             history::name_version,
+            backup::backup,
+            backup::set_backup,
+            backup::back_up_now,
             settings::appearance,
             settings::set_appearance,
             settings::markdown_panel,

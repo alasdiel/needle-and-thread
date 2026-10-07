@@ -18,7 +18,7 @@ use needle_core::id::{make_id, slugify};
 use needle_core::names::{NameIndex, Owner};
 use needle_core::outline::{Chapter, Outline};
 use needle_core::project::{ProjectConfig, ProjectKind, WorldConfig};
-use needle_core::settings::{self, TypographyRule, VaultSettings};
+use needle_core::settings::{self, BackupSettings, TypographyRule, VaultSettings};
 
 pub use bin::{Bin, CutItem, CutKind, Passage};
 pub use error::{Error, Result};
@@ -98,6 +98,19 @@ impl Vault {
     pub fn set_typography(&self, rule: TypographyRule, on: bool) -> Result<()> {
         let path = self.root.join(SETTINGS);
         let text = settings::set_typography(&fs::read_to_string(&path)?, rule, on).map_err(Error::Invalid)?;
+        Ok(write_atomically(&path, text.as_bytes())?)
+    }
+
+    /// Sets where (and whether) the vault's history is backed up.
+    pub fn set_backup(&self, backup: &BackupSettings) -> Result<()> {
+        settings::check_remote(&backup.remote).map_err(Error::Invalid)?;
+        let path = self.root.join(SETTINGS);
+        let text = match fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => DEFAULT_SETTINGS.to_owned(),
+            Err(e) => return Err(e.into()),
+        };
+        let text = settings::set_backup(&text, backup).map_err(Error::Invalid)?;
         Ok(write_atomically(&path, text.as_bytes())?)
     }
 
