@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { Node } from "prosemirror-model";
 import { EditorState, TextSelection } from "prosemirror-state";
-import { type Passage, cutPassage, firstSentence, lastSentence, restorePassage } from "../src/bin.ts";
+import { closeHistory, history, redo, undo } from "prosemirror-history";
+import { type Move, type Passage, cutPassage, firstSentence, followHistory, lastSentence, restorePassage } from "../src/bin.ts";
 import { parseMarkdown, serializeMarkdown } from "../src/markdown.ts";
 
 /** Where `text` starts (or with `end`, ends) in the document. */
@@ -175,4 +176,61 @@ test("spaces at a passage's ends come back with it", () => {
   const trailing = cut(text, "She kept", "sleeve. ");
   assert.equal(trailing.passage.ends_with_space, true);
   putBack(trailing.state, trailing.passage, text);
+});
+
+// --- Undo and the bin ----------------------------------------------------------------------
+
+/** A state with undo history, the text from `from` to `to` selected. */
+function withHistory(markdown: string, from: string, to: string): EditorState {
+  const doc = parseMarkdown(markdown);
+  return EditorState.create({ doc, plugins: [history()], selection: TextSelection.create(doc, at(doc, from), at(doc, to, true)) });
+}
+
+/** Runs Undo or Redo, as the editor's keymap would. */
+function step(state: EditorState, command: typeof undo): EditorState {
+  let next = state;
+  assert.ok(command(state, (tr) => (next = state.apply(tr))));
+  return next;
+}
+
+test("Undo after a cut brings the passage back out of the bin, and Redo puts it in again", () => {
+  let state = withHistory(MARKET, "The smell", "everything.");
+  const cut = cutPassage(state)!;
+  const before = state.doc;
+  state = state.apply(closeHistory(cut.tr));
+  const moves: Move[] = [{ id: 1, passage: cut.passage, with: before, without: state.doc, inBin: true }];
+
+  state = step(state, undo);
+  assert.deepEqual(followHistory(moves, state.doc).back.map((m) => m.id), [1]);
+  assert.equal(moves[0].inBin, false);
+
+  state = step(state, redo);
+  assert.deepEqual(followHistory(moves, state.doc).out.map((m) => m.id), [1]);
+  assert.equal(moves[0].inBin, true);
+});
+
+test("Undo after a restore takes the passage out again", () => {
+  const { passage, state: cutState } = cut(MARKET, "The smell", "everything.");
+  let state = EditorState.create({ doc: cutState.doc, plugins: [history()] });
+  const without = state.doc;
+  const restored = restorePassage(state, passage);
+  state = state.apply(closeHistory(restored.tr));
+  const moves: Move[] = [{ id: 2, passage, with: state.doc, without, inBin: false }];
+
+  state = step(state, undo);
+  assert.deepEqual(followHistory(moves, state.doc).out.map((m) => m.id), [2]);
+});
+
+test("Undo that stops short of the cut leaves the bin alone", () => {
+  let state = withHistory(MARKET, "The smell", "everything.");
+  const cut = cutPassage(state)!;
+  const before = state.doc;
+  state = state.apply(closeHistory(cut.tr));
+  const moves: Move[] = [{ id: 3, passage: cut.passage, with: before, without: state.doc, inBin: true }];
+  // Typing after the cut, as its own step.
+  state = state.apply(closeHistory(state.tr.insertText("New words. ", 1)));
+
+  state = step(state, undo);
+  assert.deepEqual(followHistory(moves, state.doc), { back: [], out: [] });
+  assert.equal(moves[0].inBin, true);
 });

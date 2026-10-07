@@ -79,7 +79,8 @@ impl Bin {
         &self.owner
     }
 
-    pub(crate) fn file_path(&self, name: &str) -> Result<PathBuf> {
+    /// Where something in the bin is, by its name.
+    pub fn file_path(&self, name: &str) -> Result<PathBuf> {
         Ok(self.dir.join(format!("{}.md", checked_name(name)?)))
     }
 
@@ -94,20 +95,26 @@ impl Bin {
         Ok(path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_owned())
     }
 
-    /// Everything in the bin, the most recently cut first.
-    pub fn list(&self) -> Result<Vec<CutItem>> {
-        let mut items = Vec::new();
+    /// The names of everything in the bin, in no particular order.
+    pub fn names(&self) -> Result<Vec<String>> {
+        let mut names = Vec::new();
         if !self.dir.is_dir() {
-            return Ok(items);
+            return Ok(names);
         }
         for entry in fs::read_dir(&self.dir)? {
             let path = entry?.path();
             if path.extension().is_some_and(|ext| ext == "md")
                 && let Some(name) = path.file_stem().and_then(|s| s.to_str()).filter(|n| !n.starts_with('.'))
             {
-                items.push(self.item(name)?);
+                names.push(name.to_owned());
             }
         }
+        Ok(names)
+    }
+
+    /// Everything in the bin, the most recently cut first.
+    pub fn list(&self) -> Result<Vec<CutItem>> {
+        let mut items = self.names()?.iter().map(|name| self.item(name)).collect::<Result<Vec<_>>>()?;
         items.sort_by(|a, b| (&b.cut_at, &b.name).cmp(&(&a.cut_at, &a.name)));
         Ok(items)
     }

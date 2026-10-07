@@ -2,6 +2,7 @@
 //! pattern piece) or note (a fabric swatch) in the middle, and the History or Markdown panel on
 //! the right.
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use leptos::{prelude::*, task::spawn_local};
@@ -175,6 +176,8 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
 
     // The open project's cut bin, and the notice after something goes in.
     let bin_items = RwSignal::new(Vec::<CutView>::new());
+    // The piece in the bin that search opened, by owner, whether that's a world, and name.
+    let bin_found = RwSignal::new(None::<(String, bool, String)>);
     let notice = RwSignal::new(None::<Notice>);
     let notices = StoredValue::new(0u32);
     // A passage to put back once its scene has opened.
@@ -269,15 +272,20 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         })
     });
 
-    // Puts a passage from the bin back into the open scene: in its old place if that's still
-    // there, else at the cursor. It leaves the bin once the scene is saved with it.
-    let put_back = move |item: CutView| {
-        let (Some(p), Some(passage)) = (project.get_untracked(), item.passage.clone()) else { return };
-        let Some(at_spot) = editor.with_value(|h| h.as_ref().map(|h| h.restore_passage(&passage))) else { return };
-        flush();
-        if !at_spot {
-            show_notice("Its old place had changed, so it went in at the cursor", None);
+    // Passages the editor cut to the bin, by the editor's id for the move, so Undo can take
+    // them out of the bin again.
+    let binned_passages = StoredValue::new(HashMap::<u32, CutView>::new());
+
+    // A passage that's back in the open scene leaves the bin, once the scene is saved with it.
+    let leave_bin = move |item: CutView| {
+        let Some(p) = project.get_untracked() else { return };
+        let key = (item.owner.clone(), item.world, item.name.clone());
+        let same = move |other: &CutView| (&other.owner, other.world, &other.name) == (&key.0, key.1, &key.2);
+        binned_passages.update_value(|binned| binned.retain(|_, other| !same(other)));
+        if notice.with_untracked(|n| n.as_ref().and_then(|n| n.undo.as_ref()).is_some_and(same)) {
+            notice.set(None);
         }
+        flush();
         spawn_local(async move {
             if let Some(save) = last_save.get_value() {
                 let _ = wasm_bindgen_futures::JsFuture::from(save).await;
@@ -290,6 +298,17 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                 Err(e) => report(e),
             }
         });
+    };
+
+    // Puts a passage from the bin back into the open scene: in its old place if that's still
+    // there, else at the cursor.
+    let put_back = move |item: CutView| {
+        let Some(passage) = item.passage.clone() else { return };
+        let Some(at_spot) = editor.with_value(|h| h.as_ref().map(|h| h.restore_passage(&passage))) else { return };
+        leave_bin(item);
+        if !at_spot {
+            show_notice("Its old place had changed, so it went in at the cursor", None);
+        }
     };
 
     let close_scene = move || {
@@ -551,8 +570,18 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let load_project = move |slug: String| load_project_at(slug, None);
 
     // Opens a search result, with its matches highlighted; a scene in another project opens
-    // that project first.
+    // that project first. Something in the cut bin is shown there.
     let open_hit = move |hit: HitView| {
+        if hit.kind == "cut" {
+            let owner = hit.world.clone().or(hit.project.clone()).unwrap_or_default();
+            bin_found.set(Some((owner, hit.world.is_some(), hit.key)));
+            if let Some(p) = hit.project.filter(|p| project.get_untracked().as_ref() != Some(p)) {
+                project.set(Some(p.clone()));
+                load_project_at(p, None);
+            }
+            panel.set(Some(Panel::Bin));
+            return;
+        }
         pending_terms.set_value(Some(search.terms()));
         if hit.kind == "scene" {
             let Some(p) = hit.project else { return };
@@ -756,13 +785,14 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
 
     // --- The cut bin -----------------------------------------------------------------------
 
-    // The editor has taken the passage out of the scene; it goes into the bin, or back if it
-    // can't.
-    let cut_to_bin = move |passage: Passage| {
+    // The editor has taken the passage out of the scene (by a cut, or by undoing a restore);
+    // it goes into the bin, or back if it can't.
+    let cut_to_bin = move |passage: Passage, id: u32| {
         let (Some(p), Some(s)) = (project.get_untracked(), current()) else { return };
         spawn_local(async move {
             match tauri::cut_passage(&p, &s, &passage).await {
                 Ok(item) => {
+                    binned_passages.update_value(|binned| _ = binned.insert(id, item.clone()));
                     load_bin(p);
                     show_notice("Moved to the cut bin", Some(item));
                 }
@@ -777,6 +807,13 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                 Err(e) => report(format!("Couldn't put this in the cut bin ({e}): {}", passage.markdown.trim())),
             }
         });
+    };
+
+    // Undo (or Redo) has put a binned passage back in the text.
+    let back_from_bin = move |id: u32| {
+        if let Some(item) = binned_passages.try_update_value(|binned| binned.remove(&id)).flatten() {
+            leave_bin(item);
+        }
     };
 
     // A passage goes back into its own scene, opened if need be, when its old place is still
@@ -1013,6 +1050,13 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     // Under a result's title: a scene's chapter (or its project, if it's another one), a
     // note's type.
     let hit_subtitle = move |hit: &HitView| -> String {
+        if hit.kind == "cut" {
+            return match hit.note_type.as_deref() {
+                Some("passage") => "Passage".to_owned(),
+                Some("scene") | None => "Scene".to_owned(),
+                Some(kind) => notes::kind_label(kind, project_kind.get_untracked()).to_owned(),
+            };
+        }
         if hit.kind != "scene" {
             return notes::kind_label(hit.note_type.as_deref().unwrap_or("note"), project_kind.get_untracked()).to_owned();
         }
@@ -1024,7 +1068,10 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
         outline.with_untracked(|o| o.as_ref().and_then(|o| place(o, &hit.key)).and_then(|p| p.chapter)).unwrap_or_default()
     };
     let hit_is_open = move |hit: &HitView| {
-        if hit.kind == "scene" {
+        if hit.kind == "cut" {
+            panel.get() == Some(Panel::Bin)
+                && bin_found.with(|f| f.as_ref().is_some_and(|(owner, world, name)| *name == hit.key && *world == hit.world.is_some() && Some(owner) == hit.world.as_ref().or(hit.project.as_ref())))
+        } else if hit.kind == "scene" {
             hit.project == project.get() && scene.with(|s| s.as_ref().is_some_and(|s| s.slug == hit.key))
         } else {
             note.with(|n| {
@@ -1505,6 +1552,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                                     on_cut_confirm=on_cut_confirm
                                     on_cut_cancel=on_cut_cancel
                                     on_cut_to_bin=cut_to_bin
+                                    on_back_from_bin=back_from_bin
                                     on_ready=on_ready
                                 />
                             </article>
@@ -1629,6 +1677,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                 Some(Panel::Bin) => Some(view! {
                     <BinPanel
                         items=bin_items
+                        found=bin_found
                         kind=project_kind
                         scene_title=move |slug: &str| outline.with(|o| o.as_ref().and_then(|o| find(o, slug)).map(|s| s.title))
                         on_restore=restore_from_bin

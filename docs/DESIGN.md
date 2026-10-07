@@ -219,7 +219,8 @@ Each type has its own template: an ordinary note in `.needle/templates/` (`chara
 - Deleted scenes go into the bin whole, with `cut_at`, `cut_from_scene`, `cut_from_chapter` and `cut_after_scene` (the scene before it, empty if it was first) added to their header. Merging two scenes bins the second one, so its header survives. Deleted notes go in whole too, with `cut_at` and `cut_from_note`.
 - The basket at the foot of the sidebar opens the bin as a panel on the right, newest first and grouped by day. A passage shows its first lines; a scene or note shows its title.
 - **Restore** puts a passage back where it came from if that spot still exists, or at the cursor if it doesn't. A scene goes back after the scene it followed (or first in its chapter), else at the end of its chapter, else among the scenes the outline doesn't place. A note goes back to its old path, or beside it if a new note has taken the name.
-- The bin is searchable.
+- The bin is searchable: what's in it comes last in the results, under "Cut bin" (a passage under its scene's title), and the Cut bin filter shows only that. Opening one shows it in the bin, marked.
+- Undo and Redo keep the bin in step: Ctrl+Z right after a cut puts the passage back and takes it out of the bin, Redo bins it again, and Ctrl+Z after a Restore puts it back in the bin.
 
 A passage's file:
 

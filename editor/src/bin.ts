@@ -326,3 +326,33 @@ export function restorePassage(state: EditorState, passage: Passage): { tr: Tran
 export function hasSpot(markdown: string, passage: Passage): boolean {
   return findSpot(parseMarkdown(markdown), passage) !== null;
 }
+
+// --- Keeping the bin in step with Undo -------------------------------------------------------
+
+/** A passage moved between the scene and the bin, by a cut or a restore: the document with it
+ * and without it, and which side it's on now. */
+export interface Move {
+  id: number;
+  passage: Passage;
+  with: Node;
+  without: Node;
+  inBin: boolean;
+}
+
+/** After an Undo or Redo: which moved passages are back in the text (`back`), so they leave the
+ * bin, and which are out of it again (`out`), so they go back in. Updates each move's `inBin`.
+ * A move counts only when the whole document is as it was right before or after it. */
+export function followHistory(moves: Move[], doc: Node): { back: Move[]; out: Move[] } {
+  const back: Move[] = [];
+  const out: Move[] = [];
+  for (const move of moves) {
+    if (move.inBin && doc.eq(move.with)) {
+      move.inBin = false;
+      back.push(move);
+    } else if (!move.inBin && doc.eq(move.without)) {
+      move.inBin = true;
+      out.push(move);
+    }
+  }
+  return { back, out };
+}

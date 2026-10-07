@@ -25,6 +25,9 @@ fn when(cut_at: &str) -> (String, String) {
 pub fn BinPanel(
     #[prop(into)] items: Signal<Vec<CutView>>,
     #[prop(into)] kind: Signal<ProjectKind>,
+    /// The piece search opened (owner, whether that's a world, name), marked and scrolled to.
+    /// Cleared when the panel closes.
+    found: RwSignal<Option<(String, bool, String)>>,
     /// A scene's title now, if it's still in the project.
     scene_title: impl Fn(&str) -> Option<String> + Copy + Send + Sync + 'static,
     on_restore: impl Fn(CutView) + Copy + Send + Sync + 'static,
@@ -91,8 +94,12 @@ pub fn BinPanel(
                 .into_any()
             }
         };
+        let is_found = {
+            let key = (item.owner.clone(), item.world, item.name.clone());
+            move || found.with(|f| f.as_ref() == Some(&key))
+        };
         view! {
-            <li class="bin-piece">
+            <li class="bin-piece" class:found=is_found>
                 {body}
                 <div class="bin-actions">
                     <button class="small" on:click=move |_| on_restore(item.clone())>
@@ -103,6 +110,25 @@ pub fn BinPanel(
             </li>
         }
     };
+
+    // Brings the piece search opened into view, once it's drawn (its project's bin may still
+    // be loading).
+    Effect::new(move |_| {
+        if found.with(Option::is_none) || items.with(Vec::is_empty) {
+            return;
+        }
+        request_animation_frame(|| {
+            let piece = web_sys::window()
+                .and_then(|w| w.document())
+                .and_then(|d| d.query_selector(".bin-piece.found").ok().flatten());
+            if let Some(piece) = piece {
+                let options = web_sys::ScrollIntoViewOptions::new();
+                options.set_block(web_sys::ScrollLogicalPosition::Center);
+                piece.scroll_into_view_with_scroll_into_view_options(&options);
+            }
+        });
+    });
+    on_cleanup(move || _ = found.try_set(None));
 
     view! {
         <aside class="side-panel bin-panel">

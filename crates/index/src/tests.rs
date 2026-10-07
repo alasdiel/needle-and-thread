@@ -114,12 +114,51 @@ fn a_sync_reads_only_what_changed() {
     let tidewater = vault.project("tidewater").unwrap();
     tidewater.save_body("untitled-scene", "The compass, not the book, was the point.\n").unwrap();
     tidewater.cut_scene("the-ledger").unwrap();
-    assert_eq!(index.sync(&vault).unwrap(), Synced { added: 0, updated: 1, removed: 1 });
+    // The cut scene leaves the manuscript and turns up in the bin.
+    assert_eq!(index.sync(&vault).unwrap(), Synced { added: 1, updated: 1, removed: 1 });
     assert_eq!(titles(&search(&index, "compass")), ["The night market"]);
     let hits = search(&index, "ledger");
-    let mut left = titles(&hits);
+    let mut left: Vec<&str> = hits.iter().filter(|h| h.kind != Kind::Cut).map(|h| h.title.as_str()).collect();
     left.sort();
     assert_eq!(left, ["Mara Venn", "Untitled scene"]);
+    assert_eq!(hits.last().map(|h| (h.kind, h.title.as_str())), Some((Kind::Cut, "The ledger")));
+}
+
+#[test]
+fn the_cut_bins_are_searched_last() {
+    let (_dir, vault) = vault();
+    let tidewater = vault.project("tidewater").unwrap();
+    let passage = needle_vault::Passage {
+        markdown: "The smuggler's ledger burned on the quay.\n".into(),
+        text_before: "Nobody at the café would say where.".into(),
+        starts_paragraph: true,
+        ends_paragraph: true,
+        ..Default::default()
+    };
+    let cut = tidewater.cut_passage("untitled-scene", &passage).unwrap();
+    let world = vault.world("glass-coast").unwrap();
+    let drowning = world.notes().paths().unwrap().remove(0);
+    world.notes().cut(&drowning).unwrap();
+    let mut index = Index::in_memory().unwrap();
+    index.sync(&vault).unwrap();
+
+    // A passage is found by its words, after everything that isn't in a bin, under its scene's
+    // title.
+    let hits = search(&index, "ledger");
+    let last = hits.last().unwrap();
+    assert_eq!(
+        (last.kind, last.title.as_str(), last.note_type.as_deref(), last.project.as_deref(), last.key.as_str()),
+        (Kind::Cut, "The night market", Some("passage"), Some("tidewater"), cut.name.as_str())
+    );
+    assert!(hits[..hits.len() - 1].iter().all(|h| h.kind != Kind::Cut));
+    assert_eq!(index.search(&Query { text: "ledger".into(), kind: Some(Kind::Cut), ..Default::default() }).unwrap().len(), 1);
+
+    // A world's note in its bin keeps its type.
+    let hits = search(&index, "drowning");
+    assert_eq!(
+        hits.iter().map(|h| (h.kind, h.note_type.as_deref(), h.world.as_deref())).collect::<Vec<_>>(),
+        [(Kind::Cut, Some("event"), Some("glass-coast"))]
+    );
 }
 
 #[test]

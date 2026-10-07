@@ -3,11 +3,11 @@
 
 import "./style.css";
 import type { Node } from "prosemirror-model";
-import { history } from "prosemirror-history";
+import { closeHistory, history, isHistoryTransaction } from "prosemirror-history";
 import { keymap } from "prosemirror-keymap";
 import { EditorState, type Plugin, Selection, TextSelection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
-import { type Passage, cutPassage, restorePassage } from "./bin.ts";
+import { type Move, type Passage, cutPassage, followHistory, restorePassage } from "./bin.ts";
 import { type Typography, buildInputRules, defaultTypography } from "./inputrules.ts";
 import { buildKeymaps } from "./keymap.ts";
 import { type HighlightMeta, highlightKey, highlightPlugin } from "./highlight.ts";
@@ -38,15 +38,25 @@ export interface EditorOptions {
 export interface MountOptions extends EditorOptions, Partial<CutCallbacks> {
   /** Called with the document's Markdown once typing pauses for `debounceMs`. */
   onChange?: (markdown: string, words: number) => void;
-  /** Called with a passage just cut to the bin, which the app then stores. */
-  onCutToBin?: (passage: Passage) => void;
+  /** Called with a passage just cut to the bin, which the app then stores, and the id of that
+   * move. Undo after a restore calls it too, as that takes the passage out again. */
+  onCutToBin?: (passage: Passage, move: number) => void;
+  /** Called when Undo (or Redo) puts a binned passage back in the text, with the id `onCutToBin`
+   * had, so the app takes it out of the bin. */
+  onBackFromBin?: (move: number) => void;
   debounceMs?: number;
 }
 
 export class Editor {
   private readonly view: EditorView;
   private readonly onChange: (markdown: string, words: number) => void;
-  private readonly onCutToBin: (passage: Passage) => void;
+  private readonly onCutToBin: (passage: Passage, move: number) => void;
+  private readonly onBackFromBin: (move: number) => void;
+  // Passages moved to and from the bin in this document, newest last, for Undo and Redo.
+  private moves: Move[] = [];
+  private lastMove = 0;
+  // Starts a new undo step with the next edit, so a move is always a step of its own.
+  private closeNext = false;
   // Only scenes have a bin to cut to.
   private binEnabled = false;
   private readonly binKeys = keymap({ "Shift-Mod-x": () => this.cutToBin() });
@@ -74,6 +84,7 @@ export class Editor {
   constructor(el: HTMLElement, markdown: string, options: MountOptions = {}) {
     this.onChange = options.onChange ?? (() => {});
     this.onCutToBin = options.onCutToBin ?? (() => {});
+    this.onBackFromBin = options.onBackFromBin ?? (() => {});
     this.cutCallbacks = {
       onCutConfirm: options.onCutConfirm ?? (() => {}),
       onCutCancel: options.onCutCancel ?? (() => {}),
@@ -85,8 +96,15 @@ export class Editor {
       // WebKit's own spellchecker is off; see spellcheck.ts.
       attributes: { class: "needle-prose", spellcheck: "false", lang: "en-US" },
       dispatchTransaction: (tr) => {
+        if (this.closeNext && tr.docChanged) {
+          closeHistory(tr);
+          this.closeNext = false;
+        }
         this.view.updateState(this.view.state.apply(tr));
-        if (tr.docChanged) this.schedule();
+        if (tr.docChanged) {
+          this.schedule();
+          if (isHistoryTransaction(tr)) this.followHistory();
+        }
       },
       handleDOMEvents: {
         blur: () => {
@@ -103,6 +121,8 @@ export class Editor {
    * must `flush()` first when switching scenes. */
   setContent(markdown: string): void {
     this.cancel();
+    this.moves = [];
+    this.closeNext = false;
     this.view.updateState(this.createState(parseMarkdown(markdown)));
   }
 
@@ -163,17 +183,21 @@ export class Editor {
     if (!this.binEnabled) return false;
     const cut = cutPassage(this.view.state);
     if (!cut) return false;
-    this.view.dispatch(cut.tr);
+    const withIt = this.view.state.doc;
+    this.view.dispatch(closeHistory(cut.tr));
+    const id = this.remember(cut.passage, withIt, true);
     this.view.focus();
-    this.onCutToBin(cut.passage);
+    this.onCutToBin(cut.passage, id);
     return true;
   }
 
   /** Puts a passage from the bin back where it came from if that place is still there, and
    * otherwise at the cursor, then selects it. Returns whether it found the place. */
   restorePassage(passage: Passage): boolean {
+    const without = this.view.state.doc;
     const { tr, atSpot } = restorePassage(this.view.state, passage);
-    this.view.dispatch(tr);
+    this.view.dispatch(closeHistory(tr));
+    this.remember(passage, without, false);
     this.view.focus();
     return atSpot;
   }
@@ -263,6 +287,24 @@ export class Editor {
       this.highlight,
       this.seam,
     ];
+  }
+
+  /** Notes a move just made, `other` being the document on its other side. Returns its id. */
+  private remember(passage: Passage, other: Node, inBin: boolean): number {
+    const now = this.view.state.doc;
+    const id = ++this.lastMove;
+    this.moves.push({ id, passage, inBin, with: inBin ? other : now, without: inBin ? now : other });
+    if (this.moves.length > 50) this.moves.shift();
+    this.closeNext = true;
+    return id;
+  }
+
+  /** After Undo or Redo, takes passages that are back in the text out of the bin, and puts
+   * those that are out of it again back in. */
+  private followHistory(): void {
+    const { back, out } = followHistory(this.moves, this.view.state.doc);
+    for (const move of back) this.onBackFromBin(move.id);
+    for (const move of out) this.onCutToBin(move.passage, move.id);
   }
 
   private createState(doc: Node): EditorState {
