@@ -4,11 +4,12 @@
 mod schedule;
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::env;
+use std::path::{Path, PathBuf};
 
 use git2::{
-    Commit, Cred, Delta, ErrorCode, IndexAddOption, Oid, PushOptions, RemoteCallbacks, Repository,
-    RepositoryInitOptions, Signature, Sort, Tree,
+    Commit, Cred, CredentialType, Delta, ErrorClass, ErrorCode, IndexAddOption, Oid, PushOptions, RemoteCallbacks,
+    Repository, RepositoryInitOptions, Signature, Sort, Tree,
 };
 use needle_core::{scene::SceneFile, words::count_markdown_words};
 
@@ -126,8 +127,9 @@ impl Vault {
     }
 
     /// Pushes history and named versions to `url`. Never forces: if the remote has snapshots
-    /// this vault doesn't, the push fails and nothing is overwritten. `token` is a GitHub token
-    /// for HTTPS URLs.
+    /// this vault doesn't, the push fails and nothing is overwritten. An SSH address uses the
+    /// user's keys: those in ssh-agent, then `~/.ssh/id_ed25519`, `id_ecdsa` and `id_rsa`
+    /// without a passphrase. `token` is a GitHub token for HTTPS addresses.
     pub fn push(&self, url: &str, token: Option<&str>) -> Result<(), Error> {
         let mut refspecs = vec![format!("refs/heads/{BRANCH}:refs/heads/{BRANCH}")];
         for reference in self.repo.references_glob(&format!("{NAMED_VERSIONS}*"))? {
@@ -140,16 +142,35 @@ impl Vault {
         let mut rejected = None;
         {
             let mut callbacks = RemoteCallbacks::new();
-            if let Some(token) = token {
-                let mut tried = false;
-                callbacks.credentials(move |_url, _user, _allowed| {
-                    // libgit2 asks again after a failed attempt; don't loop on a bad token.
-                    if std::mem::replace(&mut tried, true) {
-                        return Err(Error::from_str("GitHub didn't accept the token"));
+            // libgit2 asks again after each failed attempt: offer each way once, then stop.
+            let mut ssh_keys = ssh_key_files().into_iter();
+            let mut tried_agent = false;
+            let mut tried_token = false;
+            callbacks.credentials(move |_url, user, allowed| {
+                let user = user.unwrap_or("git");
+                if allowed.contains(CredentialType::USERNAME) {
+                    return Cred::username(user);
+                }
+                if allowed.contains(CredentialType::SSH_KEY) {
+                    if !std::mem::replace(&mut tried_agent, true)
+                        && let Ok(cred) = Cred::ssh_key_from_agent(user)
+                    {
+                        return Ok(cred);
                     }
-                    Cred::userpass_plaintext("x-access-token", token)
-                });
-            }
+                    if let Some(private) = ssh_keys.next() {
+                        let public = private.with_extension("pub");
+                        return Cred::ssh_key(user, public.exists().then_some(public.as_path()), &private, None);
+                    }
+                    return Err(Error::from_str(
+                        "none of your SSH keys was accepted: load yours into ssh-agent (ssh-add), or add it to your account",
+                    ));
+                }
+                match token {
+                    Some(token) if !std::mem::replace(&mut tried_token, true) => Cred::userpass_plaintext("x-access-token", token),
+                    Some(_) => Err(Error::from_str("GitHub didn't accept the token")),
+                    None => Err(Error::from_str("this address needs a password; use its SSH address instead")),
+                }
+            });
             callbacks.push_update_reference(|reference, status| {
                 if let Some(status) = status {
                     rejected = Some(format!("{reference} was rejected: {status}"));
@@ -246,3 +267,34 @@ fn blob_at(tree: &Tree, path: &Path) -> Option<Oid> {
 
 #[cfg(test)]
 mod tests;
+
+/// Why a push failed, in words for the person writing. `url` is where it was going.
+pub fn push_problem(error: &Error, url: &str) -> String {
+    let host = host_of(url);
+    match (error.code(), error.class()) {
+        (ErrorCode::NotFastForward, _) => {
+            "the repository has snapshots this vault doesn't; nothing was sent or overwritten".into()
+        }
+        (ErrorCode::Certificate, _) => {
+            format!("this computer doesn't know {host} yet: run `ssh -T git@{host}` once in a terminal and answer yes")
+        }
+        (ErrorCode::Auth, _) => error.message().to_owned(),
+        (_, ErrorClass::Net | ErrorClass::Ssh | ErrorClass::Os) => format!("couldn't reach {host}: {}", error.message()),
+        _ => error.message().to_owned(),
+    }
+}
+
+/// The host in an SSH address: `github.com` in `git@github.com:me/novel.git` or
+/// `ssh://git@github.com/me/novel.git`.
+fn host_of(url: &str) -> &str {
+    let rest = url.strip_prefix("ssh://").unwrap_or(url);
+    let rest = rest.split_once('@').map_or(rest, |(_, host)| host);
+    rest.split([':', '/']).next().unwrap_or(rest)
+}
+
+/// The usual private key files in `~/.ssh` that exist, in the order ssh tries them.
+fn ssh_key_files() -> Vec<PathBuf> {
+    let Some(home) = env::var_os("HOME") else { return Vec::new() };
+    let dir = Path::new(&home).join(".ssh");
+    ["id_ed25519", "id_ecdsa", "id_rsa"].iter().map(|name| dir.join(name)).filter(|key| key.is_file()).collect()
+}

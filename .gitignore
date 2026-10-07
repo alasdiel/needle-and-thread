@@ -6,3 +6,5 @@
 /.cargo/config.toml
 /crates/desktop/dist-release
 /docs/HANDOFF.md
+/docs/HANDOFF_HOST.md
+/docs/sync-handoff.py

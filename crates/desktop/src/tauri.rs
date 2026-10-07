@@ -3,10 +3,12 @@
 use std::{future::Future, pin::Pin};
 
 use js_sys::{Object, Reflect};
-use serde::{Deserialize, de::DeserializeOwned};
+use needle_core::settings::TypographyRule;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use wasm_bindgen::prelude::*;
 
 use crate::appearance::Appearance;
+use crate::editor::Typography;
 
 #[wasm_bindgen]
 extern "C" {
@@ -20,12 +22,14 @@ extern "C" {
 /// A boxed future, for passing commands around (they run on the browser's single thread).
 pub type LocalFuture<T> = Pin<Box<dyn Future<Output = T>>>;
 
-/// Calls `handler` every time the backend emits `event`, for the rest of the app's life.
-pub fn listen(event: &str, mut handler: impl FnMut() + 'static) {
+/// Calls `handler` every time the backend emits `event`, for the rest of the app's life. The
+/// promise resolves once the listener is in place.
+pub fn listen(event: &str, mut handler: impl FnMut() + 'static) -> js_sys::Promise {
     let closure = Closure::<dyn FnMut(JsValue)>::new(move |_payload: JsValue| handler());
-    let _ = listen_js(event, &closure);
+    let listening = listen_js(event, &closure);
     // The listener lives as long as the window, so its closure must too.
     closure.forget();
+    listening
 }
 
 /// Command arguments. Tauri matches them to the Rust parameters by name.
@@ -73,6 +77,7 @@ fn scene_args(project: &str, scene: &str) -> Args {
 pub struct VaultView {
     pub path: String,
     pub projects: Vec<ProjectView>,
+    pub typography: Typography,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -272,6 +277,42 @@ pub struct SpellDictionary {
     pub personal_words: Vec<String>,
 }
 
+/// Something in the cut bin.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct CutView {
+    /// The project or world folder whose bin it's in.
+    pub owner: String,
+    pub world: bool,
+    /// Its file's name in `cut/`.
+    pub name: String,
+    /// "passage", "scene" or "note".
+    pub kind: String,
+    /// When it was cut, as `2026-10-03T16:15:00Z`.
+    pub cut_at: String,
+    /// A scene's or note's title; for a passage, its scene's title when it was cut.
+    pub title: String,
+    /// The scene a passage came from.
+    pub scene: Option<String>,
+    pub chapter: Option<String>,
+    pub note_kind: Option<String>,
+    pub words: usize,
+    pub passage: Option<Passage>,
+}
+
+/// A passage cut from a scene, as the editor makes it and the bin stores it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Passage {
+    pub markdown: String,
+    pub text_before: String,
+    pub text_after: String,
+    pub starts_paragraph: bool,
+    pub ends_paragraph: bool,
+    #[serde(default)]
+    pub starts_with_space: bool,
+    #[serde(default)]
+    pub ends_with_space: bool,
+}
+
 // --- Vaults and projects ----------------------------------------------------------------
 
 pub async fn current_vault() -> Result<Option<VaultView>, String> {
@@ -290,6 +331,10 @@ pub async fn create_vault() -> Result<Option<VaultView>, String> {
 
 pub async fn open_sample_vault() -> Result<VaultView, String> {
     call("open_sample_vault", Args::default()).await
+}
+
+pub async fn set_typography(rule: TypographyRule, on: bool) -> Result<(), String> {
+    call("set_typography", Args::default().str("rule", rule.key()).set("on", on.into())).await
 }
 
 pub async fn create_project(title: &str, kind: &str) -> Result<ProjectView, String> {
@@ -337,6 +382,10 @@ pub async fn rename_scene(project: &str, scene: &str, title: &str) -> Result<Out
 
 pub async fn set_scene_status(project: &str, scene: &str, status: &str) -> Result<OutlineView, String> {
     call("set_scene_status", scene_args(project, scene).str("status", status)).await
+}
+
+pub async fn set_scene_summary(project: &str, scene: &str, summary: &str) -> Result<OutlineView, String> {
+    call("set_scene_summary", scene_args(project, scene).str("summary", summary)).await
 }
 
 pub async fn cut_scene(project: &str, scene: &str) -> Result<OutlineView, String> {
@@ -406,6 +455,10 @@ pub async fn create_note(project: &str, kind: &str, title: &str) -> Result<NoteV
     call("create_note", Args::default().str("project", project).str("kind", kind).str("title", title)).await
 }
 
+pub async fn cut_note(note: &NoteKey) -> Result<(), String> {
+    call("cut_note", note_args(note)).await
+}
+
 pub async fn rename_note(note: &NoteKey, title: &str) -> Result<NoteView, String> {
     call("rename_note", note_args(note).str("title", title)).await
 }
@@ -469,13 +522,89 @@ pub async fn snapshot_now() -> Result<bool, String> {
     call("snapshot_now", Args::default()).await
 }
 
+/// How the vault's backup is doing; see `BackupStatus` in src-tauri/src/backup.rs.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum BackupStatus {
+    Waiting,
+    Pushing,
+    /// Seconds since the Unix epoch.
+    Done { at: i64 },
+    Failed { at: i64, error: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct BackupView {
+    /// The repository's SSH address; empty for no backup.
+    pub remote: String,
+    pub after_snapshot: bool,
+    pub status: BackupStatus,
+}
+
+pub async fn backup() -> Result<BackupView, String> {
+    call("backup", Args::default()).await
+}
+
+/// Saves the backup's address and switch, and backs up straight away if there's an address.
+pub async fn set_backup(remote: &str, after_snapshot: bool) -> Result<(), String> {
+    call("set_backup", Args::default().str("remote", remote).set("afterSnapshot", after_snapshot.into())).await
+}
+
+pub async fn back_up_now() -> Result<(), String> {
+    call("back_up_now", Args::default()).await
+}
+
 /// Returns the restored text. `label` describes the version in the snapshot message.
 pub async fn restore_version(project: &str, scene: &str, id: &str, label: &str) -> Result<String, String> {
     call("restore_version", scene_args(project, scene).str("id", id).str("label", label)).await
 }
 
+pub async fn note_history(note: &NoteKey) -> Result<Vec<VersionInfo>, String> {
+    call("note_history", note_args(note)).await
+}
+
+pub async fn note_version(note: &NoteKey, id: &str) -> Result<String, String> {
+    call("note_version", note_args(note).str("id", id)).await
+}
+
+/// Returns the restored text. `label` describes the version in the snapshot message.
+pub async fn restore_note_version(note: &NoteKey, id: &str, label: &str) -> Result<String, String> {
+    call("restore_note_version", note_args(note).str("id", id).str("label", label)).await
+}
+
 pub async fn name_version(id: &str, name: &str) -> Result<(), String> {
     call("name_version", Args::default().str("id", id).str("name", name)).await
+}
+
+// --- The cut bin ------------------------------------------------------------------------
+
+pub async fn bin_items(project: &str) -> Result<Vec<CutView>, String> {
+    call("bin_items", Args::default().str("project", project)).await
+}
+
+pub async fn cut_passage(project: &str, scene: &str, passage: &Passage) -> Result<CutView, String> {
+    let passage = serde_wasm_bindgen::to_value(passage).map_err(|e| e.to_string())?;
+    call("cut_passage", scene_args(project, scene).set("passage", passage)).await
+}
+
+/// Takes a passage out of the bin, once it's back in its scene.
+pub async fn remove_from_bin(item: &CutView) -> Result<(), String> {
+    call("remove_from_bin", bin_args(item)).await
+}
+
+pub async fn restore_scene(project: &str, name: &str) -> Result<Created, String> {
+    call("restore_scene", Args::default().str("project", project).str("name", name)).await
+}
+
+pub async fn restore_note(item: &CutView) -> Result<NoteView, String> {
+    call("restore_note", bin_args(item)).await
+}
+
+fn bin_args(item: &CutView) -> Args {
+    Args::default()
+        .str("owner", &item.owner)
+        .set("world", item.world.into())
+        .str("name", &item.name)
 }
 
 // --- Settings ---------------------------------------------------------------------------
@@ -504,4 +633,16 @@ pub async fn spell_dictionary() -> Result<SpellDictionary, String> {
 
 pub async fn add_to_dictionary(word: &str) -> Result<(), String> {
     call("add_to_dictionary", Args::default().str("word", word)).await
+}
+
+// --- Closing ----------------------------------------------------------------------------
+
+/// Tells the backend to hold closes until `finish_close` from now on.
+pub async fn close_listening() -> Result<(), String> {
+    call("close_listening", Args::default()).await
+}
+
+/// Lets the window close, or with `error`, asks whether to close without the latest changes.
+pub async fn finish_close(error: Option<&str>) -> Result<(), String> {
+    call("finish_close", Args::default().opt("error", error)).await
 }

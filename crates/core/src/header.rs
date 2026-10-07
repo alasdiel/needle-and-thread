@@ -40,6 +40,14 @@ impl Header {
         self.set_value(key, Value::from(value));
     }
 
+    pub fn bool(&self, key: &str) -> Option<bool> {
+        self.doc.get(key)?.as_bool()
+    }
+
+    pub fn set_bool(&mut self, key: &str, value: bool) {
+        self.set_value(key, Value::from(value));
+    }
+
     /// A list of strings. Anything that isn't a string is skipped; a single string counts as a
     /// one-item list.
     pub fn list(&self, key: &str) -> Vec<String> {

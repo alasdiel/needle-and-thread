@@ -1,6 +1,9 @@
 // Prevents an extra console window on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod backup;
+mod bin;
+mod closing;
 mod history;
 mod notes;
 mod search;
@@ -10,14 +13,16 @@ mod state;
 mod workspace;
 
 use needle_vault::Vault;
-use tauri::{Manager, RunEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
 
+use closing::Closing;
 use state::AppState;
 
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::default())
+        .manage(Closing::default())
         .setup(|app| {
             let handle = app.handle();
             // NEEDLE_VAULT opens a given vault (handy in development); otherwise last time's
@@ -33,11 +38,17 @@ fn main() {
             history::start_timer(handle.clone());
             Ok(())
         })
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                closing::requested(window, api);
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             workspace::current_vault,
             workspace::open_vault,
             workspace::create_vault,
             workspace::open_sample_vault,
+            workspace::set_typography,
             workspace::create_project,
             workspace::project_outline,
             workspace::open_scene,
@@ -45,6 +56,7 @@ fn main() {
             workspace::create_scene,
             workspace::rename_scene,
             workspace::set_scene_status,
+            workspace::set_scene_summary,
             workspace::cut_scene,
             workspace::split_scene,
             workspace::merge_scene,
@@ -54,6 +66,11 @@ fn main() {
             workspace::set_chapter_part,
             workspace::move_chapter,
             workspace::remove_chapter,
+            bin::bin_items,
+            bin::cut_passage,
+            bin::remove_from_bin,
+            bin::restore_scene,
+            bin::restore_note,
             notes::project_notes,
             notes::open_note,
             notes::save_note,
@@ -63,6 +80,7 @@ fn main() {
             notes::note_links,
             notes::link_mention,
             notes::promote_note,
+            notes::cut_note,
             notes::project_settings,
             notes::update_project,
             notes::scene_names,
@@ -72,13 +90,21 @@ fn main() {
             spelling::add_to_dictionary,
             history::scene_history,
             history::scene_version,
+            history::note_history,
+            history::note_version,
             history::snapshot_now,
             history::restore_version,
+            history::restore_note_version,
             history::name_version,
+            backup::backup,
+            backup::set_backup,
+            backup::back_up_now,
             settings::appearance,
             settings::set_appearance,
             settings::markdown_panel,
             settings::set_markdown_panel,
+            closing::close_listening,
+            closing::finish_close,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Needle and Thread")

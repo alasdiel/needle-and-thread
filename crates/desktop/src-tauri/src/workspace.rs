@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use needle_core::project::ProjectKind;
+use needle_core::settings::{TypographyRule, TypographySettings};
 use needle_vault::{Placement, Project, SceneInfo, Vault};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
@@ -17,6 +18,7 @@ use crate::state::{AppState, OpenVault, OrString};
 pub struct VaultView {
     path: String,
     projects: Vec<ProjectView>,
+    typography: TypographySettings,
 }
 
 #[derive(Serialize, Clone)]
@@ -62,8 +64,8 @@ pub struct OpenedScene {
 
 #[derive(Serialize)]
 pub struct Created {
-    outline: OutlineView,
-    scene: String,
+    pub(crate) outline: OutlineView,
+    pub(crate) scene: String,
 }
 
 impl From<SceneInfo> for SceneView {
@@ -94,6 +96,7 @@ fn vault_view(vault: &Vault) -> Result<VaultView, String> {
     Ok(VaultView {
         path: vault.root().to_string_lossy().into_owned(),
         projects: vault.projects().or_string()?.iter().map(project_view).collect(),
+        typography: vault.settings().or_string()?.typography,
     })
 }
 
@@ -128,7 +131,7 @@ fn outline_view(open: &OpenVault, project: &Project) -> Result<OutlineView, Stri
 
 /// Runs `edit` on a project and returns its updated outline, counting it as an edit for
 /// snapshots.
-fn change<T>(
+pub(crate) fn change<T>(
     state: &AppState,
     project: &str,
     edit: impl FnOnce(&Project) -> needle_vault::Result<T>,
@@ -189,6 +192,12 @@ pub fn open_sample_vault(app: AppHandle, state: State<'_, AppState>) -> Result<V
     let view = vault_view(&vault)?;
     state.open(&app, vault, true)?;
     Ok(view)
+}
+
+/// Switches one of the automatic typography changes, for the whole vault.
+#[tauri::command]
+pub fn set_typography(state: State<'_, AppState>, rule: TypographyRule, on: bool) -> Result<(), String> {
+    state.with(|open| open.vault.set_typography(rule, on).or_string())
 }
 
 fn pick_folder(app: &AppHandle, title: &str) -> Option<PathBuf> {
@@ -318,6 +327,12 @@ pub fn rename_scene(state: State<'_, AppState>, project: String, scene: String, 
 #[tauri::command]
 pub fn set_scene_status(state: State<'_, AppState>, project: String, scene: String, status: String) -> Result<OutlineView, String> {
     change(&state, &project, |p| p.update_header(&scene, |h| h.set_str("status", &status))).map(|(_, o)| o)
+}
+
+/// Sets a scene's summary; an empty one is taken out of its header.
+#[tauri::command]
+pub fn set_scene_summary(state: State<'_, AppState>, project: String, scene: String, summary: String) -> Result<OutlineView, String> {
+    change(&state, &project, |p| p.set_summary(&scene, &summary)).map(|(_, o)| o)
 }
 
 #[tauri::command]

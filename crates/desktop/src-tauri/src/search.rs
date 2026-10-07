@@ -49,7 +49,7 @@ pub struct HitView {
     kind: &'static str,
     project: Option<String>,
     world: Option<String>,
-    /// A scene's file name, or a note's path among its owner's notes.
+    /// A scene's file name, a note's path among its owner's notes, or a cut bin item's name.
     key: String,
     title: String,
     status: Option<String>,
@@ -64,6 +64,7 @@ impl From<Hit> for HitView {
             kind: match hit.kind {
                 Kind::Scene => "scene",
                 Kind::Note => "note",
+                Kind::Cut => "cut",
             },
             project: hit.project,
             world: hit.world,
@@ -76,8 +77,8 @@ impl From<Hit> for HitView {
     }
 }
 
-/// Searches `project` and its world, or with `everywhere`, the whole vault. `kind` is "scene"
-/// or "note"; `pov` and `thread` are a note's names (title and aliases) that the header must
+/// Searches `project` and its world, or with `everywhere`, the whole vault. `kind` is "scene",
+/// "note" or "cut" (the cut bins); `pov` and `thread` are a note's names (title and aliases) that the header must
 /// use.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
@@ -95,7 +96,11 @@ pub fn search(
     state.with(|open| {
         let mut query = Query {
             text,
-            kind: kind.as_deref().map(|k| if k == "note" { Kind::Note } else { Kind::Scene }),
+            kind: kind.as_deref().map(|k| match k {
+                "note" => Kind::Note,
+                "cut" => Kind::Cut,
+                _ => Kind::Scene,
+            }),
             status: status.filter(|s| !s.is_empty()),
             note_type: note_type.filter(|t| !t.is_empty()),
             ..Default::default()

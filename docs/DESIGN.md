@@ -215,9 +215,30 @@ Each type has its own template: an ordinary note in `.needle/templates/` (`chara
 
 ### Cut bin
 
-- Select text and choose **Cut to bin** (or use its shortcut). The passage moves into `cut/` as its own file, which records the scene it came from and the sentence around it.
-- Deleted scenes go into the bin whole, with `cut_at`, `cut_from_scene` and `cut_from_chapter` added to their header. Merging two scenes bins the second one, so its header survives.
-- The bin is searchable. **Restore** puts a passage back where it came from if that spot still exists, or at the cursor if it doesn't.
+- Select text and choose **Cut to bin** from the right-click menu, or press Ctrl+Shift+X. The passage moves into `cut/` as its own file, which records the scene it came from and the sentence around it. A note at the foot of the page offers Undo.
+- Deleted scenes go into the bin whole, with `cut_at`, `cut_from_scene`, `cut_from_chapter` and `cut_after_scene` (the scene before it, empty if it was first) added to their header. Merging two scenes bins the second one, so its header survives. Deleted notes go in whole too, with `cut_at` and `cut_from_note`.
+- The basket at the foot of the sidebar opens the bin as a panel on the right, newest first and grouped by day. A passage shows its first lines; a scene or note shows its title.
+- **Restore** puts a passage back where it came from if that spot still exists, or at the cursor if it doesn't. A scene goes back after the scene it followed (or first in its chapter), else at the end of its chapter, else among the scenes the outline doesn't place. A note goes back to its old path, or beside it if a new note has taken the name.
+- The bin is searchable: what's in it comes last in the results, under "Cut bin" (a passage under its scene's title), and the Cut bin filter shows only that. Opening one shows it in the bin, marked.
+- Undo and Redo keep the bin in step: Ctrl+Z right after a cut puts the passage back and takes it out of the bin, Redo bins it again, and Ctrl+Z after a Restore puts it back in the bin.
+
+A passage's file:
+
+```markdown
++++
+cut_at = "2026-10-07T14:20:00Z"
+cut_from_scene = "night-market"
+cut_from_title = "The night market"
+text_before = "Mara walked the length of it twice. "
+text_after = " She kept the compass wrapped in her sleeve."
+starts_paragraph = false
+ends_paragraph = false
++++
+
+The smell of the harbor came in under everything: tar, salt, the sweet rot of fruit nobody had sold.
+```
+
+Restore looks for `text_before` and `text_after` side by side (in one paragraph, or in neighbouring ones when the passage began or ended a paragraph), ignoring differences in spacing. If they're found exactly once, that's the spot.
 
 ### Status labels
 
@@ -246,6 +267,9 @@ All of these timings can be changed in `vault.toml`.
   - snapshots are grouped by session and day
   - word-level changes are highlighted
   - you can restore a whole version or copy back just one passage
+  - a session is snapshots less than 30 minutes apart, within one day. Each folds into one row ("13:05 – 14:32 · 4 snapshots · +31 words"); the latest is open, and named versions show even in a closed one
+  - each snapshot shows the words it added or took out from this file, not the vault-wide message
+  - **Put back:** click a removed passage in a version's changes, then Put back. It goes back where it was, as one edit that Undo takes back. If something replaced it, both stay, the old passage first, so nothing is lost. Words rewritten together show as one removal and one addition, so a rewritten sentence goes back whole
 - Commit messages are written automatically, e.g. "Edited The night market (+312 words)".
 - Old snapshots are kept forever because text is tiny. The panel groups them so the list stays readable.
 - History is never rewritten, and the app never force-pushes.
@@ -253,6 +277,9 @@ All of these timings can be changed in `vault.toml`.
 ### Sync
 
 - **Phase 1:** a plain backup push to GitHub after each snapshot, so your work leaves this machine from day one.
+  - Set up in Settings › Backup: the repository's SSH address (`git@github.com:you/novel.git`) and an **After each snapshot** switch, both kept in `vault.toml` under `[backup]`. **Back up now** pushes at once, and the vault also backs up when it opens.
+  - It pushes over SSH with your own keys, built in (libgit2 with libssh2): those in ssh-agent, then `~/.ssh/id_ed25519`, `id_ecdsa` or `id_rsa` without a passphrase. The server's key must already be in `~/.ssh/known_hosts` (connect once with `ssh -T git@github.com`). `~/.ssh/config` isn't read.
+  - Beside "Saved": "· backed up", "· backing up…", or "· not backed up" in red, with the reason on hover; a click opens the settings. Pushes never force, so a repository with history this vault lacks is refused and left as it is.
 - **Phase 4:** full two-way sync.
   - The app pulls when it starts and every few minutes after.
   - Local snapshots are rebased onto whatever came from GitHub. That's usually phone ideas, which can't conflict.

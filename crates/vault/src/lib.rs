@@ -2,6 +2,7 @@
 //! Everything is plain files (see docs/DESIGN.md §4); this crate is the only code that reads or
 //! writes them.
 
+mod bin;
 mod doc;
 mod error;
 mod files;
@@ -17,8 +18,9 @@ use needle_core::id::{make_id, slugify};
 use needle_core::names::{NameIndex, Owner};
 use needle_core::outline::{Chapter, Outline};
 use needle_core::project::{ProjectConfig, ProjectKind, WorldConfig};
-use needle_core::settings::VaultSettings;
+use needle_core::settings::{self, BackupSettings, TypographyRule, VaultSettings};
 
+pub use bin::{Bin, CutItem, CutKind, Passage};
 pub use error::{Error, Result};
 pub use links::{Appearance, Backlink, HeaderName, LinkSource, Mention, NAME_FIELDS, NameHint, NoteLinks, Renamed, SceneNames};
 pub use notes::{NoteInfo, Notes};
@@ -90,6 +92,26 @@ impl Vault {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(VaultSettings::default()),
             Err(e) => Err(e.into()),
         }
+    }
+
+    /// Switches one of the automatic typography changes for the whole vault.
+    pub fn set_typography(&self, rule: TypographyRule, on: bool) -> Result<()> {
+        let path = self.root.join(SETTINGS);
+        let text = settings::set_typography(&fs::read_to_string(&path)?, rule, on).map_err(Error::Invalid)?;
+        Ok(write_atomically(&path, text.as_bytes())?)
+    }
+
+    /// Sets where (and whether) the vault's history is backed up.
+    pub fn set_backup(&self, backup: &BackupSettings) -> Result<()> {
+        settings::check_remote(&backup.remote).map_err(Error::Invalid)?;
+        let path = self.root.join(SETTINGS);
+        let text = match fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => DEFAULT_SETTINGS.to_owned(),
+            Err(e) => return Err(e.into()),
+        };
+        let text = settings::set_backup(&text, backup).map_err(Error::Invalid)?;
+        Ok(write_atomically(&path, text.as_bytes())?)
     }
 
     /// Templates for new notes, one per type (`character.md`…), written out on first use.
@@ -252,6 +274,25 @@ impl Vault {
     pub fn names(&self, project: &Project) -> Result<NameIndex<NamedNote>> {
         let notes = self.reachable_notes(project)?;
         Ok(links::index(&notes, &project.slug, project.config.world.as_deref()))
+    }
+
+    /// What a project's cut bin holds, with the notes cut from its world, the most recently cut
+    /// first.
+    pub fn bin_items(&self, project: &Project) -> Result<Vec<CutItem>> {
+        let mut items = project.bin().list()?;
+        if let Some(world) = self.world_of(project)? {
+            items.extend(world.bin().list()?);
+            items.sort_by(|a, b| (&b.cut_at, &b.name).cmp(&(&a.cut_at, &a.name)));
+        }
+        Ok(items)
+    }
+
+    /// The cut bin of a project or world.
+    pub fn bin_of(&self, owner: &Owner) -> Result<Bin> {
+        match owner {
+            Owner::Project(slug) => Ok(self.project(slug)?.bin()),
+            Owner::World(slug) => Ok(self.world(slug)?.bin()),
+        }
     }
 
     /// The notes of a project or world.

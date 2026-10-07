@@ -3,7 +3,7 @@
 //! the text names that aren't listed. It sits beside the scene, staying in view as the page
 //! scrolls, or in a narrow window slides out from a tab on the page's edge.
 
-use leptos::{prelude::*, task::spawn_local};
+use leptos::{ev, html, prelude::*, task::spawn_local};
 use needle_core::project::ProjectKind;
 
 use crate::icons::{Glyph, Icon};
@@ -24,6 +24,7 @@ fn field_info(field: &str) -> (&'static str, &'static str) {
 pub fn EnvelopeCard(
     #[prop(into)] names: Signal<Option<SceneNamesView>>,
     #[prop(into)] title: Signal<String>,
+    #[prop(into)] summary: Signal<String>,
     /// "Piece 3", as on the scene.
     #[prop(into)]
     piece: Signal<String>,
@@ -33,6 +34,8 @@ pub fn EnvelopeCard(
     place: &'static str,
     /// Sets a field to these names.
     on_set: impl Fn(String, Vec<String>) + Copy + Send + Sync + 'static,
+    /// Saves a new summary.
+    on_summary: impl Fn(String) + Copy + Send + Sync + 'static,
     on_open_note: impl Fn(NoteKey) + Copy + Send + Sync + 'static,
     /// Makes a note from its title and type.
     on_make_note: impl Fn(String, String) + Copy + Send + Sync + 'static,
@@ -210,9 +213,94 @@ pub fn EnvelopeCard(
                 <span class="muted">{move || piece.get()}</span>
             </div>
             <div class="envelope-title title">{move || title.get()}</div>
+            <Summary summary=summary on_save=on_summary />
             <hr class="envelope-rule" />
             {fields}
         </div>
+    }
+}
+
+/// The scene's summary, under its title. It reads as printed on the card until clicked, then
+/// it's a field in the same place: Enter or clicking away saves, Escape cancels. One paragraph,
+/// since the header holds one string.
+#[component]
+fn Summary(#[prop(into)] summary: Signal<String>, on_save: impl Fn(String) + Copy + Send + Sync + 'static) -> impl IntoView {
+    let editing = RwSignal::new(false);
+    let draft = RwSignal::new(String::new());
+    let field = NodeRef::<html::Textarea>::new();
+    // Grows the field with its text, so it never scrolls inside itself.
+    let fit = move || {
+        if let Some(el) = field.get_untracked() {
+            let _ = el.set_attribute("style", "height: auto");
+            let _ = el.set_attribute("style", &format!("height: {}px", el.scroll_height() + 2));
+        }
+    };
+    Effect::new(move |_| {
+        if let Some(el) = field.get() {
+            // It's measured once it's on the page.
+            request_animation_frame(fit);
+            let _ = el.focus();
+            let end = el.value().encode_utf16().count() as u32;
+            let _ = el.set_selection_range(end, end);
+        }
+    });
+    // Blur also fires after Enter or Escape has finished, so only the first one counts.
+    let finish = move |save: bool| {
+        if !editing.get_untracked() {
+            return;
+        }
+        editing.set(false);
+        let text = draft.get_untracked();
+        if save && text.split_whitespace().collect::<Vec<_>>().join(" ") != summary.get_untracked() {
+            on_save(text);
+        }
+    };
+    let on_key = move |ev: ev::KeyboardEvent| match ev.key().as_str() {
+        "Enter" => {
+            ev.prevent_default();
+            finish(true);
+        }
+        "Escape" => finish(false),
+        _ => {}
+    };
+
+    view! {
+        <Show
+            when=move || editing.get()
+            fallback=move || {
+                view! {
+                    <button
+                        type="button"
+                        class="envelope-summary"
+                        class:empty=move || summary.with(String::is_empty)
+                        on:click=move |_| {
+                            draft.set(summary.get_untracked());
+                            editing.set(true);
+                        }
+                    >
+                        {move || match summary.get() {
+                            s if s.is_empty() => "What happens here?".to_owned(),
+                            s => s,
+                        }}
+                    </button>
+                }
+            }
+        >
+            <textarea
+                class="envelope-summary-field"
+                node_ref=field
+                rows="1"
+                aria-label="Summary"
+                placeholder="What happens here?"
+                prop:value=move || draft.get()
+                on:input=move |ev| {
+                    draft.set(event_target_value(&ev));
+                    fit();
+                }
+                on:keydown=on_key
+                on:blur=move |_| finish(true)
+            ></textarea>
+        </Show>
     }
 }
 

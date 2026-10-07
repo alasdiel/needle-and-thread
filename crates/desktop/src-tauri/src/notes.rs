@@ -59,7 +59,7 @@ pub struct MentionView {
     after: String,
 }
 
-fn note_view(owner: &Owner, note: NoteInfo) -> NoteView {
+pub(crate) fn note_view(owner: &Owner, note: NoteInfo) -> NoteView {
     let (slug, world) = match owner {
         Owner::Project(slug) => (slug.clone(), false),
         Owner::World(slug) => (slug.clone(), true),
@@ -80,7 +80,8 @@ fn named_view(named: NamedNote) -> NoteView {
     note_view(&named.owner, named.note)
 }
 
-fn owner(slug: String, world: bool) -> Owner {
+/// Whose note a command means: a world folder's with `world`, else a project's.
+pub fn owner(slug: String, world: bool) -> Owner {
     if world { Owner::World(slug) } else { Owner::Project(slug) }
 }
 
@@ -231,6 +232,17 @@ pub fn link_mention(
             open.history.edited();
         }
         Ok(linked)
+    })
+}
+
+/// Moves a note to its owner's cut bin.
+#[tauri::command]
+pub fn cut_note(state: State<'_, AppState>, owner: String, world: bool, path: String) -> Result<(), String> {
+    let owner = self::owner(owner, world);
+    state.with(|open| {
+        open.vault.notes_of(&owner).or_string()?.cut(&path).or_string()?;
+        open.history.edited();
+        Ok(())
     })
 }
 

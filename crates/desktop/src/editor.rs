@@ -5,6 +5,8 @@ use js_sys::{Object, Reflect};
 use leptos::{html, prelude::*};
 use wasm_bindgen::prelude::*;
 
+use crate::tauri::Passage;
+
 #[wasm_bindgen]
 extern "C" {
     pub type EditorHandle;
@@ -40,6 +42,11 @@ extern "C" {
     #[wasm_bindgen(method, js_name = recheckSpelling)]
     pub fn recheck_spelling(this: &EditorHandle);
 
+    /// Changes the text to `markdown` in one edit that Undo takes back, touching only what
+    /// differs, and selects that. Returns whether anything changed.
+    #[wasm_bindgen(method, js_name = applyMarkdown)]
+    pub fn apply_markdown(this: &EditorHandle, markdown: &str) -> bool;
+
     #[wasm_bindgen(method, js_name = getMarkdown)]
     pub fn markdown(this: &EditorHandle) -> String;
 
@@ -71,9 +78,34 @@ extern "C" {
 
     #[wasm_bindgen(method, js_name = splitParts)]
     fn split_parts_js(this: &EditorHandle) -> JsValue;
+
+    /// Offers "Cut to bin" and its shortcut, or not: on for scenes, off for notes.
+    #[wasm_bindgen(method, js_name = setBinEnabled)]
+    pub fn set_bin_enabled(this: &EditorHandle, on: bool);
+
+    #[wasm_bindgen(method, js_name = restorePassage)]
+    fn restore_passage_js(this: &EditorHandle, passage: &JsValue) -> bool;
+
+    #[wasm_bindgen(js_namespace = NeedleEditor, js_name = hasSpot)]
+    fn has_spot_js(markdown: &str, passage: &JsValue) -> bool;
+}
+
+fn passage_value(passage: &Passage) -> JsValue {
+    serde_wasm_bindgen::to_value(passage).unwrap_or(JsValue::NULL)
+}
+
+/// Whether a scene's `markdown` still has the place `passage` was cut from.
+pub fn has_spot(markdown: &str, passage: &Passage) -> bool {
+    has_spot_js(markdown, &passage_value(passage))
 }
 
 impl EditorHandle {
+    /// Puts a passage from the bin back where it came from if that place is still there, and
+    /// otherwise at the cursor, then selects it. Returns whether it found the place.
+    pub fn restore_passage(&self, passage: &Passage) -> bool {
+        self.restore_passage_js(&passage_value(passage))
+    }
+
     /// The text before and after the cursor, as Markdown.
     pub fn split_parts(&self) -> (String, String) {
         let parts = self.split_parts_js();
@@ -82,26 +114,8 @@ impl EditorHandle {
     }
 }
 
-/// Automatic typography changes, each switchable on its own. Mirrors `Typography` in
-/// editor/src/inputrules.ts.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Typography {
-    pub double_quotes: bool,
-    pub single_quotes: bool,
-    pub em_dash: bool,
-    pub ellipsis: bool,
-}
-
-impl Default for Typography {
-    fn default() -> Self {
-        Self {
-            double_quotes: true,
-            single_quotes: true,
-            em_dash: true,
-            ellipsis: true,
-        }
-    }
-}
+/// The vault's automatic typography changes, as the editor's options take them.
+pub use needle_core::settings::TypographySettings as Typography;
 
 fn options(typography: Typography) -> Object {
     let rules = Object::new();
@@ -121,7 +135,10 @@ pub(crate) fn set(target: &Object, key: &str, value: &JsValue) {
 
 /// Mounts the editor once its element exists, stores it in `handle` so the parent can drive
 /// it, then calls `on_ready`. `on_change` receives the Markdown and word count after typing
-/// pauses; `on_cut_confirm` and `on_cut_cancel` answer the cut line.
+/// pauses; `on_cut_confirm` and `on_cut_cancel` answer the cut line; `on_cut_to_bin` receives a
+/// passage just taken out of the text, to store in the bin, with the editor's id for that move;
+/// `on_back_from_bin` receives the id of a move Undo (or Redo) has put back in the text, so it
+/// leaves the bin.
 #[component]
 pub fn Editor(
     handle: StoredValue<Option<EditorHandle>, LocalStorage>,
@@ -129,12 +146,21 @@ pub fn Editor(
     on_change: impl Fn(String, u32) + 'static,
     on_cut_confirm: impl Fn() + 'static,
     on_cut_cancel: impl Fn() + 'static,
+    on_cut_to_bin: impl Fn(Passage, u32) + 'static,
+    on_back_from_bin: impl Fn(u32) + 'static,
     on_ready: impl Fn() + 'static,
 ) -> impl IntoView {
     let node_ref = NodeRef::<html::Div>::new();
     let on_change = StoredValue::new_local(Closure::<dyn FnMut(String, u32)>::new(on_change));
     let on_cut_confirm = StoredValue::new_local(Closure::<dyn FnMut()>::new(on_cut_confirm));
     let on_cut_cancel = StoredValue::new_local(Closure::<dyn FnMut()>::new(on_cut_cancel));
+    let on_cut_to_bin = StoredValue::new_local(Closure::<dyn FnMut(JsValue, u32)>::new(move |value: JsValue, id: u32| {
+        match serde_wasm_bindgen::from_value(value) {
+            Ok(passage) => on_cut_to_bin(passage, id),
+            Err(e) => leptos::logging::error!("a cut passage didn't come through: {e}"),
+        }
+    }));
+    let on_back_from_bin = StoredValue::new_local(Closure::<dyn FnMut(u32)>::new(on_back_from_bin));
 
     Effect::new(move |_| {
         let Some(el) = node_ref.get() else { return };
@@ -145,6 +171,8 @@ pub fn Editor(
         on_change.with_value(|f| set(&options, "onChange", f.as_ref()));
         on_cut_confirm.with_value(|f| set(&options, "onCutConfirm", f.as_ref()));
         on_cut_cancel.with_value(|f| set(&options, "onCutCancel", f.as_ref()));
+        on_cut_to_bin.with_value(|f| set(&options, "onCutToBin", f.as_ref()));
+        on_back_from_bin.with_value(|f| set(&options, "onBackFromBin", f.as_ref()));
         handle.set_value(Some(mount(&el, "", &options)));
         on_ready();
     });
@@ -168,6 +196,8 @@ pub fn Editor(
         on_change.dispose();
         on_cut_confirm.dispose();
         on_cut_cancel.dispose();
+        on_cut_to_bin.dispose();
+        on_back_from_bin.dispose();
     });
 
     view! { <div class="editor-host" node_ref=node_ref></div> }

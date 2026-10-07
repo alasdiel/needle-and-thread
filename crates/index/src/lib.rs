@@ -69,6 +69,8 @@ impl From<std::io::Error> for Error {
 pub enum Kind {
     Scene,
     Note,
+    /// A passage, scene or note in a cut bin.
+    Cut,
 }
 
 impl Kind {
@@ -76,11 +78,16 @@ impl Kind {
         match self {
             Self::Scene => "scene",
             Self::Note => "note",
+            Self::Cut => "cut",
         }
     }
 
     fn parse(value: &str) -> Self {
-        if value == "scene" { Self::Scene } else { Self::Note }
+        match value {
+            "scene" => Self::Scene,
+            "cut" => Self::Cut,
+            _ => Self::Note,
+        }
     }
 }
 
@@ -109,10 +116,14 @@ pub struct Hit {
     pub kind: Kind,
     pub project: Option<String>,
     pub world: Option<String>,
-    /// A scene's file name in `manuscript/`, or a note's path among its owner's notes.
+    /// A scene's file name in `manuscript/`, a note's path among its owner's notes, or the name
+    /// of something in a cut bin.
     pub key: String,
+    /// For a passage in the bin, the title of the scene it was cut from.
     pub title: String,
     pub status: Option<String>,
+    /// A note's type, e.g. `character`. For something in the bin, what it was: `passage`,
+    /// `scene`, or a note's type.
     pub note_type: Option<String>,
     /// The text around the best match, in pieces: (text, whether it's the match).
     pub snippet: Vec<(String, bool)>,
@@ -301,7 +312,7 @@ impl Index {
     }
 
     /// Scenes and notes matching `query`, best first: a match in a title counts most, then an
-    /// alias, then the text.
+    /// alias, then the text. What's in the cut bins comes after everything else.
     pub fn search(&self, query: &Query) -> Result<Vec<Hit>> {
         let mut filters: Vec<String> = Vec::new();
         let mut values: Vec<Value> = Vec::new();
@@ -350,9 +361,9 @@ impl Index {
         let (snippet, order) = match matching {
             Some(_) => (
                 format!("snippet(text, 2, '{MATCH_START}', '{MATCH_END}', '…', 18)"),
-                "bm25(text, 10.0, 6.0, 1.0)",
+                "d.kind = 'cut', bm25(text, 10.0, 6.0, 1.0)",
             ),
-            None => ("substr(text.body, 1, 160)".to_owned(), "d.kind DESC, d.title COLLATE NOCASE"),
+            None => ("substr(text.body, 1, 160)".to_owned(), "d.kind = 'cut', d.kind DESC, d.title COLLATE NOCASE"),
         };
         let sql = format!(
             "SELECT d.kind, d.project, d.world, d.key, d.title, d.status, d.note_type, {snippet}
@@ -377,7 +388,7 @@ impl Index {
     }
 }
 
-/// Every scene and note file in the vault.
+/// Every scene and note file in the vault, and everything in its cut bins.
 fn sources(vault: &Vault) -> Result<Vec<Source>> {
     let root = vault.root();
     let relative = |file: &Path| {
@@ -385,7 +396,9 @@ fn sources(vault: &Vault) -> Result<Vec<Source>> {
         path.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/")
     };
     let mut found = Vec::new();
+    let mut bins = Vec::new();
     for project in vault.projects()? {
+        bins.push((project.bin(), Some(project.slug.clone()), None));
         for slug in project.reading_order()? {
             let file = project.scene_path(&slug)?;
             found.push(Source {
@@ -411,6 +424,7 @@ fn sources(vault: &Vault) -> Result<Vec<Source>> {
         }
     }
     for world in vault.worlds()? {
+        bins.push((world.bin(), None, Some(world.slug.clone())));
         let notes = world.notes();
         for path in notes.paths()? {
             let file = notes.file_path(&path)?;
@@ -424,6 +438,19 @@ fn sources(vault: &Vault) -> Result<Vec<Source>> {
             });
         }
     }
+    for (bin, project, world) in bins {
+        for name in bin.names()? {
+            let file = bin.file_path(&name)?;
+            found.push(Source {
+                path: relative(&file),
+                file,
+                kind: Kind::Cut,
+                project: project.clone(),
+                world: world.clone(),
+                key: name,
+            });
+        }
+    }
     Ok(found)
 }
 
@@ -432,14 +459,30 @@ fn parse(source: &Source, text: &str) -> Parsed {
     let header = file.header().unwrap_or_default();
     let field = |key: &str| header.str(key).map(str::trim).filter(|v| !v.is_empty()).map(str::to_owned);
     let fallback_title = source.key.rsplit('/').next().unwrap_or(&source.key).to_owned();
-    let note_type = (source.kind == Kind::Note).then(|| {
-        field("type").unwrap_or_else(|| {
+    let note_type = match source.kind {
+        Kind::Scene => None,
+        Kind::Note => Some(field("type").unwrap_or_else(|| {
             let folder = source.key.split_once('/').map_or("", |(folder, _)| folder);
             NoteKind::from_folder(folder).unwrap_or(NoteKind::Note).as_str().to_owned()
-        })
-    });
+        })),
+        // What it was, as the bin tells them apart.
+        Kind::Cut => Some(if header.contains("text_before") || header.contains("text_after") {
+            "passage".to_owned()
+        } else if let Some(note) = field("cut_from_note") {
+            field("type").unwrap_or_else(|| {
+                let folder = note.split_once('/').map_or("", |(folder, _)| folder);
+                NoteKind::from_folder(folder).unwrap_or(NoteKind::Note).as_str().to_owned()
+            })
+        } else {
+            "scene".to_owned()
+        }),
+    };
+    let title = match source.kind {
+        Kind::Cut => field("title").or_else(|| field("cut_from_title")).or_else(|| field("cut_from_scene")),
+        _ => field("title"),
+    };
     Parsed {
-        title: field("title").unwrap_or(fallback_title),
+        title: title.unwrap_or(fallback_title),
         status: if source.kind == Kind::Scene { field("status") } else { None },
         note_type,
         aliases: header.list("aliases"),

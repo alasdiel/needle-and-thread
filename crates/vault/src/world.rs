@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use needle_core::names::Owner;
 use needle_core::project::WorldConfig;
 
+use crate::bin::Bin;
 use crate::notes::Notes;
 use crate::{Error, Result};
 
@@ -42,7 +43,12 @@ impl World {
         &self.root
     }
 
+    /// The world's cut bin, where its notes go when they're cut.
+    pub fn bin(&self) -> Bin {
+        self.notes().bin()
+    }
+
     pub fn notes(&self) -> Notes {
-        Notes::new(Owner::World(self.slug.clone()), self.root.clone(), self.templates.clone())
+        Notes::new(Owner::World(self.slug.clone()), self.root.clone(), self.root.join("cut"), self.templates.clone())
     }
 }

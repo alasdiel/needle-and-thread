@@ -3,6 +3,7 @@ use std::fs;
 use needle_core::names::{Owner, Resolution};
 use needle_core::outline::Chapter;
 use needle_core::project::{NoteKind, ProjectKind};
+use needle_core::settings::TypographyRule;
 use tempfile::TempDir;
 
 use super::*;
@@ -31,6 +32,16 @@ fn creating_a_vault_is_idempotent_and_only_vaults_open() {
     assert_eq!(fs::read_to_string(vault.root().join(".needle/vault.toml")).unwrap(), settings);
     assert!(Vault::open(dir.path()).is_err());
     assert_eq!(vault.settings().unwrap().statuses, ["idea", "draft", "revised", "done"]);
+}
+
+#[test]
+fn typography_switches_are_saved_in_the_vault_settings() {
+    let (_dir, vault) = vault();
+    let path = vault.root().join(".needle/vault.toml");
+    let before = fs::read_to_string(&path).unwrap();
+    vault.set_typography(TypographyRule::EmDash, false).unwrap();
+    assert!(!vault.settings().unwrap().typography.em_dash);
+    assert_eq!(fs::read_to_string(&path).unwrap(), before.replace("em_dash = true", "em_dash = false"));
 }
 
 #[test]
@@ -111,6 +122,23 @@ fn header_edits_keep_the_text_and_other_fields() {
 }
 
 #[test]
+fn a_summary_is_one_paragraph_and_an_empty_one_is_removed() {
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    project.save_body("untitled-scene", "Text.\n").unwrap();
+    let path = project.scene_path("untitled-scene").unwrap();
+
+    let info = project.set_summary("untitled-scene", "  Mara trades the compass\nand  learns the ledger has left port. ").unwrap();
+    assert_eq!(info.summary, "Mara trades the compass and learns the ledger has left port.");
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(text.contains("summary = \"Mara trades the compass and learns the ledger has left port.\""), "{text}");
+    assert!(text.ends_with("+++\n\nText.\n"), "{text}");
+
+    assert_eq!(project.set_summary("untitled-scene", " \n ").unwrap().summary, "");
+    assert!(!fs::read_to_string(&path).unwrap().contains("summary"));
+}
+
+#[test]
 fn cutting_a_scene_moves_it_to_the_bin() {
     let (_dir, vault) = vault();
     let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
@@ -124,6 +152,163 @@ fn cutting_a_scene_moves_it_to_the_bin() {
     assert!(text.contains("cut_at = \"20"), "{text}");
     assert!(text.contains("cut_from_scene = \"untitled-scene\""));
     assert!(text.ends_with("Keep me somewhere.\n"));
+}
+
+#[test]
+fn a_cut_passage_is_a_file_of_its_own_in_the_bin() {
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    project.update_header("untitled-scene", |h| h.set_str("title", "The night market")).unwrap();
+    let passage = Passage {
+        markdown: "The smell of the harbor came in under everything.\n".into(),
+        text_before: "Mara walked the length of it twice.".into(),
+        text_after: " She kept the compass.".into(),
+        starts_paragraph: false,
+        ends_paragraph: false,
+        starts_with_space: true,
+        ends_with_space: false,
+    };
+    let item = project.cut_passage("untitled-scene", &passage).unwrap();
+    assert_eq!(item.kind, CutKind::Passage);
+    assert_eq!(item.title, "The night market");
+    assert_eq!(item.scene.as_deref(), Some("untitled-scene"));
+    assert_eq!(item.words, 9);
+    assert_eq!(item.passage.as_ref(), Some(&passage));
+    assert!(item.name.ends_with("-untitled-scene-passage"), "{}", item.name);
+
+    let text = fs::read_to_string(project.root().join("cut").join(format!("{}.md", item.name))).unwrap();
+    assert!(text.contains("cut_from_scene = \"untitled-scene\""), "{text}");
+    assert!(text.contains("text_after = \" She kept the compass.\""), "{text}");
+    assert!(text.contains("starts_paragraph = false"), "{text}");
+    assert!(text.contains("starts_with_space = true"), "{text}");
+    assert!(!text.contains("ends_with_space"), "{text}");
+    assert!(text.ends_with("+++\n\nThe smell of the harbor came in under everything.\n"), "{text}");
+
+    assert!(project.cut_passage("untitled-scene", &Passage::default()).is_err());
+    assert!(project.cut_passage("no-such-scene", &passage).is_err());
+
+    project.bin().remove_passage(&item.name).unwrap();
+    assert!(project.bin().list().unwrap().is_empty());
+}
+
+#[test]
+fn a_restored_scene_goes_back_where_it_was() {
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    let chapter = first_chapter(&project);
+    let end = || Placement::End { chapter: chapter.clone() };
+    project.create_scene("Two", end()).unwrap();
+    project.create_scene("Three", end()).unwrap();
+    project.save_body("two", "Second.\n").unwrap();
+
+    // Back after the scene it followed, with its name, text and header as they were.
+    let before = fs::read_to_string(project.scene_path("two").unwrap()).unwrap();
+    project.cut_scene("two").unwrap();
+    let [cut] = &project.bin().list().unwrap()[..] else { panic!() };
+    assert_eq!((cut.kind, cut.title.as_str(), cut.words), (CutKind::Scene, "Two", 1));
+    assert!(project.bin().remove_passage(&cut.name).is_err());
+    let restored = project.restore_scene(&cut.name).unwrap();
+    assert_eq!(restored.slug, "two");
+    assert_eq!(order(&project), ["untitled-scene", "two", "three"]);
+    assert_eq!(fs::read_to_string(project.scene_path("two").unwrap()).unwrap(), before);
+    assert!(project.bin().list().unwrap().is_empty());
+
+    // The first scene in its chapter goes back first.
+    project.cut_scene("untitled-scene").unwrap();
+    let name = project.bin().list().unwrap()[0].name.clone();
+    project.restore_scene(&name).unwrap();
+    assert_eq!(order(&project), ["untitled-scene", "two", "three"]);
+
+    // If the scene it followed has gone too, it goes at the end of its chapter.
+    project.cut_scene("three").unwrap();
+    let three = project.bin().list().unwrap()[0].name.clone();
+    project.cut_scene("two").unwrap();
+    project.restore_scene(&three).unwrap();
+    assert_eq!(order(&project), ["untitled-scene", "three"]);
+
+    // With its chapter gone, it waits among the scenes the outline doesn't place, and a name
+    // that's been taken meanwhile gets a number.
+    let rename = |title: &str| project.edit_outline(|o| Ok(o.chapters[0].title = title.into())).unwrap();
+    rename("Arrival");
+    project.cut_scene("untitled-scene").unwrap();
+    let name = project.bin().list().unwrap()[0].name.clone();
+    rename("Departure");
+    project.create_scene("Untitled scene", end()).unwrap();
+    let restored = project.restore_scene(&name).unwrap();
+    assert_eq!(restored.slug, "untitled-scene-2");
+    assert_eq!(order(&project), ["three", "untitled-scene"]);
+    assert!(project.reading_order().unwrap().contains(&"untitled-scene-2".to_owned()));
+}
+
+#[test]
+fn a_restored_note_goes_back_to_its_folder() {
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    let notes = project.notes();
+    let mara = notes.create(NoteKind::Character, "Mara Venn").unwrap();
+    notes.save_body(&mara.path, "Harbor pilot.\n").unwrap();
+    let before = fs::read_to_string(notes.file_path(&mara.path).unwrap()).unwrap();
+    notes.cut(&mara.path).unwrap();
+
+    let [cut] = &project.bin().list().unwrap()[..] else { panic!() };
+    assert_eq!((cut.kind, cut.title.as_str(), cut.note_kind), (CutKind::Note, "Mara Venn", Some(NoteKind::Character)));
+    let restored = notes.restore(&cut.name).unwrap();
+    assert_eq!(restored.path, "characters/mara-venn");
+    assert_eq!(fs::read_to_string(notes.file_path(&mara.path).unwrap()).unwrap(), before);
+
+    // A note made under the same name meanwhile keeps it.
+    notes.cut(&mara.path).unwrap();
+    notes.create(NoteKind::Character, "Mara Venn").unwrap();
+    let name = project.bin().list().unwrap()[0].name.clone();
+    assert!(project.restore_scene(&name).is_err());
+    assert_eq!(notes.restore(&name).unwrap().path, "characters/mara-venn-2");
+}
+
+#[test]
+fn a_projects_bin_shows_what_was_cut_from_its_world_too() {
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    let world = vault.create_world("Glass Coast").unwrap();
+    vault.update_project(&project.slug, |c| c.world = Some(world.slug.clone())).unwrap();
+    let teodor = world.notes().create(NoteKind::Character, "Old Teodor").unwrap();
+    world.notes().cut(&teodor.path).unwrap();
+    let project = vault.project(&project.slug).unwrap();
+    project.cut_scene("untitled-scene").unwrap();
+
+    let items = vault.bin_items(&project).unwrap();
+    let titles: Vec<_> = items.iter().map(|i| (i.owner.clone(), i.title.as_str())).collect();
+    assert_eq!(titles.len(), 2);
+    assert!(titles.contains(&(Owner::World(world.slug.clone()), "Old Teodor")), "{titles:?}");
+    assert!(items.windows(2).all(|w| w[0].cut_at >= w[1].cut_at));
+
+    let bin = vault.bin_of(&Owner::World(world.slug.clone())).unwrap();
+    let name = bin.list().unwrap()[0].name.clone();
+    assert_eq!(world.notes().restore(&name).unwrap().title, "Old Teodor");
+}
+
+#[test]
+fn cutting_a_note_moves_it_to_its_owners_bin() {
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    let mara = project.notes().create(NoteKind::Character, "Mara Venn").unwrap();
+    project.notes().save_body(&mara.path, "Harbor pilot.\n").unwrap();
+    let cut = project.notes().cut(&mara.path).unwrap();
+
+    assert!(project.notes().list().unwrap().is_empty());
+    assert!(cut.starts_with(project.root().join("cut")));
+    let text = fs::read_to_string(cut).unwrap();
+    assert!(text.contains("cut_at = \"20"), "{text}");
+    assert!(text.contains("cut_from_note = \"characters/mara-venn\""), "{text}");
+    assert!(text.ends_with("Harbor pilot.\n"));
+
+    // A world keeps its notes in its own folder, so its bin is there too, and isn't a type.
+    let world = vault.create_world("Glass Coast").unwrap();
+    let teodor = world.notes().create(NoteKind::Character, "Old Teodor").unwrap();
+    world.notes().create(NoteKind::Place, "Night Market").unwrap();
+    let cut = world.notes().cut(&teodor.path).unwrap();
+    assert!(cut.starts_with(world.root().join("cut")));
+    let left: Vec<_> = world.notes().list().unwrap().into_iter().map(|n| n.title).collect();
+    assert_eq!(left, ["Night Market"]);
 }
 
 #[test]

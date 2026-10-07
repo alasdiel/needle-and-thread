@@ -18,7 +18,7 @@ pub struct Search {
     pub text: RwSignal<String>,
     /// This project and its world, rather than the whole vault.
     pub this_project: RwSignal<bool>,
-    /// "scene" or "note".
+    /// "scene", "note" or "cut" (the cut bin).
     pub kind: RwSignal<Option<&'static str>>,
     pub status: RwSignal<Option<String>>,
     /// The title of the POV character or thread to filter by.
@@ -156,6 +156,7 @@ pub fn SearchFilters(
             <Toggle on=search.this_project on_click=move || search.this_project.update(|v| *v = !*v)>"This project"</Toggle>
             <Toggle on=Signal::derive(move || search.kind.get() == Some("scene")) on_click=move || toggle_kind("scene")>"Scenes"</Toggle>
             <Toggle on=Signal::derive(move || search.kind.get() == Some("note")) on_click=move || toggle_kind("note")>"Notes"</Toggle>
+            <Toggle on=Signal::derive(move || search.kind.get() == Some("cut")) on_click=move || toggle_kind("cut")>"Cut bin"</Toggle>
             <Pick label="Status" value=search.status choices=statuses />
             <Pick label="Pov" value=search.pov choices=characters />
             <Pick label="Thread" value=search.thread choices=threads />
@@ -166,22 +167,31 @@ pub fn SearchFilters(
 /// Results with their place in the keyboard's order.
 type Numbered = Vec<(usize, HitView)>;
 
-/// Scenes, then notes, each in the order search ranked them, with each one's place in that
-/// combined order (for the keyboard).
-fn grouped(hits: &[HitView]) -> (Numbered, Numbered) {
-    let scenes: Vec<HitView> = hits.iter().filter(|h| h.kind == "scene").cloned().collect();
-    let notes: Vec<HitView> = hits.iter().filter(|h| h.kind != "scene").cloned().collect();
-    let first_note = scenes.len();
-    (
-        scenes.into_iter().enumerate().collect(),
-        notes.into_iter().enumerate().map(|(i, h)| (first_note + i, h)).collect(),
-    )
+/// Scenes, notes, then what's in the cut bin, each in the order search ranked them, with each
+/// one's place in that combined order (for the keyboard).
+fn grouped(hits: &[HitView]) -> [(&'static str, Numbered); 3] {
+    let mut place = 0;
+    ["scene", "note", "cut"].map(|kind| {
+        let rows: Numbered = hits
+            .iter()
+            .filter(|h| h.kind == kind)
+            .map(|h| {
+                place += 1;
+                (place - 1, h.clone())
+            })
+            .collect();
+        let name = match kind {
+            "scene" => "Scenes",
+            "note" => "Notes",
+            _ => "Cut bin",
+        };
+        (name, rows)
+    })
 }
 
 /// The results in the order the keyboard moves through them.
 pub fn in_order(hits: &[HitView]) -> Vec<HitView> {
-    let (scenes, notes) = grouped(hits);
-    scenes.into_iter().chain(notes).map(|(_, h)| h).collect()
+    grouped(hits).into_iter().flat_map(|(_, rows)| rows).map(|(_, h)| h).collect()
 }
 
 /// The results, grouped into scenes and notes.
@@ -199,11 +209,13 @@ pub fn SearchResults(
     on_open: impl Fn(HitView) + Copy + Send + Sync + 'static,
 ) -> impl IntoView {
     let row = move |index: usize, hit: HitView| {
-        let icon = if hit.kind == "scene" {
-            let progress = status::progress(hit.status.as_deref().unwrap_or_default(), &statuses.get_untracked());
-            view! { <StatusMark progress=progress /> }.into_any()
-        } else {
-            view! { <Icon glyph=kind_glyph(hit.note_type.as_deref().unwrap_or("note")) size=13 /> }.into_any()
+        let icon = match hit.kind.as_str() {
+            "scene" => {
+                let progress = status::progress(hit.status.as_deref().unwrap_or_default(), &statuses.get_untracked());
+                view! { <StatusMark progress=progress /> }.into_any()
+            }
+            "cut" => view! { <Icon glyph=Glyph::Basket size=13 /> }.into_any(),
+            _ => view! { <Icon glyph=kind_glyph(hit.note_type.as_deref().unwrap_or("note")) size=13 /> }.into_any(),
         };
         let current = {
             let hit = hit.clone();
@@ -257,11 +269,10 @@ pub fn SearchResults(
         <div class="search-results">
             {move || search.error.get().map(|e| view! { <p class="error">{e}</p> })}
             {move || {
-                let (scenes, notes) = search.results.with(|hits| grouped(hits));
-                let none = scenes.is_empty() && notes.is_empty() && !search.text.with(|t| t.trim().is_empty());
+                let groups = search.results.with(|hits| grouped(hits));
+                let none = groups.iter().all(|(_, rows)| rows.is_empty()) && !search.text.with(|t| t.trim().is_empty());
                 view! {
-                    {group("Scenes", scenes)}
-                    {group("Notes", notes)}
+                    {groups.into_iter().map(|(name, rows)| group(name, rows)).collect_view()}
                     {none.then(|| view! { <p class="search-none">"Nothing matches."</p> })}
                 }
             }}
