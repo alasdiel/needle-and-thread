@@ -9,10 +9,11 @@ mod files;
 mod links;
 mod notes;
 mod project;
+pub mod store;
 mod world;
 
-use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use needle_core::id::{make_id, slugify};
 use needle_core::names::{NameIndex, Owner};
@@ -25,9 +26,13 @@ pub use error::{Error, Result};
 pub use links::{Appearance, Backlink, HeaderName, LinkSource, Mention, NAME_FIELDS, NameHint, NoteLinks, Renamed, SceneNames};
 pub use notes::{NoteInfo, Notes};
 pub use project::{Placement, Project, SceneInfo};
+#[cfg(feature = "fs")]
+pub use store::Disk;
+pub use store::{Entry, Store};
 pub use world::World;
 
-use files::{checked_name, unique_dir, write_atomically};
+use files::checked_name;
+use store::{unique_dir, unique_file};
 
 const SETTINGS: &str = ".needle/vault.toml";
 
@@ -49,6 +54,7 @@ ellipsis = true
 #[derive(Debug, Clone)]
 pub struct Vault {
     root: PathBuf,
+    store: Arc<dyn Store>,
 }
 
 /// A note anywhere in the vault, with whose it is.
@@ -59,59 +65,76 @@ pub struct NamedNote {
 }
 
 impl Vault {
+    /// Whether `root` holds a vault, in files on this computer.
+    #[cfg(feature = "fs")]
     pub fn is_vault(root: &Path) -> bool {
         root.join(SETTINGS).is_file()
     }
 
+    /// Opens a vault held in files on this computer.
+    #[cfg(feature = "fs")]
     pub fn open(root: &Path) -> Result<Self> {
-        if !Self::is_vault(root) {
-            return Err(Error::NotFound(format!("{} isn't a Needle and Thread vault", root.display())));
-        }
-        Ok(Self { root: root.to_owned() })
+        Self::open_on(Arc::new(Disk), root)
     }
 
-    /// Makes `root` a vault, creating the folder if needed. An existing vault is just opened.
+    /// Makes `root` a vault in files on this computer, creating the folder if needed. An
+    /// existing vault is just opened.
+    #[cfg(feature = "fs")]
     pub fn create(root: &Path) -> Result<Self> {
-        if Self::is_vault(root) {
-            return Self::open(root);
+        Self::create_on(Arc::new(Disk), root)
+    }
+
+    /// Opens a vault wherever `store` keeps it, rooted at `root` — the vault's folder on disk,
+    /// or the folder it sits in inside a repo (empty for the repo's own root).
+    pub fn open_on(store: Arc<dyn Store>, root: &Path) -> Result<Self> {
+        if !store.is_file(&root.join(SETTINGS)) {
+            return Err(Error::NotFound(format!("{} isn't a Needle and Thread vault", root.display())));
+        }
+        Ok(Self { root: root.to_owned(), store })
+    }
+
+    /// Starts a vault in `store`. An existing one is just opened.
+    pub fn create_on(store: Arc<dyn Store>, root: &Path) -> Result<Self> {
+        if store.is_file(&root.join(SETTINGS)) {
+            return Self::open_on(store, root);
         }
         for dir in [".needle", "projects", "worlds", "inbox"] {
-            fs::create_dir_all(root.join(dir))?;
+            store.create_dir_all(&root.join(dir))?;
         }
-        write_atomically(&root.join(SETTINGS), DEFAULT_SETTINGS.as_bytes())?;
-        Ok(Self { root: root.to_owned() })
+        store.write(&root.join(SETTINGS), DEFAULT_SETTINGS.as_bytes())?;
+        Ok(Self { root: root.to_owned(), store })
     }
 
     pub fn root(&self) -> &Path {
         &self.root
     }
 
+    /// Where this vault's files are kept, for handing to the parts that need their own access.
+    pub fn store(&self) -> &Arc<dyn Store> {
+        &self.store
+    }
+
     pub fn settings(&self) -> Result<VaultSettings> {
-        match fs::read_to_string(self.root.join(SETTINGS)) {
-            Ok(text) => VaultSettings::parse(&text).map_err(Error::Invalid),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(VaultSettings::default()),
-            Err(e) => Err(e.into()),
+        match self.store.read_opt(&self.root.join(SETTINGS))? {
+            Some(text) => VaultSettings::parse(&text).map_err(Error::Invalid),
+            None => Ok(VaultSettings::default()),
         }
     }
 
     /// Switches one of the automatic typography changes for the whole vault.
     pub fn set_typography(&self, rule: TypographyRule, on: bool) -> Result<()> {
         let path = self.root.join(SETTINGS);
-        let text = settings::set_typography(&fs::read_to_string(&path)?, rule, on).map_err(Error::Invalid)?;
-        Ok(write_atomically(&path, text.as_bytes())?)
+        let text = settings::set_typography(&self.store.read_to_string(&path)?, rule, on).map_err(Error::Invalid)?;
+        self.store.write(&path, text.as_bytes())
     }
 
     /// Sets where (and whether) the vault's history is backed up.
     pub fn set_backup(&self, backup: &BackupSettings) -> Result<()> {
         settings::check_remote(&backup.remote).map_err(Error::Invalid)?;
         let path = self.root.join(SETTINGS);
-        let text = match fs::read_to_string(&path) {
-            Ok(text) => text,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => DEFAULT_SETTINGS.to_owned(),
-            Err(e) => return Err(e.into()),
-        };
+        let text = self.store.read_opt(&path)?.unwrap_or_else(|| DEFAULT_SETTINGS.to_owned());
         let text = settings::set_backup(&text, backup).map_err(Error::Invalid)?;
-        Ok(write_atomically(&path, text.as_bytes())?)
+        self.store.write(&path, text.as_bytes())
     }
 
     /// Templates for new notes, one per type (`character.md`…), written out on first use.
@@ -127,14 +150,9 @@ impl Vault {
     /// All projects, sorted by title.
     pub fn projects(&self) -> Result<Vec<Project>> {
         let mut projects = Vec::new();
-        let dir = self.root.join("projects");
-        if !dir.is_dir() {
-            return Ok(projects);
-        }
-        for entry in fs::read_dir(dir)? {
-            let path = entry?.path();
-            if path.join("project.toml").is_file() {
-                projects.push(Project::open(path, self.templates_path())?);
+        for entry in self.store.list(&self.root.join("projects"))? {
+            if self.store.is_file(&entry.path.join("project.toml")) {
+                projects.push(Project::open(entry.path, self.templates_path(), self.store.clone())?);
             }
         }
         projects.sort_by_key(|p| (p.config.title.to_lowercase(), p.slug.clone()));
@@ -142,7 +160,8 @@ impl Vault {
     }
 
     pub fn project(&self, slug: &str) -> Result<Project> {
-        Project::open(self.root.join("projects").join(checked_name(slug)?), self.templates_path())
+        let root = self.root.join("projects").join(checked_name(slug)?);
+        Project::open(root, self.templates_path(), self.store.clone())
     }
 
     /// Creates a project with one chapter holding one empty scene, ready to write in.
@@ -152,17 +171,17 @@ impl Vault {
             title => title,
         };
         let projects = self.root.join("projects");
-        fs::create_dir_all(&projects)?;
-        let root = unique_dir(&projects, &slugify(title));
-        fs::create_dir_all(root.join("manuscript"))?;
+        self.store.create_dir_all(&projects)?;
+        let root = unique_dir(self.store.as_ref(), &projects, &slugify(title));
+        self.store.create_dir_all(&root.join("manuscript"))?;
         let config = ProjectConfig {
             title: title.to_owned(),
             kind,
             world: None,
         };
-        write_atomically(&root.join("project.toml"), config.to_toml().as_bytes())?;
+        self.store.write(&root.join("project.toml"), config.to_toml().as_bytes())?;
 
-        let project = Project::open(root, self.templates_path())?;
+        let project = Project::open(root, self.templates_path(), self.store.clone())?;
         let chapter = Chapter {
             id: make_id("ol", fastrand::u64(..)),
             ..Default::default()
@@ -178,14 +197,9 @@ impl Vault {
     /// All worlds, sorted by name.
     pub fn worlds(&self) -> Result<Vec<World>> {
         let mut worlds = Vec::new();
-        let dir = self.root.join("worlds");
-        if !dir.is_dir() {
-            return Ok(worlds);
-        }
-        for entry in fs::read_dir(dir)? {
-            let path = entry?.path();
-            if path.join("world.toml").is_file() {
-                worlds.push(World::open(path, self.templates_path())?);
+        for entry in self.store.list(&self.root.join("worlds"))? {
+            if self.store.is_file(&entry.path.join("world.toml")) {
+                worlds.push(World::open(entry.path, self.templates_path(), self.store.clone())?);
             }
         }
         worlds.sort_by_key(|w| (w.config.name.to_lowercase(), w.slug.clone()));
@@ -193,7 +207,8 @@ impl Vault {
     }
 
     pub fn world(&self, slug: &str) -> Result<World> {
-        World::open(self.root.join("worlds").join(checked_name(slug)?), self.templates_path())
+        let root = self.root.join("worlds").join(checked_name(slug)?);
+        World::open(root, self.templates_path(), self.store.clone())
     }
 
     pub fn create_world(&self, name: &str) -> Result<World> {
@@ -202,11 +217,11 @@ impl Vault {
             name => name,
         };
         let worlds = self.root.join("worlds");
-        fs::create_dir_all(&worlds)?;
-        let root = unique_dir(&worlds, &slugify(name));
+        self.store.create_dir_all(&worlds)?;
+        let root = unique_dir(self.store.as_ref(), &worlds, &slugify(name));
         let config = WorldConfig { name: name.to_owned() };
-        write_atomically(&root.join("world.toml"), config.to_toml().as_bytes())?;
-        World::open(root, self.templates_path())
+        self.store.write(&root.join("world.toml"), config.to_toml().as_bytes())?;
+        World::open(root, self.templates_path(), self.store.clone())
     }
 
     /// Changes a project's settings. A world it's put in must exist.
@@ -240,10 +255,11 @@ impl Vault {
         }
         let source = from.file_path(path)?;
         let stem = source.file_stem().and_then(|s| s.to_str()).unwrap_or("note").to_owned();
-        let target = files::unique_file(&world.root().join(note.kind.folder()), &stem, "md");
+        let target = unique_file(self.store.as_ref(), &world.root().join(note.kind.folder()), &stem, "md");
         // Copy, then remove: a crash in between leaves two copies, never none.
-        write_atomically(&target, &fs::read(&source)?)?;
-        fs::remove_file(&source)?;
+        let contents = self.store.read(&source)?;
+        self.store.write(&target, &contents)?;
+        self.store.remove_file(&source)?;
         let moved = target.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
         to.info(&format!("{}/{moved}", note.kind.folder()))
     }

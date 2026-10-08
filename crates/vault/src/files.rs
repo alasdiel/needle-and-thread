@@ -1,6 +1,5 @@
-use std::fs;
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+//! Naming and time helpers. Anything that actually touches files lives in `store`.
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{Error, Result};
@@ -12,58 +11,6 @@ pub(crate) fn checked_name(name: &str) -> Result<&str> {
         return Err(Error::Invalid(format!("{name:?} isn't a valid name")));
     }
     Ok(name)
-}
-
-/// Writes to a temporary file beside `path` and renames it into place, so a crash mid-write
-/// leaves the old file intact rather than a truncated one.
-pub(crate) fn write_atomically(path: &Path, contents: &[u8]) -> io::Result<()> {
-    let dir = path
-        .parent()
-        .ok_or_else(|| io::Error::other("path has no parent folder"))?;
-    fs::create_dir_all(dir)?;
-    let mut tmp = tempfile::NamedTempFile::new_in(dir)?;
-    tmp.write_all(contents)?;
-    tmp.as_file().sync_all()?;
-    // NamedTempFile is created 0600; keep an existing file's permissions, or use the usual
-    // ones for a new file.
-    match fs::metadata(path) {
-        Ok(existing) => fs::set_permissions(tmp.path(), existing.permissions())?,
-        Err(_) => set_default_permissions(tmp.path())?,
-    }
-    tmp.persist(path)?;
-    Ok(())
-}
-
-#[cfg(unix)]
-fn set_default_permissions(path: &Path) -> io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o644))
-}
-
-#[cfg(not(unix))]
-fn set_default_permissions(_path: &Path) -> io::Result<()> {
-    Ok(())
-}
-
-/// `dir/stem.ext`, or `dir/stem-2.ext`, `-3`… if taken.
-pub(crate) fn unique_file(dir: &Path, stem: &str, ext: &str) -> PathBuf {
-    (1..)
-        .map(|n| match n {
-            1 => dir.join(format!("{stem}.{ext}")),
-            n => dir.join(format!("{stem}-{n}.{ext}")),
-        })
-        .find(|path| !path.exists())
-        .expect("some suffix is free")
-}
-
-pub(crate) fn unique_dir(parent: &Path, stem: &str) -> PathBuf {
-    (1..)
-        .map(|n| match n {
-            1 => parent.join(stem),
-            n => parent.join(format!("{stem}-{n}")),
-        })
-        .find(|path| !path.exists())
-        .expect("some suffix is free")
 }
 
 /// UTC time as `2026-10-03T16:15:00Z`.

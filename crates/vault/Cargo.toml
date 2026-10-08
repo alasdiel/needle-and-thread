@@ -4,10 +4,16 @@ version.workspace = true
 edition.workspace = true
 publish.workspace = true
 
+[features]
+# Files on this computer, which the desktop app uses. Off for wasm, where the phone supplies its
+# own Store over the GitHub API and tempfile can't build.
+default = ["fs"]
+fs = ["dep:tempfile"]
+
 [dependencies]
 fastrand = "2"
 needle-core = { workspace = true }
-tempfile = "3"
+tempfile = { version = "3", optional = true }
 
 [dev-dependencies]
 tempfile = "3"
