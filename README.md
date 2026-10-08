@@ -47,6 +47,13 @@ cargo test --workspace --exclude needle-desktop-ui
 pnpm --dir editor test
 ```
 
+The network board is also driven in a browser, with a stand-in for the backend. Start `trunk serve` in `crates/desktop`, then:
+
+```sh
+pnpm --dir e2e install && pnpm --dir e2e exec playwright install chromium-headless-shell
+pnpm --dir e2e test
+```
+
 ## Layout
 
 | Path | What |
@@ -57,4 +64,5 @@ pnpm --dir editor test
 | `crates/index` | The search index (SQLite), a cache kept outside the vault |
 | `crates/desktop` | The Tauri app: Leptos frontend, backend in `src-tauri/` |
 | `editor/` | The ProseMirror editor (TypeScript) |
+| `e2e/` | Browser tests of the interface (Playwright), against `trunk serve` |
 | `docs/` | Design document and spike findings |

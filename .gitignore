@@ -8,3 +8,5 @@
 /docs/HANDOFF.md
 /docs/HANDOFF_HOST.md
 /docs/sync-handoff.py
+/e2e/node_modules
+/e2e/shots
