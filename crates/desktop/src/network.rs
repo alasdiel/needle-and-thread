@@ -24,7 +24,7 @@ use needle_core::project::{NoteKind, ProjectKind};
 
 use crate::icons::{Glyph, Icon};
 use crate::notes;
-use crate::tauri::{self, BoardView, CardView, LayoutView, NoteKey, NoteView, PinnedView, RelationshipEdit, RelationshipView};
+use crate::tauri::{self, BoardView, CardView, LayoutView, NoteKey, NoteView, PinnedView, RelationshipEdit, RelationshipView, StoryView};
 
 /// Each kind of note is a different piece of paper, so kinds are told apart by shape before
 /// colour. Sizes are in board units, which are CSS pixels at zoom 1.
@@ -195,11 +195,26 @@ pub fn NetworkBoard(
     let pending = RwSignal::new(None::<Pending>);
     let popover = RwSignal::new(None::<Popover>);
     let filters = RwSignal::new(Filters::default());
+    // Story time: where along the timeline the slider is, or `None` at the end of the book,
+    // which is where the board starts.
+    let story = RwSignal::new(StoryView::default());
+    let at_step = RwSignal::new(None::<usize>);
 
     // Reads the board. The first time it's framed to fit; after a change made from it (a new
     // string, a card pinned up) it stays where you were looking.
     let load = move |fit: bool| {
         let slug = project.get_untracked();
+        let story_slug = slug.clone();
+        spawn_local(async move {
+            // The board works without it, so a timeline that can't be read only loses the slider.
+            let found = tauri::project_story(&story_slug).await.unwrap_or_default();
+            at_step.try_update(|at| {
+                if at.is_some_and(|s| s >= found.steps.len()) {
+                    *at = None;
+                }
+            });
+            story.try_set(found);
+        });
         spawn_local(async move {
             match tauri::project_board(&slug).await {
                 Ok(found) => {
@@ -791,13 +806,16 @@ pub fn NetworkBoard(
                 .map(|(a, b)| view! { <path class="twine" d=sag(a, b)></path> })
                 .collect()
         };
-        let strings: Vec<_> = found
+        let at = at_step.get();
+        let strings: Vec<_> = story.with(|story| {
+            found
             .relationships
             .iter()
+            .filter(|r| relationship_at(r, story, at).there)
             .filter_map(|r| Some((r, spot(&r.from)?, spot(&r.to)?)))
             .map(|(r, a, b)| {
                 let d = sag(a, b);
-                let class = match (chosen.as_deref() == Some(r.id.as_str()), r.ends.is_some()) {
+                let class = match (chosen.as_deref() == Some(r.id.as_str()), relationship_at(r, story, at).ended) {
                     (true, true) => "string chosen ended",
                     (true, false) => "string chosen",
                     (false, true) => "string ended",
@@ -810,7 +828,8 @@ pub fn NetworkBoard(
                     <path class="string-hit" data-rel=r.id.clone() d=d></path>
                 }
             })
-            .collect();
+            .collect()
+        });
         // A string being pulled, and one let go on a card that's waiting for its label.
         let pulled = tying.get().map(|(a, b)| view! { <path class="string pulling" d=sag(a, b)></path> });
         let waiting = match pending.get() {
@@ -843,6 +862,8 @@ pub fn NetworkBoard(
         let shown = shown.get();
         let (minx, miny, maxx, maxy) = bounds(&cards)?;
         let (w, h) = (maxx - minx, maxy - miny);
+        let at = at_step.get();
+        let later = |id: &str| story.with(|s| s.cards.iter().any(|(c, step)| c == id && at.is_some_and(|at| *step > at)));
         let heads: Vec<_> = cards
             .iter()
             .filter(|card| shown.contains(&card.id))
@@ -850,7 +871,7 @@ pub fn NetworkBoard(
                 let (x, y) = pin_of(card);
                 let kind = card.kind.clone();
                 view! {
-                    <g class="pin" data-kind=kind>
+                    <g class="pin" class:not-yet=later(&card.id) data-kind=kind>
                         <ellipse class="pin-shadow" cx=x + 3.0 cy=y + 5.0 rx=6 ry=3.5></ellipse>
                         <circle class="pin-head" cx=x cy=y r=6.5></circle>
                         <circle class="pin-shine" cx=x - 2.0 cy=y - 2.2 r=2></circle>
@@ -881,22 +902,37 @@ pub fn NetworkBoard(
         let shown = shown.get();
         let chosen = chosen_string();
         let spot = |id: &String| cards.iter().find(|c| c.id == *id && shown.contains(id)).map(pin_of);
+        let at = at_step.get();
+        let story = story.get();
         Some(
             found
                 .relationships
                 .iter()
-                .filter(|r| !r.label_now().is_empty())
                 .filter_map(|r| {
+                    let now = relationship_at(r, &story, at);
+                    if !now.there || now.label.is_empty() {
+                        return None;
+                    }
                     let (x, y) = middle_of_string(spot(&r.from)?, spot(&r.to)?);
-                    let text = if r.directed { format!("{} \u{2192}", r.label_now()) } else { r.label_now().to_owned() };
-                    let class = match (chosen.as_deref() == Some(r.id.as_str()), r.ends.is_some()) {
+                    let text = if r.directed { format!("{} \u{2192}", now.label) } else { now.label.clone() };
+                    let class = match (chosen.as_deref() == Some(r.id.as_str()), now.ended) {
                         (true, true) => "tape chosen ended",
                         (true, false) => "tape chosen",
                         (false, true) => "tape ended",
                         (false, false) => "tape",
                     };
+                    // Moving through the story, a string whose times can't all be placed says so.
+                    let unplaced = (at.is_some() && !now.unplaced.is_empty())
+                        .then(|| format!("Not on the timeline: {}", now.unplaced.join(", ")));
                     Some(view! {
-                        <div class=class data-rel=r.id.clone() style:left=format!("{x}px") style:top=format!("{y}px")>
+                        <div
+                            class=class
+                            class:unplaced=unplaced.is_some()
+                            title=unplaced
+                            data-rel=r.id.clone()
+                            style:left=format!("{x}px")
+                            style:top=format!("{y}px")
+                        >
                             {text}
                         </div>
                     })
@@ -911,6 +947,11 @@ pub fn NetworkBoard(
             Some(Chosen::Card(id)) => Some(id),
             _ => None,
         };
+        // Moving through the story, what hasn't come in yet is faded.
+        let at = at_step.get();
+        let later: Vec<String> = story.with(|s| {
+            s.cards.iter().filter(|(_, step)| at.is_some_and(|at| *step > at)).map(|(id, _)| id.clone()).collect()
+        });
         cards
             .get()
             .into_iter()
@@ -923,11 +964,13 @@ pub fn NetworkBoard(
                 let (w, h) = paper.size();
                 let (x, y) = card.at;
                 let from = card.from.clone();
-                let class = if chosen_card.as_deref() == Some(card.id.as_str()) {
-                    format!("{} chosen", paper.class())
-                } else {
-                    paper.class().to_owned()
-                };
+                let mut class = paper.class().to_owned();
+                if chosen_card.as_deref() == Some(card.id.as_str()) {
+                    class.push_str(" chosen");
+                }
+                if later.contains(&card.id) {
+                    class.push_str(" not-yet");
+                }
                 view! {
                     <div
                         class=class
@@ -1585,9 +1628,77 @@ pub fn NetworkBoard(
                     _ => None,
                 }}
             </div>
+            {move || {
+                let steps = story.with(|s| s.steps.len());
+                (steps > 0).then(|| view! { <StorySlider story=story at=at_step /> })
+            }}
             {pin_picker}
             {show_filter}
             {panel}
+        </div>
+    }
+}
+
+/// How a relationship stands at a step of the story (`None` is the end of the book).
+struct RelationshipNow {
+    /// It has begun.
+    there: bool,
+    label: String,
+    ended: bool,
+    unplaced: Vec<String>,
+}
+
+fn relationship_at(r: &RelationshipView, story: &StoryView, at: Option<usize>) -> RelationshipNow {
+    let placed = story.relationships.iter().find(|s| s.id == r.id);
+    match (at, placed) {
+        (Some(at), Some(p)) => RelationshipNow {
+            there: p.begins.is_none_or(|b| b <= at),
+            label: p.changes.iter().rev().find(|(step, label)| *step <= at && !label.is_empty()).map_or(r.label.clone(), |(_, l)| l.clone()),
+            ended: p.ends.is_some_and(|e| e <= at),
+            unplaced: p.unplaced.clone(),
+        },
+        _ => RelationshipNow {
+            there: true,
+            label: r.label_now().to_owned(),
+            ended: r.ends.is_some(),
+            unplaced: placed.map(|p| p.unplaced.clone()).unwrap_or_default(),
+        },
+    }
+}
+
+/// The slider along the board's foot: story time, a step per scene or plot point on the
+/// timeline, with the end of the book (where the board starts) as its last stop.
+#[component]
+fn StorySlider(story: RwSignal<StoryView>, at: RwSignal<Option<usize>>) -> impl IntoView {
+    let count = move || story.with(|s| s.steps.len());
+    let value = move || at.get().unwrap_or_else(count);
+    let caption = move || match at.get() {
+        None => ("The end".to_owned(), "How everything stands at the end of the book".to_owned()),
+        Some(step) => story.with(|s| {
+            let here = &s.steps[step];
+            (format!("{}. {}", step + 1, here.title), here.time.clone().unwrap_or_default())
+        }),
+    };
+    view! {
+        <div class="board-story" on:pointerdown=|ev| ev.stop_propagation() on:wheel=|ev| ev.stop_propagation()>
+            <span class="panel-heading">"Story so far"</span>
+            <input
+                type="range"
+                min="0"
+                max=move || count().to_string()
+                step="1"
+                prop:value=move || value().to_string()
+                aria-label="Story time"
+                aria-valuetext=move || caption().0
+                on:input=move |ev| {
+                    let step: usize = event_target_value(&ev).parse().unwrap_or(0);
+                    at.set((step < count()).then_some(step));
+                }
+            />
+            <span class="board-story-now">
+                <span class="board-story-title">{move || caption().0}</span>
+                <span class="board-story-time">{move || caption().1}</span>
+            </span>
         </div>
     }
 }

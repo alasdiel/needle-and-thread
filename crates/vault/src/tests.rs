@@ -1160,3 +1160,46 @@ fn a_when_is_set_from_the_timeline_and_a_bad_one_is_refused() {
     assert_eq!(drowning.header().unwrap().str("when"), Some("Day 1"));
     assert!(vault.set_when(&tidewater, ItemKind::Scene, &world, "untitled-scene", &WhenEdit::Clear).is_err());
 }
+
+#[test]
+fn the_story_says_where_each_card_and_string_comes_in() {
+    let (_dir, vault) = linked_vault();
+    let tidewater = vault.project("tidewater").unwrap();
+    let notes = tidewater.notes();
+    let ledger = notes.create(NoteKind::Event, "The ledger leaves port").unwrap();
+    notes.update_header(&ledger.path, |h| h.set_table("when", &[("after", "Untitled scene")])).unwrap();
+    tidewater.update_header("untitled-scene", |h| h.set_str("when", "1998-03-14")).unwrap();
+    tidewater.update_header("next", |h| {
+        h.set_str("when", "1998-03-20");
+        h.set_list("cast", &["Old Teodor"]);
+    })
+    .unwrap();
+    let rel = vault.add_relationship(&tidewater, &notes.list().unwrap().iter().find(|n| n.title == "Mara Venn").unwrap().id,
+        &notes.list().unwrap().iter().find(|n| n.title == "Old Teodor").unwrap().id, "trusts", true).unwrap();
+    notes
+        .update_header(&rel.path, |h| {
+            h.set_str("begins", "Untitled scene");
+            h.set_str("ends", "The Drowning");
+        })
+        .unwrap();
+    let path = notes.file_path(&rel.path).unwrap();
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(text.contains("ends = \"The Drowning\"\n"));
+    fs::write(&path, text.replacen("ends = \"The Drowning\"\n", "ends = \"The Drowning\"\nchanges = [{ at = \"next\", label = \"distrusts\" }]\n", 1)).unwrap();
+
+    let story = vault.story(&tidewater).unwrap();
+    let titles: Vec<&str> = story.steps.iter().map(|s| s.title.as_str()).collect();
+    assert_eq!(titles, ["Untitled scene", "The ledger leaves port", "Next"]);
+    assert_eq!(story.steps[0].time.as_deref(), Some("14 March 1998"));
+    let card = |title: &str| {
+        let id = vault.names(&tidewater).unwrap().items().iter().find(|n| n.note.title == title).unwrap().note.id.clone();
+        story.cards.iter().find(|(c, _)| *c == id).map(|(_, at)| *at)
+    };
+    assert_eq!(card("Mara Venn"), Some(0), "her POV scene");
+    assert_eq!(card("Old Teodor"), Some(0), "in the cast of the first scene");
+    assert_eq!(card("The ledger leaves port"), Some(1));
+    let r = story.relationships.iter().find(|r| r.id == rel.id).unwrap();
+    assert_eq!((r.begins, r.ends), (Some(0), None));
+    assert_eq!(r.changes, [(2, "distrusts".to_owned())]);
+    assert_eq!(r.unplaced, ["The Drowning"], "a world plot point with no when");
+}

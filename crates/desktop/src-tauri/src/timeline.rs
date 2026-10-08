@@ -178,3 +178,58 @@ pub fn set_when(
         Ok(timeline_view(open.vault.timeline(&project).or_string()?))
     })
 }
+
+/// The network board through story time: the slider's steps, and where along them each card and
+/// string comes in.
+#[derive(Serialize)]
+pub struct StoryView {
+    steps: Vec<StepView>,
+    /// (card id, the step it comes in at).
+    cards: Vec<(String, usize)>,
+    relationships: Vec<StoryRelationshipView>,
+}
+
+#[derive(Serialize)]
+pub struct StepView {
+    title: String,
+    time: Option<String>,
+    /// "scene" or "event".
+    kind: &'static str,
+}
+
+#[derive(Serialize)]
+pub struct StoryRelationshipView {
+    id: String,
+    begins: Option<usize>,
+    ends: Option<usize>,
+    changes: Vec<(usize, String)>,
+    unplaced: Vec<String>,
+}
+
+#[tauri::command]
+pub fn project_story(state: State<'_, AppState>, project: String) -> Result<StoryView, String> {
+    state.with(|open| {
+        let project = open.vault.project(&project).or_string()?;
+        let story = open.vault.story(&project).or_string()?;
+        Ok(StoryView {
+            steps: story
+                .steps
+                .into_iter()
+                .map(|s| StepView {
+                    title: s.title,
+                    time: s.time,
+                    kind: match s.kind {
+                        ItemKind::Scene => "scene",
+                        ItemKind::Event => "event",
+                    },
+                })
+                .collect(),
+            cards: story.cards,
+            relationships: story
+                .relationships
+                .into_iter()
+                .map(|r| StoryRelationshipView { id: r.id, begins: r.begins, ends: r.ends, changes: r.changes, unplaced: r.unplaced })
+                .collect(),
+        })
+    })
+}

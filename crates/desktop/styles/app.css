@@ -3724,6 +3724,67 @@ button.panel-row {
   margin-top: 8px;
 }
 
+/* Moving through the story: a slider along the board's foot. What hasn't come in yet fades, and a
+   string whose times aren't all on the timeline is outlined in red pencil. */
+.board-story {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(620px, calc(100% - 28px));
+  padding: 8px 14px;
+  transform: translateX(-50%);
+  background: var(--raise);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px var(--card-drop);
+  cursor: default;
+}
+
+.board-story .panel-heading {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.board-story input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--string);
+}
+
+.board-story-now {
+  display: flex;
+  flex-direction: column;
+  width: 180px;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.board-story-title {
+  overflow: hidden;
+  font-family: var(--font-title);
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.board-story-time {
+  font-size: var(--size-ui-small);
+  color: var(--muted);
+}
+
+.card.not-yet,
+.pin.not-yet {
+  opacity: 0.32;
+}
+
+.tape.unplaced {
+  outline: 1.5px dashed var(--string);
+  outline-offset: 2px;
+}
+
 /* --- The timeline (§6) ---------------------------------------------------------------------- */
 
 /* Story order runs down the page, a step per item, with a tape measure in the margin. Lanes are

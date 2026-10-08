@@ -156,6 +156,14 @@
   };
   timeline.items[0].gap = '18 years';
   answers.project_timeline = () => structuredClone(timeline);
+  // The board through story time, following the timeline above: Teodor comes in with the
+  // flashback, Mara at the harbor; the string between them begins at the harbor and turns to
+  // resentment at the night market, which is when it's "resents" on the board's tape.
+  answers.project_story = () => ({
+    steps: timeline.order.map((i) => ({ title: timeline.items[i].title, time: timeline.items[i].time, kind: timeline.items[i].kind })),
+    cards: [['nt_mara', 1], ['nt_teodor', 0]],
+    relationships: [{ id: 'nt_rel', begins: 1, ends: null, changes: [[2, 'resents']], unplaced: ['The Drowning'] }],
+  });
   answers.set_when = (a) => {
     const i = timeline.items.findIndex((it) => it.path === a.path && it.kind === a.kind);
     if (i < 0) throw `no ${a.kind} ${a.path}`;

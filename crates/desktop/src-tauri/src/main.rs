@@ -75,6 +75,7 @@ fn main() {
             bin::restore_note,
             timeline::project_timeline,
             timeline::set_when,
+            timeline::project_story,
             network::project_board,
             network::save_board,
             network::add_card,

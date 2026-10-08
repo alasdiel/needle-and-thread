@@ -155,6 +155,100 @@ impl Vault {
     }
 }
 
+/// The network board through story time (DESIGN §7, "Moving through the story"): the steps a
+/// slider moves through, and where along them each card and string comes in.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Story {
+    /// Every scene and plot point on the timeline, in story order.
+    pub steps: Vec<StoryStep>,
+    /// Cards that come in partway, by note id: a plot point at its own step, a character at the
+    /// first scene or plot point they're in. Cards not listed are there throughout.
+    pub cards: Vec<(String, usize)>,
+    pub relationships: Vec<StoryRelationship>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoryStep {
+    pub title: String,
+    pub time: Option<String>,
+    pub kind: ItemKind,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StoryRelationship {
+    /// The relationship note's id.
+    pub id: String,
+    pub begins: Option<usize>,
+    pub ends: Option<usize>,
+    /// The step each change happens at, with its label, in story order.
+    pub changes: Vec<(usize, String)>,
+    /// Names in `begins`, `changes` or `ends` that aren't on the timeline, so can't be placed.
+    pub unplaced: Vec<String>,
+}
+
+impl Vault {
+    pub fn story(&self, project: &Project) -> Result<Story> {
+        let timeline = self.timeline(project)?;
+        let names = Names::of(&timeline.items, &aliases(self, project)?);
+        let step_of_item: HashMap<usize, usize> = timeline.order.iter().enumerate().map(|(step, &i)| (i, step)).collect();
+        let step = |name: &str| match names.find(name) {
+            Lookup::Found(i) => step_of_item.get(&i).copied(),
+            _ => None,
+        };
+
+        let steps = timeline
+            .order
+            .iter()
+            .map(|&i| {
+                let item = &timeline.items[i];
+                StoryStep { title: item.title.clone(), time: item.time_label.clone(), kind: item.kind.clone() }
+            })
+            .collect();
+
+        // Plot points come in at their own step; the people in a scene or plot point at the
+        // first one they're in.
+        let notes = self.names(project)?;
+        let mut first: HashMap<String, usize> = HashMap::new();
+        for (at, &i) in timeline.order.iter().enumerate() {
+            let item = &timeline.items[i];
+            if item.kind == ItemKind::Event {
+                first.entry(item.id.clone()).or_insert(at);
+            }
+            for name in item.cast.iter().chain(item.pov.iter()) {
+                if let needle_core::names::Resolution::Found(note) = notes.resolve(name)
+                    && note.note.kind == NoteKind::Character
+                {
+                    first.entry(note.note.id.clone()).or_insert(at);
+                }
+            }
+        }
+        let mut cards: Vec<(String, usize)> = first.into_iter().collect();
+        cards.sort();
+
+        let relationships = self
+            .board(project)?
+            .relationships
+            .into_iter()
+            .map(|r| {
+                let mut unplaced = Vec::new();
+                let mut place = |name: &str| {
+                    let found = step(name);
+                    if found.is_none() && !unplaced.iter().any(|u| u == name) {
+                        unplaced.push(name.to_owned());
+                    }
+                    found
+                };
+                let begins = r.begins.as_deref().and_then(&mut place);
+                let ends = r.ends.as_deref().and_then(&mut place);
+                let mut changes: Vec<(usize, String)> = r.changes.iter().filter_map(|c| Some((place(&c.at)?, c.label.clone()))).collect();
+                changes.sort_by_key(|(at, _)| *at);
+                StoryRelationship { id: r.id, begins, ends, changes, unplaced }
+            })
+            .collect();
+        Ok(Story { steps, cards, relationships })
+    }
+}
+
 /// A new `when` for a scene or plot point, as the timeline's side panel sets it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WhenEdit {

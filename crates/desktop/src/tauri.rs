@@ -734,6 +734,36 @@ pub enum WhenInput {
     Order { after: Option<String>, before: Option<String> },
 }
 
+/// The network board through story time (DESIGN §7): the slider's steps, and where along them
+/// each card and string comes in.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+pub struct StoryView {
+    pub steps: Vec<StepView>,
+    /// (card id, the step it comes in at). Cards not listed are there throughout.
+    pub cards: Vec<(String, usize)>,
+    pub relationships: Vec<StoryRelationshipView>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct StepView {
+    pub title: String,
+    pub time: Option<String>,
+    pub kind: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+pub struct StoryRelationshipView {
+    pub id: String,
+    pub begins: Option<usize>,
+    pub ends: Option<usize>,
+    pub changes: Vec<(usize, String)>,
+    pub unplaced: Vec<String>,
+}
+
+pub async fn project_story(project: &str) -> Result<StoryView, String> {
+    call("project_story", Args::default().str("project", project)).await
+}
+
 pub async fn project_timeline(project: &str) -> Result<TimelineView, String> {
     call("project_timeline", Args::default().str("project", project)).await
 }
