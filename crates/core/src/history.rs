@@ -45,7 +45,10 @@ pub fn total(changes: &[Option<i64>]) -> Option<i64> {
     changes.iter().flatten().copied().reduce(|a, b| a + b)
 }
 
+// A session is a Range, so `vec![0..1]` here really is a list holding one range, not the
+// miswritten `vec![0; 1]` that clippy::single_range_in_vec_init looks for.
 #[cfg(test)]
+#[allow(clippy::single_range_in_vec_init)]
 mod tests {
     use super::*;
 
