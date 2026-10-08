@@ -754,3 +754,188 @@ fn a_damaged_board_file_is_reported_not_ignored() {
     let error = project.network().unwrap_err().to_string();
     assert!(error.contains("network.toml"), "{error}");
 }
+
+/// A project with the four kinds of card note, one relationship and one world.
+fn board_vault() -> (TempDir, Vault, Project) {
+    let (dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    let notes = project.notes();
+    notes.create(NoteKind::Character, "Mara Venn").unwrap();
+    notes.create(NoteKind::Character, "Old Teodor").unwrap();
+    notes.create(NoteKind::Place, "Night Market").unwrap();
+    notes.create(NoteKind::Thread, "The missing ledger").unwrap();
+    notes.create(NoteKind::Event, "The ledger leaves port").unwrap();
+    (dir, vault, project)
+}
+
+fn card<'a>(board: &'a Board, title: &str) -> &'a Card {
+    board.cards.iter().find(|c| c.title == title).unwrap_or_else(|| panic!("no card for {title}"))
+}
+
+fn joined(board: &Board, a: &str, b: &str) -> bool {
+    let (a, b) = (&card(board, a).id, &card(board, b).id);
+    board.links.iter().any(|l| (l.from == *a && l.to == *b) || (l.from == *b && l.to == *a))
+}
+
+#[test]
+fn the_board_shows_one_card_per_note_that_takes_one() {
+    let (_dir, vault, project) = board_vault();
+    // Relationships are lines, and a plain note stays off the board.
+    project.notes().create(NoteKind::Note, "Things to check").unwrap();
+    let board = vault.board(&project).unwrap();
+
+    let mut titles: Vec<&str> = board.cards.iter().map(|c| c.title.as_str()).collect();
+    titles.sort_unstable();
+    assert_eq!(titles, ["Mara Venn", "Night Market", "Old Teodor", "The ledger leaves port", "The missing ledger"]);
+    assert!(board.cards.iter().all(|c| c.from.is_empty()), "all from this project");
+    assert!(board.placed_new, "nothing had been placed yet");
+}
+
+#[test]
+fn a_plot_point_is_joined_to_what_its_header_names() {
+    let (_dir, vault, project) = board_vault();
+    project
+        .notes()
+        .update_header("events/the-ledger-leaves-port", |h| {
+            h.set_list("involves", &["Mara Venn", "Old Teodor"]);
+            h.set_list("threads", &["The missing ledger"]);
+        })
+        .unwrap();
+    let board = vault.board(&project).unwrap();
+
+    assert!(joined(&board, "The ledger leaves port", "Mara Venn"));
+    assert!(joined(&board, "The ledger leaves port", "Old Teodor"));
+    assert!(joined(&board, "The ledger leaves port", "The missing ledger"));
+    assert!(!joined(&board, "Mara Venn", "Old Teodor"), "the header says nothing about those two");
+}
+
+#[test]
+fn a_link_in_a_notes_text_joins_them_once_however_often_it_appears() {
+    let (_dir, vault, project) = board_vault();
+    let notes = project.notes();
+    notes.save_body("characters/mara-venn", "She owes [[Old Teodor]] for the berth, and [[Old Teodor]] knows it.").unwrap();
+    let board = vault.board(&project).unwrap();
+
+    let ends: Vec<&Link> = board
+        .links
+        .iter()
+        .filter(|l| [&l.from, &l.to].contains(&&card(&board, "Mara Venn").id))
+        .collect();
+    assert_eq!(ends.len(), 1, "one line, not one per mention: {ends:?}");
+    assert!(joined(&board, "Mara Venn", "Old Teodor"));
+}
+
+#[test]
+fn a_relationship_is_strung_between_its_two_ends() {
+    let (_dir, vault, project) = board_vault();
+    let notes = project.notes();
+    notes.create(NoteKind::Relationship, "Mara and Teodor").unwrap();
+    notes
+        .update_header("relationships/mara-and-teodor", |h| {
+            h.set_list("between", &["Mara Venn", "Old Teodor"]);
+            h.set_str("label", "trusts");
+            h.set_bool("directed", true);
+        })
+        .unwrap();
+    let board = vault.board(&project).unwrap();
+
+    assert_eq!(board.relationships.len(), 1);
+    let rel = &board.relationships[0];
+    assert_eq!(rel.label, "trusts");
+    assert!(rel.directed);
+    assert_eq!(rel.between, (card(&board, "Mara Venn").id.clone(), card(&board, "Old Teodor").id.clone()));
+    assert!(board.cards.iter().all(|c| c.title != "Mara and Teodor"), "a relationship is a line, not a card");
+}
+
+#[test]
+fn string_replaces_the_twine_between_the_same_two_cards() {
+    let (_dir, vault, project) = board_vault();
+    let notes = project.notes();
+    notes.save_body("characters/mara-venn", "She owes [[Old Teodor]] for the berth.").unwrap();
+    notes.create(NoteKind::Relationship, "Mara and Teodor").unwrap();
+    notes
+        .update_header("relationships/mara-and-teodor", |h| {
+            h.set_list("between", &["Mara Venn", "Old Teodor"]);
+            h.set_str("label", "trusts");
+        })
+        .unwrap();
+    let board = vault.board(&project).unwrap();
+
+    assert_eq!(board.relationships.len(), 1);
+    assert!(!joined(&board, "Mara Venn", "Old Teodor"), "the relationship already draws this pair");
+}
+
+#[test]
+fn a_relationship_with_an_end_that_isnt_up_is_simply_not_drawn() {
+    let (_dir, vault, project) = board_vault();
+    let notes = project.notes();
+    notes.create(NoteKind::Relationship, "Mara and a stranger").unwrap();
+    notes
+        .update_header("relationships/mara-and-a-stranger", |h| {
+            h.set_list("between", &["Mara Venn", "Nobody At All"]);
+        })
+        .unwrap();
+    assert!(vault.board(&project).unwrap().relationships.is_empty());
+}
+
+#[test]
+fn a_world_note_is_only_up_once_it_has_been_pinned() {
+    let (_dir, vault, project) = board_vault();
+    let world = vault.create_world("The Glass Coast").unwrap();
+    let mut project = project;
+    let mut config = project.config.clone();
+    config.world = Some(world.slug.clone());
+    project.save_config(config).unwrap();
+    let harbour = world.notes().create(NoteKind::Place, "The Drowned Harbour").unwrap();
+
+    let board = vault.board(&project).unwrap();
+    assert!(board.cards.iter().all(|c| c.title != "The Drowned Harbour"), "not up until pinned");
+
+    let mut layout = project.network().unwrap();
+    layout.nodes.insert(harbour.id.clone(), needle_core::network::Node { at: (10.0, 20.0), turn: 0.0 });
+    project.save_network(&layout).unwrap();
+
+    let board = vault.board(&project).unwrap();
+    let pinned = card(&board, "The Drowned Harbour");
+    assert_eq!(pinned.at, (10.0, 20.0));
+    assert_eq!(pinned.from, world.slug, "the card says where it came from");
+}
+
+#[test]
+fn a_card_keeps_where_it_was_put_and_new_ones_get_room() {
+    let (_dir, vault, project) = board_vault();
+    let board = vault.board(&project).unwrap();
+    let mara = card(&board, "Mara Venn").id.clone();
+
+    let mut layout = project.network().unwrap();
+    layout.nodes.insert(mara.clone(), needle_core::network::Node { at: (640.0, 480.0), turn: -2.0 });
+    project.save_network(&layout).unwrap();
+
+    let board = vault.board(&project).unwrap();
+    assert_eq!(card(&board, "Mara Venn").at, (640.0, 480.0));
+    assert_eq!(card(&board, "Mara Venn").turn, -2.0);
+    assert!(board.placed_new, "the others still had no spot");
+    // No two cards on top of each other.
+    for (i, a) in board.cards.iter().enumerate() {
+        for b in &board.cards[i + 1..] {
+            assert!(a.at != b.at, "{} and {} are on the same spot", a.title, b.title);
+        }
+    }
+}
+
+#[test]
+fn an_arranged_board_places_nothing_new() {
+    let (_dir, vault, project) = board_vault();
+    let first = vault.board(&project).unwrap();
+    assert!(first.placed_new);
+
+    let mut layout = project.network().unwrap();
+    for c in &first.cards {
+        layout.nodes.insert(c.id.clone(), needle_core::network::Node { at: c.at, turn: c.turn });
+    }
+    vault.save_board(&project, &layout).unwrap();
+
+    let again = vault.board(&project).unwrap();
+    assert!(!again.placed_new);
+    assert_eq!(again.cards, first.cards, "reading it again finds the same board");
+}
