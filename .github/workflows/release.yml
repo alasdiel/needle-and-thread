@@ -135,12 +135,9 @@ jobs:
         with:
           key: rust-release
 
-      # standalone: a real pnpm.exe rather than npm's pnpm.cmd shim, which trunk's pre_build
-      # hook couldn't start (Windows only runs .exe files without a shell).
       - uses: pnpm/action-setup@v4
         with:
           version: 12
-          standalone: true
 
       - uses: actions/setup-node@v4
         with:

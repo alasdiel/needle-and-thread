@@ -9,7 +9,9 @@ watch = ["src", "styles", "assets", "index.html", "../../editor/src"]
 port = 1420
 open = false
 
+# Node itself rather than `pnpm run build`: trunk starts the hook as a program, and on Windows
+# pnpm is a script shim that can't be started that way.
 [[hooks]]
 stage = "pre_build"
-command = "pnpm"
-command_arguments = ["--dir", "../../editor", "run", "build"]
+command = "node"
+command_arguments = ["../../editor/build.mjs"]
