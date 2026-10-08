@@ -86,7 +86,7 @@ jobs:
       - uses: cargo-bins/cargo-binstall@main
 
       - name: Install trunk and the Tauri CLI
-        run: cargo binstall -y --no-confirm trunk tauri-cli
+        run: cargo binstall --no-confirm trunk tauri-cli
 
       - name: Build
         run: cargo tauri build --bundles deb,appimage
@@ -155,7 +155,7 @@ jobs:
       - uses: cargo-bins/cargo-binstall@main
 
       - name: Install trunk and the Tauri CLI
-        run: cargo binstall -y --no-confirm trunk tauri-cli
+        run: cargo binstall --no-confirm trunk tauri-cli
 
       # The Tauri CLI downloads WiX (for the .msi) and NSIS (for the setup .exe) itself.
       - name: Build
