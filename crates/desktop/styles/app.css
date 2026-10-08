@@ -3172,7 +3172,8 @@ del {
 }
 
 .folder::before {
-  content: "thread";
+  /* Set by the board, since a thread is an argument in a nonfiction project. */
+  content: attr(data-tab);
   position: absolute;
   top: -14px;
   left: 0;

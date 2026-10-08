@@ -8,7 +8,10 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 use wasm_bindgen::JsCast;
 
+use needle_core::project::ProjectKind;
+
 use crate::icons::{Glyph, Icon};
+use crate::notes;
 use crate::tauri::{self, BoardView, CardView, LayoutView, NoteKey, PinnedView};
 
 /// Each kind of note is a different piece of paper, so kinds are told apart by shape before
@@ -84,6 +87,9 @@ pub fn NetworkBoard(
     /// The project whose board this is.
     #[prop(into)]
     project: Signal<String>,
+    /// Fiction or nonfiction, which decides what a thread card's tab is called.
+    #[prop(into)]
+    kind: Signal<ProjectKind>,
     on_open_note: impl Fn(NoteKey) + Copy + Send + Sync + 'static,
 ) -> impl IntoView {
     let board = RwSignal::new(None::<BoardView>);
@@ -319,6 +325,8 @@ pub fn NetworkBoard(
             .enumerate()
             .map(|(i, card)| {
                 let paper = Paper::of(&card.kind);
+                // A thread is an argument in a nonfiction project, so the folder's tab says so.
+                let tab = notes::kind_label(&card.kind, kind.get()).to_lowercase();
                 let (w, h) = paper.size();
                 let (x, y) = card.at;
                 let from = card.from.clone();
@@ -332,6 +340,7 @@ pub fn NetworkBoard(
                         style:height=format!("{h}px")
                         style:transform=format!("rotate({}deg)", card.turn)
                         title=card.title.clone()
+                        data-tab=tab
                     >
                         <span class="card-mark" aria-hidden="true">
                             <Icon glyph=paper.glyph() size=if paper == Paper::Polaroid { 40 } else { 18 } />
@@ -361,7 +370,14 @@ pub fn NetworkBoard(
             {move || error.get().map(|e| view! { <p class="error board-error">{e}</p> })}
             <Show when=empty>
                 <p class="board-empty">
-                    "Nothing is pinned up yet. Make a character, place, plot point or thread, and it appears here."
+                    {move || {
+                        let k = kind.get();
+                        format!(
+                            "Nothing is pinned up yet. Make a character, place, {} or {}, and it appears here.",
+                            notes::kind_label("event", k).to_lowercase(),
+                            notes::kind_label("thread", k).to_lowercase(),
+                        )
+                    }}
                 </p>
             </Show>
             <div

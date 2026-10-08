@@ -1551,6 +1551,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                 <Show when=move || show_board.get()>
                     <NetworkBoard
                         project=Signal::derive(move || project.get().unwrap_or_default())
+                        kind=project_kind
                         on_open_note=move |key| {
                             show_board.set(false);
                             open_note(key);
