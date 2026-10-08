@@ -141,6 +141,72 @@ impl Vault {
     }
 }
 
+/// A new `when` for a scene or plot point, as the timeline's side panel sets it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WhenEdit {
+    /// Takes it off the timeline, into the tray.
+    Clear,
+    /// A date (`3 Thaw 412 AD 19:00`) or a day (`Day 4`).
+    Text(String),
+    From { from: String, offset: String },
+    Order { after: Option<String>, before: Option<String> },
+}
+
+impl Vault {
+    /// Sets the `when` of a scene (`path` is its name) or a plot point (`path` within `owner`'s
+    /// notes). A date the calendar can't read, or an offset that isn't one, is refused rather
+    /// than saved, so a typo never quietly drops something into the tray.
+    pub fn set_when(&self, project: &Project, kind: ItemKind, owner: &Owner, path: &str, edit: &WhenEdit) -> Result<()> {
+        let calendar = self.calendar(project)?;
+        let blank = |s: &Option<String>| s.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned);
+        let write = |header: &mut Header| match edit {
+            WhenEdit::Clear => header.remove("when"),
+            WhenEdit::Text(text) => header.set_str("when", text.trim()),
+            WhenEdit::From { from, offset } => match offset.trim() {
+                "" => header.set_table("when", &[("from", from.trim())]),
+                offset => header.set_table("when", &[("from", from.trim()), ("offset", offset)]),
+            },
+            WhenEdit::Order { after, before } => {
+                let fields: Vec<(&str, String)> =
+                    [("after", blank(after)), ("before", blank(before))].into_iter().filter_map(|(k, v)| Some((k, v?))).collect();
+                let fields: Vec<(&str, &str)> = fields.iter().map(|(k, v)| (*k, v.as_str())).collect();
+                header.set_table("when", &fields);
+            }
+        };
+        match edit {
+            WhenEdit::Clear => {}
+            WhenEdit::Text(text) => {
+                When::parse(text, &calendar).map_err(Error::Invalid)?;
+            }
+            WhenEdit::From { from, offset } => {
+                if from.trim().is_empty() {
+                    return Err(Error::Invalid("say what it's measured from".into()));
+                }
+                if !offset.trim().is_empty() {
+                    needle_core::calendar::Offset::parse(offset).map_err(|e| Error::Invalid(e.0))?;
+                }
+            }
+            WhenEdit::Order { after, before } => {
+                if blank(after).is_none() && blank(before).is_none() {
+                    return Err(Error::Invalid("say what it comes after or before".into()));
+                }
+            }
+        }
+        match kind {
+            ItemKind::Scene => {
+                if *owner != Owner::Project(project.slug.clone()) {
+                    return Err(Error::Invalid("a scene belongs to its own project".into()));
+                }
+                project.update_header(path, write)?;
+            }
+            ItemKind::Event => {
+                self.notes_of(owner)?.update_header(path, write)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 /// A plot point's aliases, by owner and path, so `when` can name it by one.
 fn aliases(vault: &Vault, project: &Project) -> Result<HashMap<(Owner, String), Vec<String>>> {
     let mut found = HashMap::new();

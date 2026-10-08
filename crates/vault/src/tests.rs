@@ -1125,3 +1125,35 @@ fn the_timeline_places_scenes_and_plot_points_in_the_worlds_calendar() {
     let error = vault.timeline(&vault.project("tidewater").unwrap()).unwrap_err().to_string();
     assert!(error.contains("project.toml") && error.contains("months"), "{error}");
 }
+
+#[test]
+fn a_when_is_set_from_the_timeline_and_a_bad_one_is_refused() {
+    let (_dir, vault) = linked_vault();
+    let tidewater = vault.project("tidewater").unwrap();
+    let here = Owner::Project("tidewater".into());
+    let scene = || fs::read_to_string(tidewater.scene_path("untitled-scene").unwrap()).unwrap();
+    let set = |edit: WhenEdit| vault.set_when(&tidewater, ItemKind::Scene, &here, "untitled-scene", &edit);
+
+    set(WhenEdit::Text("1998-03-14 19:00".into())).unwrap();
+    assert!(scene().contains("when = \"1998-03-14 19:00\"\n"));
+    set(WhenEdit::From { from: "Next".into(), offset: " -2h ".into() }).unwrap();
+    assert!(scene().contains("when = { from = \"Next\", offset = \"-2h\" }\n"));
+    set(WhenEdit::Order { after: Some(" ".into()), before: Some("Next".into()) }).unwrap();
+    assert!(scene().contains("when = { before = \"Next\" }\n"));
+
+    let before = scene();
+    assert!(set(WhenEdit::Text("the fourth of Smarch".into())).is_err());
+    assert!(set(WhenEdit::From { from: "Next".into(), offset: "soonish".into() }).is_err());
+    assert!(set(WhenEdit::Order { after: None, before: None }).is_err());
+    assert_eq!(scene(), before, "nothing written");
+
+    set(WhenEdit::Clear).unwrap();
+    assert!(!scene().contains("when"));
+    assert!(scene().contains("pov = \"Mara Venn\""));
+
+    let world = Owner::World("glass-coast".into());
+    vault.set_when(&tidewater, ItemKind::Event, &world, "events/the-drowning", &WhenEdit::Text("Day 1".into())).unwrap();
+    let drowning = vault.world("glass-coast").unwrap().notes().read("events/the-drowning").unwrap();
+    assert_eq!(drowning.header().unwrap().str("when"), Some("Day 1"));
+    assert!(vault.set_when(&tidewater, ItemKind::Scene, &world, "untitled-scene", &WhenEdit::Clear).is_err());
+}

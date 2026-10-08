@@ -11,6 +11,7 @@ mod search;
 mod settings;
 mod spelling;
 mod state;
+mod timeline;
 mod workspace;
 
 use needle_vault::Vault;
@@ -72,6 +73,8 @@ fn main() {
             bin::remove_from_bin,
             bin::restore_scene,
             bin::restore_note,
+            timeline::project_timeline,
+            timeline::set_when,
             network::project_board,
             network::save_board,
             network::add_card,
