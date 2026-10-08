@@ -2,7 +2,7 @@
 
 A structure-first writing app for long fiction and nonfiction. Your work lives in a vault: a folder of plain Markdown files, with a history of snapshots kept alongside. No AI.
 
-**Status:** early. Writing, restructuring, notes, links, search, history and backup work; the network map (DESIGN §7) is next, then the timeline. See [docs/DESIGN.md](docs/DESIGN.md) for the plan.
+**Status:** early. Writing, restructuring, notes, links, search, history and backup work on the desktop. **The phone app is next** ([DESIGN §9](docs/DESIGN.md)): a full client rather than a capture box, since that's where much of the writing happens — reading first, then two-way sync, then writing and restructuring. The network map and the timeline come after. See [docs/DESIGN.md](docs/DESIGN.md) for the plan.
 It installs from source for now; packaged downloads come later.
 
 ## What works
