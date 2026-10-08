@@ -17,6 +17,7 @@ use crate::envelope::{self, EnvelopeCard};
 use crate::history::{HistoryPanel, HistoryTarget};
 use crate::icons::{Glyph, Icon};
 use crate::links::{LinkBridge, name_words};
+use crate::network::NetworkBoard;
 use crate::notes::{self, LinksSwatch, NotesList, Pin};
 use crate::outline::{self, LiveWords, OutlineTree};
 use crate::pattern::{Grainline, Notches};
@@ -132,6 +133,8 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let notes_list = RwSignal::new(Vec::<NoteView>::new());
     let world = RwSignal::new(None::<(String, String)>);
     let tab = RwSignal::new(Tab::Outline);
+    // The main area shows either the open scene or note, or the project's network board.
+    let show_board = RwSignal::new(false);
     // The open scene's envelope: its header names and hints, fetched again after each save.
     let scene_names = RwSignal::new(None::<SceneNamesView>);
     let names_revision = RwSignal::new(0u32);
@@ -1417,6 +1420,15 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                             <Icon glyph=Glyph::History size=17 />
                         </button>
                     </Show>
+                    <button
+                        class="icon-button"
+                        title="Network board"
+                        aria-label="Network board"
+                        class:active=move || show_board.get()
+                        on:click=move |_| show_board.update(|v| *v = !*v)
+                    >
+                        <Icon glyph=Glyph::Pin size=17 />
+                    </button>
                     <Show when=has_scene>
                         <div class="popover-anchor">
                             <button
@@ -1536,7 +1548,16 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                         <span>{format!("Spellcheck unavailable: {e}")}</span>
                     </div>
                 })}
-                <div class="page" class:empty=move || !has_doc()>
+                <Show when=move || show_board.get()>
+                    <NetworkBoard
+                        project=Signal::derive(move || project.get().unwrap_or_default())
+                        on_open_note=move |key| {
+                            show_board.set(false);
+                            open_note(key);
+                        }
+                    />
+                </Show>
+                <div class="page" class:empty=move || !has_doc() hidden=move || show_board.get()>
                     // A note's links swatch sits beside it when there's room, else below.
                     <div class="bench">
                         <div class="piece-holder" class:note-holder=has_note>

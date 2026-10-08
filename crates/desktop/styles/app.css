@@ -55,6 +55,22 @@
   --mark: light-dark(rgb(11 159 176 / 0.16), rgb(116 245 248 / 0.16)); /* search matches */
   --scrim: light-dark(rgb(21 35 45 / 0.25), rgb(5 10 14 / 0.55));
 
+  /* The network board (§7): cork, stained in the dark theme, and the papers pinned to it. */
+  --cork: light-dark(#c69c6d, #3b2b1f);
+  --cork-speck-a: light-dark(rgb(167 123 78 / 0.55), #2a1e15);
+  --cork-speck-b: light-dark(rgb(220 184 138 / 0.6), #4e3a2b);
+  --paper: light-dark(#fdfaf2, #e8e1d1); /* a card stays pale on a dark board */
+  --paper-ink: #2a2420;
+  --paper-muted: #6d6458;
+  --paper-rule: rgb(30 95 166 / 0.25);
+  --photo: light-dark(#2f3b45, #26313a); /* a polaroid's picture */
+  --manila: light-dark(#e2c68e, #d8bd85);
+  --tape: light-dark(rgb(244 234 200 / 0.9), rgb(232 220 180 / 0.88));
+  --string: light-dark(#c42b36, #e0505a);
+  --string-shadow: light-dark(rgb(60 30 10 / 0.35), rgb(0 0 0 / 0.45));
+  --twine: light-dark(rgb(255 250 235 / 0.85), rgb(232 222 200 / 0.5));
+  --card-drop: light-dark(rgb(60 30 10 / 0.35), rgb(0 0 0 / 0.5));
+
   /* The type scale: small caps in two sizes, the interface font in two, titles in four. */
   --size-label: 14.5px; /* small-caps headings and labels */
   --size-label-small: 13px; /* small caps on chips, pills and minor labels */
@@ -2977,4 +2993,237 @@ del {
 .notice > span {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* --- The network board ----------------------------------------------------------------------
+   A cork board of pinned cards, strung with red thread (DESIGN §7). The whole board moves as
+   one layer, so panning and zooming don't redraw it (spike 3). */
+
+.board {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  background-color: var(--cork);
+  /* Cork's speckle: three sizes of fleck so no pattern repeat is obvious. */
+  background-image:
+    radial-gradient(circle at 30% 40%, var(--cork-speck-a) 0.8px, transparent 1.4px),
+    radial-gradient(circle at 70% 60%, var(--cork-speck-b) 0.9px, transparent 1.6px),
+    radial-gradient(circle at 50% 50%, var(--cork-speck-a) 1.2px, transparent 2px);
+  background-size: 7px 7px, 11px 9px, 23px 19px;
+}
+
+.board:active {
+  cursor: grabbing;
+}
+
+.board-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.board-threads {
+  position: absolute;
+  overflow: visible;
+}
+
+.twine {
+  fill: none;
+  stroke: var(--twine);
+  stroke-width: 1.1;
+}
+
+.string {
+  fill: none;
+  stroke: var(--string);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.string-shadow {
+  fill: none;
+  stroke: var(--string-shadow);
+  stroke-width: 2.4;
+  transform: translate(2px, 4px);
+}
+
+.pin-shadow {
+  fill: rgb(0 0 0 / 0.3);
+}
+
+.pin-head {
+  fill: var(--link);
+  stroke: rgb(0 0 0 / 0.35);
+  stroke-width: 0.8;
+}
+
+/* A pin takes its note's colour, the same four used everywhere else. */
+.pin[data-kind="place"] .pin-head { fill: #e0b26a; }
+.pin[data-kind="event"] .pin-head { fill: #f08fb0; }
+.pin[data-kind="thread"] .pin-head { fill: var(--thread); }
+
+.pin-shine {
+  fill: rgb(255 255 255 / 0.55);
+}
+
+/* --- The cards ------------------------------------------------------------------------------ */
+
+.card {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  color: var(--paper-ink);
+  box-shadow: 0 6px 14px var(--card-drop), 0 1px 2px var(--card-drop);
+  cursor: move;
+  user-select: none;
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  overflow: hidden;
+}
+
+.card-from {
+  margin-top: auto;
+  font-family: var(--font-label);
+  font-size: 10.5px;
+  font-variant: small-caps;
+  letter-spacing: 0.07em;
+  color: var(--paper-muted);
+}
+
+.card-mark {
+  display: flex;
+  color: var(--swatch-print);
+}
+
+.polaroid {
+  padding: 7px 7px 0;
+  text-align: center;
+}
+
+.polaroid .card-mark {
+  align-items: center;
+  justify-content: center;
+  height: 76px;
+  margin-bottom: 5px;
+  background: var(--photo);
+  color: var(--paper);
+}
+
+.postcard {
+  padding: 10px;
+  gap: 4px;
+}
+
+.postcard .card-mark {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 36px;
+  border: 1.5px dashed var(--paper-muted);
+  color: #9a6a1e;
+}
+
+.postcard .card-title,
+.index-card .card-title {
+  padding-right: 36px;
+}
+
+/* An index card's red rule under its heading, then faint blue lines. */
+.index-card {
+  padding: 6px 10px;
+  background-image:
+    linear-gradient(#b0386a 1.5px, transparent 1.5px),
+    repeating-linear-gradient(transparent 0 15px, var(--paper-rule) 15px 16px);
+  background-position: 0 24px, 0 24px;
+}
+
+.index-card .card-mark {
+  color: #b0386a;
+}
+
+.index-card .card-title {
+  margin-top: 10px;
+}
+
+/* A manila folder, with its tab sticking up over the board. */
+.folder {
+  padding: 12px 10px 8px;
+  background: var(--manila);
+  border-radius: 0 4px 4px 4px;
+  flex-direction: row;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.folder::before {
+  content: "thread";
+  position: absolute;
+  top: -14px;
+  left: 0;
+  padding: 0 10px;
+  font-family: var(--font-label);
+  font-size: 10.5px;
+  font-variant: small-caps;
+  letter-spacing: 0.07em;
+  line-height: 15px;
+  color: var(--paper-muted);
+  background: var(--manila);
+  border-radius: 4px 4px 0 0;
+}
+
+.folder .card-mark {
+  color: var(--paper-muted);
+}
+
+/* A relationship's label, on a strip of masking tape across its string. */
+.tape {
+  position: absolute;
+  transform: translate(-50%, -50%) rotate(-1.5deg);
+  padding: 2px 12px;
+  background: var(--tape);
+  color: var(--paper-ink);
+  font-family: var(--font-label);
+  font-size: var(--size-label-small);
+  font-variant: small-caps;
+  letter-spacing: 0.07em;
+  white-space: nowrap;
+  pointer-events: none;
+  /* Torn ends, like tape pulled off a roll. */
+  clip-path: polygon(0 8%, 4% 0, 8% 10%, 12% 0, 100% 0, 97% 30%, 100% 60%, 96% 100%, 6% 100%, 0 85%, 3% 50%);
+}
+
+.board-empty,
+.board-error {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  transform: translate(-50%, -50%);
+  max-width: 34ch;
+  padding: 12px 18px;
+  text-align: center;
+  background: var(--raise);
+  color: var(--text);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+}
+
+/* The pins sit over the cards: a pin holds its card to the board. */
+.board-pins {
+  pointer-events: none;
 }

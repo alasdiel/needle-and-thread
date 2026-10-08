@@ -9,6 +9,7 @@ mod history;
 mod icons;
 mod links;
 mod network_spike;
+mod network;
 mod notes;
 mod outline;
 mod pattern;

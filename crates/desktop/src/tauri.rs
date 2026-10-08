@@ -3,6 +3,7 @@
 use std::{future::Future, pin::Pin};
 
 use js_sys::{Object, Reflect};
+use needle_core::network::{Mark, Point, Zone};
 use needle_core::settings::TypographyRule;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use wasm_bindgen::prelude::*;
@@ -574,6 +575,76 @@ pub async fn restore_note_version(note: &NoteKey, id: &str, label: &str) -> Resu
 
 pub async fn name_version(id: &str, name: &str) -> Result<(), String> {
     call("name_version", Args::default().str("id", id).str("name", name)).await
+}
+
+// --- The network board ------------------------------------------------------------------
+
+/// What's on a project's board, and where it all sits (DESIGN §7).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct BoardView {
+    pub cards: Vec<CardView>,
+    pub relationships: Vec<RelationshipView>,
+    pub links: Vec<LinkView>,
+    pub zones: Vec<Zone>,
+    pub marks: Vec<Mark>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct CardView {
+    pub id: String,
+    pub owner: String,
+    pub world: bool,
+    pub path: String,
+    /// "character", "place", "event" or "thread": which paper the card is.
+    pub kind: String,
+    pub title: String,
+    /// Empty for this project's own notes; otherwise where the note came from, which the card
+    /// says under its kind.
+    pub from: String,
+    pub at: Point,
+    pub turn: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct RelationshipView {
+    pub id: String,
+    pub owner: String,
+    pub world: bool,
+    pub path: String,
+    pub label: String,
+    pub from: String,
+    pub to: String,
+    pub directed: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct LinkView {
+    pub from: String,
+    pub to: String,
+}
+
+/// The arrangement sent back when the board is rearranged.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct LayoutView {
+    pub nodes: Vec<PinnedView>,
+    pub zones: Vec<Zone>,
+    pub marks: Vec<Mark>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct PinnedView {
+    pub id: String,
+    pub at: Point,
+    pub turn: f64,
+}
+
+pub async fn project_board(project: &str) -> Result<BoardView, String> {
+    call("project_board", Args::default().str("project", project)).await
+}
+
+pub async fn save_board(project: &str, layout: &LayoutView) -> Result<(), String> {
+    let layout = serde_wasm_bindgen::to_value(layout).map_err(|e| e.to_string())?;
+    call("save_board", Args::default().str("project", project).set("layout", layout)).await
 }
 
 // --- The cut bin ------------------------------------------------------------------------
