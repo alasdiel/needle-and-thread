@@ -97,6 +97,19 @@ impl Header {
         Some(pairs.into_iter().filter_map(|(k, v)| Some((k.to_owned(), v.as_str()?.to_owned()))).collect())
     }
 
+    /// Writes a small inline table of strings: `when = { after = "The harbor" }`.
+    pub fn set_table(&mut self, key: &str, fields: &[(&str, &str)]) {
+        let mut table = toml_edit::InlineTable::new();
+        for (k, v) in fields {
+            table.insert(*k, Value::from(*v));
+        }
+        table.fmt();
+        if matches!(self.doc.get(key), Some(Item::Table(_))) {
+            self.doc.remove(key);
+        }
+        self.set_value(key, Value::InlineTable(table));
+    }
+
     /// A string, or a TOML date (`when = 1998-03-14T19:00:00`) as it's written.
     pub fn text(&self, key: &str) -> Option<String> {
         match self.doc.get(key)?.as_value()? {
@@ -215,6 +228,12 @@ mood = "uneasy"
         assert_eq!(h.table("title"), None);
         let long = Header::parse("title = \"x\"\n[when]\nafter = \"The harbor\"\n").unwrap();
         assert_eq!(long.table("when").unwrap(), [("after".to_owned(), "The harbor".to_owned())]);
+        let mut edited = Header::parse(SCENE).unwrap();
+        edited.set_table("when", &[("after", "The harbor"), ("before", "The Drowning")]);
+        assert!(edited.to_string().contains("\nwhen = { after = \"The harbor\", before = \"The Drowning\" }\nmood"));
+        let mut long = long;
+        long.set_table("when", &[("from", "Dawn")]);
+        assert_eq!(long.to_string(), "title = \"x\"\nwhen = { from = \"Dawn\" }\n");
         let dated = Header::parse("when = 1998-03-14T19:00:00\nalso = \"3 Thaw\"").unwrap();
         assert_eq!(dated.text("when").as_deref(), Some("1998-03-14T19:00:00"));
         assert_eq!(dated.text("also").as_deref(), Some("3 Thaw"));

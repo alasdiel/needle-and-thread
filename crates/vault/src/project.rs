@@ -80,9 +80,12 @@ impl Project {
         Bin::new(Owner::Project(self.slug.clone()), self.root.join("cut"))
     }
 
-    /// Saves new settings to `project.toml`. The file is the app's, so it's rewritten whole.
+    /// Saves new settings to `project.toml`, leaving anything else in it (a `[calendar]`, say)
+    /// as it was.
     pub fn save_config(&mut self, config: ProjectConfig) -> Result<()> {
-        write_atomically(&self.root.join("project.toml"), config.to_toml().as_bytes())?;
+        let path = self.root.join("project.toml");
+        let existing = fs::read_to_string(&path).unwrap_or_default();
+        write_atomically(&path, config.update_toml(&existing).as_bytes())?;
         self.config = config;
         Ok(())
     }

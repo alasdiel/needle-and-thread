@@ -1067,3 +1067,61 @@ changes = [{ at = "The ledger leaves port", label = "distrusts" }, { at = "The D
         ]
     );
 }
+
+#[test]
+fn the_timeline_places_scenes_and_plot_points_in_the_worlds_calendar() {
+    let (_dir, vault) = linked_vault();
+    let world = vault.world("glass-coast").unwrap();
+    let world_toml = world.root().join("world.toml");
+    fs::write(
+        &world_toml,
+        fs::read_to_string(&world_toml).unwrap()
+            + "\n[calendar]\nname = \"Reckoning\"\nmonths = [{ name = \"Thaw\", days = 30 }, { name = \"Bloom\", days = 30 }]\n\
+               eras = [{ name = \"After the Drowning\", short = \"AD\" }]\n",
+    )
+    .unwrap();
+    world.notes().update_header("events/the-drowning", |h| h.set_str("when", "1 Thaw 1")).unwrap();
+    let tidewater = vault.project("tidewater").unwrap();
+    let notes = tidewater.notes();
+    let ledger = notes.create(NoteKind::Event, "The ledger leaves port").unwrap();
+    notes
+        .update_header(&ledger.path, |h| {
+            h.set_table("when", &[("after", "Next")]);
+            h.set_list("aliases", &["the ledger"]);
+        })
+        .unwrap();
+    tidewater.update_header("untitled-scene", |h| h.set_str("when", "3 Bloom 412 AD 19:00")).unwrap();
+    tidewater.update_header("next", |h| h.set_table("when", &[("from", "untitled scene"), ("offset", "+6h")])).unwrap();
+    let flashback = tidewater.create_scene("Flashback", Placement::After { scene: "next".into() }).unwrap();
+    tidewater.update_header(&flashback.slug, |h| h.set_table("when", &[("before", "the drowning")])).unwrap();
+    let lost = tidewater.create_scene("Lost", Placement::After { scene: "next".into() }).unwrap();
+    tidewater.update_header(&lost.slug, |h| h.set_table("when", &[("from", "The Ledger"), ("offset", "+1d")])).unwrap();
+    tidewater.create_scene("Someday", Placement::After { scene: "next".into() }).unwrap();
+
+    let timeline = vault.timeline(&tidewater).unwrap();
+    assert_eq!(timeline.calendar.as_deref(), Some("Reckoning"));
+    let titles: Vec<&str> = timeline.order.iter().map(|&i| timeline.items[i].title.as_str()).collect();
+    assert_eq!(titles, ["Flashback", "The Drowning", "Untitled scene", "Next", "The ledger leaves port", "Lost"]);
+    let item = |title: &str| timeline.items.iter().find(|i| i.title == title).unwrap();
+    assert_eq!(item("Next").time_label.as_deref(), Some("4 Bloom 412 AD, 01:00"));
+    assert_eq!(item("Next").when, "from = \"untitled scene\", offset = \"+6h\"");
+    assert_eq!(item("Untitled scene").reading, Some(1));
+    assert_eq!(item("Untitled scene").pov.as_deref(), Some("Mara Venn"));
+    assert_eq!(item("The Drowning").owner, Owner::World("glass-coast".into()));
+    assert_eq!(item("The Drowning").kind, ItemKind::Event);
+    assert!(item("Lost").placed.loose, "measured from an order-only plot point");
+    assert_eq!(item("Someday").placed.position, None);
+
+    // A project's own calendar comes before its world's, and survives saving its settings.
+    let project_toml = tidewater.root().join("project.toml");
+    fs::write(&project_toml, fs::read_to_string(&project_toml).unwrap() + "\n[calendar]\nday_one = \"Untitled scene\"\n").unwrap();
+    let tidewater = vault.update_project("tidewater", |c| c.title = "Tidewater Rising".into()).unwrap();
+    assert!(fs::read_to_string(&project_toml).unwrap().contains("day_one = \"Untitled scene\""));
+    assert!(vault.calendar(&tidewater).unwrap().is_real());
+    assert!(vault.timeline(&tidewater).unwrap().items.iter().any(|i| i.placed.problem.is_some()), "dates no longer read");
+
+    // A broken calendar says where it is.
+    fs::write(&project_toml, "title = \"T\"\n[calendar]\nmonths = []\nname = \"X\"\n").unwrap();
+    let error = vault.timeline(&vault.project("tidewater").unwrap()).unwrap_err().to_string();
+    assert!(error.contains("project.toml") && error.contains("months"), "{error}");
+}

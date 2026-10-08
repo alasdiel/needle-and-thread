@@ -47,6 +47,35 @@ impl ProjectConfig {
     pub fn to_toml(&self) -> String {
         toml::to_string(self).expect("project settings serialize")
     }
+
+    /// `existing` (a `project.toml`) with these settings in it, and everything else in the
+    /// file, like a `[calendar]` the writer added by hand, left as it was.
+    pub fn update_toml(&self, existing: &str) -> String {
+        let Ok(mut doc) = existing.parse::<toml_edit::DocumentMut>() else { return self.to_toml() };
+        let mut set = |key: &str, value: Option<&str>| match value {
+            Some(value) => match doc.get_mut(key).and_then(toml_edit::Item::as_value_mut) {
+                Some(old) => {
+                    let decor = old.decor().clone();
+                    *old = value.into();
+                    *old.decor_mut() = decor;
+                }
+                None => {
+                    // Before any [table], so it stays a top-level setting.
+                    doc.insert(key, toml_edit::value(value));
+                }
+            },
+            None => {
+                doc.remove(key);
+            }
+        };
+        set("title", Some(&self.title));
+        set("kind", Some(match self.kind {
+            ProjectKind::Fiction => "fiction",
+            ProjectKind::Nonfiction => "nonfiction",
+        }));
+        set("world", self.world.as_deref());
+        doc.to_string()
+    }
 }
 
 /// The `type` of a note, which also decides its folder under `notes/`.
@@ -157,6 +186,15 @@ mod tests {
         let text = config.to_toml();
         assert_eq!(text, "title = \"Tidewater\"\nkind = \"fiction\"\nworld = \"glass-coast\"\n");
         assert_eq!(ProjectConfig::parse(&text).unwrap(), config);
+    }
+
+    #[test]
+    fn saving_settings_keeps_the_rest_of_the_file() {
+        let existing = "title = \"Tidewater\"  # working title\nworld = \"glass-coast\"\n\n[calendar]\nday_one = \"1998-03-12\"\n";
+        let config = ProjectConfig { title: "Tidewater Rising".into(), kind: ProjectKind::Nonfiction, world: None };
+        let saved = config.update_toml(existing);
+        assert_eq!(saved, "title = \"Tidewater Rising\"  # working title\nkind = \"nonfiction\"\n\n[calendar]\nday_one = \"1998-03-12\"\n");
+        assert_eq!(ProjectConfig::parse(&saved).unwrap(), config);
     }
 
     #[test]
