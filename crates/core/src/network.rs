@@ -38,7 +38,10 @@ pub struct Node {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Zone {
     pub id: String,
+    /// Empty until the writer names it; the sheet is up either way.
+    #[serde(default)]
     pub name: String,
+    /// Its middle, like a card's or a ring's.
     pub at: Point,
     pub size: Point,
     #[serde(default, skip_serializing_if = "is_zero")]

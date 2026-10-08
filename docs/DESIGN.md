@@ -444,11 +444,19 @@ She owes him for the berth, and both of them know it.
 
 ### Building on it
 
-- Drag nodes to arrange them. Positions are saved in `network.toml`, and new nodes are placed automatically.
-- Drag from one node to another to draw a relationship, then type its label (autocompleted from labels used before).
-- Double-click empty space to add a plot point.
-- Click a node or line to edit it in the side panel.
-- Filter by note type or thread, and hide automatic links.
+A toolbar over the cork: **Move**, **String**, **Write**, **Marker** and **Zone**, then **Pin up** and **Show**. A tool stays chosen until another is picked or Escape is pressed.
+
+- **Move:** drag cards to arrange them. Positions are saved in `network.toml`, and new cards are placed automatically, near what they link to.
+- **String:** drag from one card to another to tie them, then type its label on the tape; labels used before are offered as you type. It's a new note in `relationships/`, titled after its two ends ("Mara Venn and Old Teodor"), reading from the first card to the second. Let go anywhere but on a card, or press Escape, and nothing is tied. A card from another project is named `project/Title` in `between`, so the name always finds it again.
+- **Double-click bare cork** to add a plot point: a blank index card appears there for its title. Escape, or leaving it empty, makes nothing.
+- **Click a card or a string** to see it in the side panel; **double-click a card** to open its note.
+  - A string's panel edits its label, makes it one way or both ways, turns it round, lists how it changes along the way (`begins`, `changes`, `ends`), opens its note, and can move it to the cut bin.
+  - A card's panel lists its strings (each opens in the panel) and opens the note. A card pinned up by hand can be taken down there; the note itself stays.
+- **Zone:** drag out a sheet of kraft paper, then name it on its tape. The tape is the sheet's handle: drag it to move the sheet, double-click it to rename. Pressing the paper itself pans the board, so a board covered in zones can still be moved around. A chosen zone has a corner to resize it, and Delete (or Take down) removes it. Cards on it don't move with it.
+- **Pin up:** a list of notes that aren't on the board: other projects', the world's, and this project's plain notes and sources (pinned up as a plain sheet). Picking one pins it in the middle of the view.
+- **Show:** leave kinds of card off, show only one thread and what's tied or linked to it, and hide automatic links. It's a way of looking, so it isn't saved.
+
+Until the story-time slider (M6), the board shows each relationship as it stands at the end of the book: its last label, and slack and faded if it `ends`. The side panel has what came before.
 
 ## 8. Desktop app
 

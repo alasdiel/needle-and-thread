@@ -1,15 +1,18 @@
-//! Commands for the network board (DESIGN §7): reading what's on it, and saving how it's
-//! arranged.
+//! Commands for the network board (DESIGN §7): reading what's on it, saving how it's
+//! arranged, and the notes made or changed from it (a new plot point, a string tied between
+//! two cards).
 //!
 //! What's on the board is read from the notes every time it's asked for, so it's never stale.
 //! The arrangement is the only thing written, and it's written whole.
 
 use needle_core::names::Owner;
 use needle_core::network::{Mark, Network, Node, Point, Zone};
-use needle_vault::Board;
+use needle_core::project::NoteKind;
+use needle_vault::{Board, RelationshipEdit};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
+use crate::notes::{NoteView, note_view, owner};
 use crate::state::{AppState, OrString};
 
 #[derive(Serialize)]
@@ -36,6 +39,8 @@ pub struct CardView {
     from: String,
     at: Point,
     turn: f64,
+    /// Up only because it was pinned, so it can be taken down.
+    pinned: bool,
 }
 
 #[derive(Serialize)]
@@ -48,6 +53,15 @@ pub struct RelationshipView {
     from: String,
     to: String,
     directed: bool,
+    begins: Option<String>,
+    ends: Option<String>,
+    changes: Vec<ChangeView>,
+}
+
+#[derive(Serialize)]
+pub struct ChangeView {
+    at: String,
+    label: String,
 }
 
 #[derive(Serialize)]
@@ -95,6 +109,7 @@ fn board_view(board: Board) -> BoardView {
                     from: c.from,
                     at: c.at,
                     turn: c.turn,
+                    pinned: c.pinned,
                 }
             })
             .collect(),
@@ -112,6 +127,9 @@ fn board_view(board: Board) -> BoardView {
                     from: r.between.0,
                     to: r.between.1,
                     directed: r.directed,
+                    begins: r.begins,
+                    ends: r.ends,
+                    changes: r.changes.into_iter().map(|c| ChangeView { at: c.at, label: c.label }).collect(),
                 }
             })
             .collect(),
@@ -156,5 +174,77 @@ pub fn save_board(state: State<'_, AppState>, project: String, layout: LayoutVie
         // and belongs in the next snapshot.
         open.history.edited();
         Ok(())
+    })
+}
+
+/// Makes a note of `kind` and pins its card at `at`: double-clicking the cork adds a plot point.
+#[tauri::command]
+pub fn add_card(state: State<'_, AppState>, project: String, kind: String, title: String, at: Point) -> Result<NoteView, String> {
+    let kind = NoteKind::parse(&kind).ok_or_else(|| format!("{kind:?} isn't a type of note"))?;
+    state.with(|open| {
+        let project = open.vault.project(&project).or_string()?;
+        let note = open.vault.add_card(&project, kind, &title, at).or_string()?;
+        open.history.edited();
+        Ok(note_view(&Owner::Project(project.slug.clone()), note))
+    })
+}
+
+/// Pins a note that isn't up on its own (a world note, another project's, a plain note).
+#[tauri::command]
+pub fn pin_card(state: State<'_, AppState>, project: String, id: String, at: Point) -> Result<(), String> {
+    state.with(|open| {
+        let project = open.vault.project(&project).or_string()?;
+        open.vault.pin(&project, &id, at).or_string()?;
+        open.history.edited();
+        Ok(())
+    })
+}
+
+/// Takes a pinned card down again, leaving its note alone.
+#[tauri::command]
+pub fn unpin_card(state: State<'_, AppState>, project: String, id: String) -> Result<(), String> {
+    state.with(|open| {
+        let project = open.vault.project(&project).or_string()?;
+        open.vault.unpin(&project, &id).or_string()?;
+        open.history.edited();
+        Ok(())
+    })
+}
+
+/// Ties a string from one card to another: a new relationship note in this project.
+#[tauri::command]
+pub fn add_relationship(
+    state: State<'_, AppState>,
+    project: String,
+    from: String,
+    to: String,
+    label: String,
+    directed: bool,
+) -> Result<NoteView, String> {
+    state.with(|open| {
+        let project = open.vault.project(&project).or_string()?;
+        let note = open.vault.add_relationship(&project, &from, &to, &label, directed).or_string()?;
+        open.history.edited();
+        Ok(note_view(&Owner::Project(project.slug.clone()), note))
+    })
+}
+
+/// Relabels a relationship, makes it one-way or mutual, or turns it round.
+#[tauri::command]
+pub fn edit_relationship(
+    state: State<'_, AppState>,
+    owner: String,
+    world: bool,
+    path: String,
+    label: Option<String>,
+    directed: Option<bool>,
+    reverse: Option<bool>,
+) -> Result<NoteView, String> {
+    let owner = self::owner(owner, world);
+    let edit = RelationshipEdit { label, directed, reverse: reverse.unwrap_or(false) };
+    state.with(|open| {
+        let note = open.vault.edit_relationship(&owner, &path, &edit).or_string()?;
+        open.history.edited();
+        Ok(note_view(&owner, note))
     })
 }

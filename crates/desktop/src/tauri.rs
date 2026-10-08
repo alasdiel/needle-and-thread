@@ -603,6 +603,14 @@ pub struct CardView {
     pub from: String,
     pub at: Point,
     pub turn: f64,
+    /// Up only because it was pinned, so it can be taken down.
+    pub pinned: bool,
+}
+
+impl CardView {
+    pub fn key(&self) -> NoteKey {
+        NoteKey { owner: self.owner.clone(), world: self.world, path: self.path.clone() }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -615,6 +623,28 @@ pub struct RelationshipView {
     pub from: String,
     pub to: String,
     pub directed: bool,
+    /// Where in the story it starts and stops, and how its label changes on the way.
+    pub begins: Option<String>,
+    pub ends: Option<String>,
+    pub changes: Vec<ChangeView>,
+}
+
+impl RelationshipView {
+    pub fn key(&self) -> NoteKey {
+        NoteKey { owner: self.owner.clone(), world: self.world, path: self.path.clone() }
+    }
+
+    /// How it stands at the end of the book, which is what the board shows until there's a
+    /// timeline to move along: the last label it changed to, if it changed.
+    pub fn label_now(&self) -> &str {
+        self.changes.iter().rev().find(|c| !c.label.is_empty()).map_or(&self.label, |c| &c.label)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct ChangeView {
+    pub at: String,
+    pub label: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -645,6 +675,52 @@ pub async fn project_board(project: &str) -> Result<BoardView, String> {
 pub async fn save_board(project: &str, layout: &LayoutView) -> Result<(), String> {
     let layout = serde_wasm_bindgen::to_value(layout).map_err(|e| e.to_string())?;
     call("save_board", Args::default().str("project", project).set("layout", layout)).await
+}
+
+fn point(at: Point) -> JsValue {
+    js_sys::Array::of2(&at.0.into(), &at.1.into()).into()
+}
+
+pub async fn add_card(project: &str, kind: &str, title: &str, at: Point) -> Result<NoteView, String> {
+    let args = Args::default().str("project", project).str("kind", kind).str("title", title).set("at", point(at));
+    call("add_card", args).await
+}
+
+pub async fn pin_card(project: &str, id: &str, at: Point) -> Result<(), String> {
+    call("pin_card", Args::default().str("project", project).str("id", id).set("at", point(at))).await
+}
+
+pub async fn unpin_card(project: &str, id: &str) -> Result<(), String> {
+    call("unpin_card", Args::default().str("project", project).str("id", id)).await
+}
+
+pub async fn add_relationship(project: &str, from: &str, to: &str, label: &str, directed: bool) -> Result<NoteView, String> {
+    let args = Args::default()
+        .str("project", project)
+        .str("from", from)
+        .str("to", to)
+        .str("label", label)
+        .set("directed", directed.into());
+    call("add_relationship", args).await
+}
+
+/// What to change about a relationship; anything left `None` stays as it is.
+#[derive(Clone, Debug, Default)]
+pub struct RelationshipEdit {
+    pub label: Option<String>,
+    pub directed: Option<bool>,
+    pub reverse: bool,
+}
+
+pub async fn edit_relationship(note: &NoteKey, edit: &RelationshipEdit) -> Result<NoteView, String> {
+    let mut args = note_args(note).opt("label", edit.label.as_deref());
+    if let Some(directed) = edit.directed {
+        args = args.set("directed", directed.into());
+    }
+    if edit.reverse {
+        args = args.set("reverse", true.into());
+    }
+    call("edit_relationship", args).await
 }
 
 // --- The cut bin ------------------------------------------------------------------------

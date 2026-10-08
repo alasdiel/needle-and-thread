@@ -11,10 +11,10 @@ use needle_core::network::{Network, Node, Point};
 use needle_core::project::NoteKind;
 
 use crate::links::NAME_FIELDS;
-use crate::{NamedNote, Project, Result, Vault};
+use crate::{Error, NamedNote, NoteInfo, Project, Result, Vault};
 
-/// The kinds of note that get a card. Relationships are lines rather than cards, and plain
-/// notes and sources stay off unless the writer pins one up themselves.
+/// The kinds of note that are up on their own. Relationships are lines rather than cards, and
+/// plain notes and sources stay off unless the writer pins one up themselves.
 const CARD_KINDS: [NoteKind; 4] = [NoteKind::Character, NoteKind::Place, NoteKind::Event, NoteKind::Thread];
 
 #[derive(Debug, Clone, PartialEq)]
@@ -43,6 +43,9 @@ pub struct Card {
     pub from: String,
     pub at: Point,
     pub turn: f64,
+    /// Up only because the writer pinned it (a world note, another project's, or a plain note),
+    /// so it can be taken down again. The rest are up because they exist.
+    pub pinned: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,6 +58,27 @@ pub struct Relationship {
     /// Card ids. Reads from the first to the second when `directed`.
     pub between: (String, String),
     pub directed: bool,
+    /// Where in the story it starts and stops, if the note says: plot points or scenes, by name.
+    pub begins: Option<String>,
+    pub ends: Option<String>,
+    /// How its label changes along the way, in the order written. Until there's a timeline to
+    /// slide along (M6), the board shows how things stand at the end: the last of these.
+    pub changes: Vec<Change>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Change {
+    pub at: String,
+    pub label: String,
+}
+
+/// What can be changed about a relationship from the board.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RelationshipEdit {
+    pub label: Option<String>,
+    pub directed: Option<bool>,
+    /// Swaps its two ends, so a one-way relationship reads the other way.
+    pub reverse: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,14 +95,13 @@ impl Vault {
         let layout = project.network()?;
         let world = project.config.world.as_deref();
 
-        // This project's own notes are always up. A note from its world is up only once the
-        // writer has pinned it, which is what an entry in the arrangement means.
+        // This project's characters, places, plot points and threads are always up. Anything
+        // else (a world note, another project's, a plain note) is up only once the writer has
+        // pinned it, which is what an entry in the arrangement means.
         let mut up: Vec<&NamedNote> = Vec::new();
         for named in names.items() {
-            let own = matches!(&named.owner, Owner::Project(p) if *p == project.slug);
-            let kind_fits = CARD_KINDS.contains(&named.note.kind);
             let pinned = layout.nodes.contains_key(&named.note.id);
-            if (own && kind_fits) || (!own && pinned) {
+            if named.note.kind != NoteKind::Relationship && (up_anyway(project, named) || pinned) {
                 up.push(named);
             }
         }
@@ -119,6 +142,7 @@ impl Vault {
             }
             let file = self.notes_of(&named.owner)?.read(&named.note.path)?;
             let header = file.header().unwrap_or_default();
+            let named_field = |key: &str| header.str(key).map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned);
             let ends: Vec<String> = header.list("between").iter().filter_map(|name| find(name)).collect();
             // A relationship with an end that isn't up, or that names the same card twice, has
             // nothing to draw; it stays in the notes and simply isn't on the board.
@@ -133,6 +157,16 @@ impl Vault {
                 label: header.str("label").unwrap_or_default().to_owned(),
                 between: (from.clone(), to.clone()),
                 directed: header.bool("directed").unwrap_or(false),
+                begins: named_field("begins"),
+                ends: named_field("ends"),
+                changes: header
+                    .tables("changes")
+                    .into_iter()
+                    .filter_map(|fields| {
+                        let field = |key: &str| fields.iter().find(|(k, _)| k == key).map(|(_, v)| v.clone());
+                        Some(Change { at: field("at")?, label: field("label").unwrap_or_default() })
+                    })
+                    .collect(),
             });
         }
         relationships.sort_by(|a, b| a.id.cmp(&b.id));
@@ -176,6 +210,7 @@ impl Vault {
                 },
                 at: node.at,
                 turn: node.turn,
+                pinned: !up_anyway(project, named),
             });
         }
 
@@ -189,11 +224,101 @@ impl Vault {
         })
     }
 
+    /// Makes a new note of `kind` and pins it up at `at`, as double-clicking the board does for
+    /// a plot point.
+    pub fn add_card(&self, project: &Project, kind: NoteKind, title: &str, at: Point) -> Result<NoteInfo> {
+        let note = project.notes().create(kind, title)?;
+        self.pin(project, &note.id, at)?;
+        Ok(note)
+    }
+
+    /// Pins a note's card up at `at`, or moves it there if it's up already.
+    pub fn pin(&self, project: &Project, id: &str, at: Point) -> Result<()> {
+        let mut layout = project.network()?;
+        layout.nodes.insert(id.to_owned(), Node { at, turn: 0.0 });
+        project.save_network(&layout)
+    }
+
+    /// Takes a pinned card down. The note itself is untouched; a note that's up because it
+    /// exists (one of this project's characters, say) just comes back, so the board doesn't
+    /// offer that.
+    pub fn unpin(&self, project: &Project, id: &str) -> Result<()> {
+        let mut layout = project.network()?;
+        layout.nodes.remove(id);
+        // Handwriting on the card would otherwise jump to wherever its offset puts it.
+        layout.marks.retain(|mark| !matches!(mark, needle_core::network::Mark::Note { on: Some(card), .. } if card == id));
+        project.save_network(&layout)
+    }
+
+    /// Strings a new relationship between two cards on the board, reading from `from` to `to`
+    /// when `directed`. It's a note of its own in this project's `relationships/`, titled after
+    /// its two ends, so it belongs to neither of them.
+    pub fn add_relationship(&self, project: &Project, from: &str, to: &str, label: &str, directed: bool) -> Result<NoteInfo> {
+        let names = self.names(project)?;
+        let end = |id: &str| -> Result<(String, String)> {
+            let named = names
+                .items()
+                .iter()
+                .find(|n| n.note.id == id)
+                .ok_or_else(|| Error::Invalid(format!("there's no note with id {id} to tie a string to")))?;
+            let title = named.note.title.clone();
+            // The name the header uses has to find this very note again. Another project's note
+            // needs its project's name in front, and so does one whose title is shadowed.
+            let plain_finds_it = matches!(names.resolve(&title), Resolution::Found(n) if n.note.id == id);
+            let name = match &named.owner {
+                Owner::Project(p) if !plain_finds_it => format!("{p}/{title}"),
+                _ => title.clone(),
+            };
+            Ok((name, title))
+        };
+        let ((from_name, from_title), (to_name, to_title)) = (end(from)?, end(to)?);
+        if from == to {
+            return Err(Error::Invalid("a string needs two different cards".into()));
+        }
+        let notes = project.notes();
+        let note = notes.create(NoteKind::Relationship, &format!("{from_title} and {to_title}"))?;
+        notes.update_header(&note.path, |h| {
+            h.set_list("between", &[from_name, to_name]);
+            h.set_str("label", label.trim());
+            if directed {
+                h.set_bool("directed", true);
+            }
+        })
+    }
+
+    /// Changes a relationship's label or direction from the board, keeping the rest of its
+    /// header as written.
+    pub fn edit_relationship(&self, owner: &Owner, path: &str, edit: &RelationshipEdit) -> Result<NoteInfo> {
+        self.notes_of(owner)?.update_header(path, |h| {
+            if let Some(label) = &edit.label {
+                h.set_str("label", label.trim());
+            }
+            match edit.directed {
+                Some(true) => h.set_bool("directed", true),
+                // Mutual is the default, so it's written by leaving the key out.
+                Some(false) => h.remove("directed"),
+                None => {}
+            }
+            if edit.reverse {
+                let mut between = h.list("between");
+                between.reverse();
+                h.set_list("between", &between);
+            }
+        })
+    }
+
     /// Saves where the cards, zones and marks sit. The arrangement is the app's to write, so
     /// the file is replaced whole.
     pub fn save_board(&self, project: &Project, network: &Network) -> Result<()> {
         project.save_network(network)
     }
+}
+
+/// Whether a note is up on the board without being pinned: one of the project's own notes of a
+/// kind that always gets a card.
+fn up_anyway(project: &Project, named: &NamedNote) -> bool {
+    let own = matches!(&named.owner, Owner::Project(p) if *p == project.slug);
+    own && CARD_KINDS.contains(&named.note.kind)
 }
 
 /// One line per pair, whichever way round they were found, and never two between the same two

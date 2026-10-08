@@ -2,7 +2,7 @@
 
 A structure-first writing app for long fiction and nonfiction. Your work lives in a vault: a folder of plain Markdown files, with a history of snapshots kept alongside. No AI.
 
-**Status:** early. Writing, restructuring, notes, links, search, history and backup work; the network map (DESIGN §7) is next, then the timeline. See [docs/DESIGN.md](docs/DESIGN.md) for the plan.
+**Status:** early. Writing, restructuring, notes, links, search, history, backup and the network board work; the timeline (DESIGN §6) is next. See [docs/DESIGN.md](docs/DESIGN.md) for the plan.
 It installs from source for now; packaged downloads come later.
 
 ## What works
@@ -17,6 +17,7 @@ It installs from source for now; packaged downloads come later.
 - Search across scenes and notes (Ctrl+K, or the Search tab), filtered by status, POV or thread
 - Automatic snapshots (git under the hood), with history by day and session, compare, restore, and putting back a single removed passage, for every scene and note
 - Backup to GitHub over SSH after each snapshot, with its status beside "Saved"
+- A network board: a cork board of characters, places, plot points and threads, with relationships as red string you tie between them, zones of kraft paper, and your own handwritten notes and marker
 - A sewing-pattern look, light or dark
 
 ## Install it
@@ -47,7 +48,7 @@ cargo test --workspace --exclude needle-desktop-ui
 pnpm --dir editor test
 ```
 
-The network board is also driven in a browser, with a stand-in for the backend. Start `trunk serve` in `crates/desktop`, then:
+The network board is also driven in a browser (`e2e/`), with a stand-in for the backend. Start `trunk serve` in `crates/desktop`, then:
 
 ```sh
 pnpm --dir e2e install && pnpm --dir e2e exec playwright install chromium-headless-shell

@@ -939,3 +939,131 @@ fn an_arranged_board_places_nothing_new() {
     assert!(!again.placed_new);
     assert_eq!(again.cards, first.cards, "reading it again finds the same board");
 }
+
+#[test]
+fn a_plain_note_goes_up_once_pinned_and_comes_down_again() {
+    let (_dir, vault, project) = board_vault();
+    let things = project.notes().create(NoteKind::Note, "Things to check").unwrap();
+    assert!(vault.board(&project).unwrap().cards.iter().all(|c| c.title != "Things to check"));
+
+    vault.pin(&project, &things.id, (300.0, -80.0)).unwrap();
+    let board = vault.board(&project).unwrap();
+    let pinned = card(&board, "Things to check");
+    assert_eq!(pinned.at, (300.0, -80.0));
+    assert!(pinned.pinned, "pinned up, so it can be taken down");
+    assert!(!card(&board, "Mara Venn").pinned, "a character is up because it exists");
+
+    // Handwriting on the card goes with it; a loose note stays.
+    let mut layout = project.network().unwrap();
+    layout.marks.push(needle_core::network::Mark::Note { id: "mk_on".into(), text: "check".into(), at: (0.0, 0.0), turn: 0.0, on: Some(things.id.clone()) });
+    layout.marks.push(needle_core::network::Mark::Note { id: "mk_loose".into(), text: "hm".into(), at: (0.0, 0.0), turn: 0.0, on: None });
+    project.save_network(&layout).unwrap();
+
+    vault.unpin(&project, &things.id).unwrap();
+    let board = vault.board(&project).unwrap();
+    assert!(board.cards.iter().all(|c| c.title != "Things to check"));
+    let ids: Vec<&str> = board.marks.iter().map(needle_core::network::Mark::id).collect();
+    assert_eq!(ids, ["mk_loose"]);
+    assert!(project.notes().read(&things.path).is_ok(), "the note itself is untouched");
+}
+
+#[test]
+fn a_new_card_is_a_new_note_pinned_where_it_was_asked_for() {
+    let (_dir, vault, project) = board_vault();
+    let note = vault.add_card(&project, NoteKind::Event, "The ledger burns", (40.0, 600.0)).unwrap();
+    assert_eq!(note.path, "events/the-ledger-burns");
+    let board = vault.board(&project).unwrap();
+    let new = card(&board, "The ledger burns");
+    assert_eq!(new.at, (40.0, 600.0));
+    assert!(!new.pinned, "a plot point is up because it exists");
+}
+
+#[test]
+fn a_string_tied_on_the_board_is_a_relationship_note() {
+    let (_dir, vault, project) = board_vault();
+    let board = vault.board(&project).unwrap();
+    let (mara, teodor) = (card(&board, "Mara Venn").id.clone(), card(&board, "Old Teodor").id.clone());
+
+    let note = vault.add_relationship(&project, &mara, &teodor, " owes ", true).unwrap();
+    assert_eq!(note.path, "relationships/mara-venn-and-old-teodor");
+    let header = project.notes().read(&note.path).unwrap().header().unwrap();
+    assert_eq!(header.list("between"), ["Mara Venn", "Old Teodor"]);
+    assert_eq!(header.str("label"), Some("owes"));
+    assert_eq!(header.bool("directed"), Some(true));
+
+    let board = vault.board(&project).unwrap();
+    assert_eq!(board.relationships.len(), 1);
+    assert_eq!(board.relationships[0].between, (mara.clone(), teodor.clone()));
+
+    assert!(vault.add_relationship(&project, &mara, &mara, "", false).is_err(), "one card can't be tied to itself");
+    assert!(vault.add_relationship(&project, &mara, "nt_nobody", "", false).is_err());
+}
+
+#[test]
+fn a_string_to_another_projects_card_names_its_project() {
+    let (_dir, vault, project) = board_vault();
+    let other = vault.create_project("Saltworks", ProjectKind::Fiction).unwrap();
+    let foreman = other.notes().create(NoteKind::Character, "The Foreman").unwrap();
+    vault.pin(&project, &foreman.id, (0.0, 400.0)).unwrap();
+    let board = vault.board(&project).unwrap();
+    assert_eq!(card(&board, "The Foreman").from, other.slug);
+    let mara = card(&board, "Mara Venn").id.clone();
+
+    let note = vault.add_relationship(&project, &mara, &foreman.id, "works for", true).unwrap();
+    let header = project.notes().read(&note.path).unwrap().header().unwrap();
+    assert_eq!(header.list("between"), ["Mara Venn", "saltworks/The Foreman"]);
+    let board = vault.board(&project).unwrap();
+    assert_eq!(board.relationships[0].between.1, foreman.id, "the qualified name finds it again");
+}
+
+#[test]
+fn a_relationship_can_be_relabelled_turned_round_and_made_mutual() {
+    let (_dir, vault, project) = board_vault();
+    let board = vault.board(&project).unwrap();
+    let (mara, teodor) = (card(&board, "Mara Venn").id.clone(), card(&board, "Old Teodor").id.clone());
+    let note = vault.add_relationship(&project, &mara, &teodor, "owes", true).unwrap();
+    let owner = Owner::Project(project.slug.clone());
+
+    vault.edit_relationship(&owner, &note.path, &RelationshipEdit { label: Some("is owed by".into()), reverse: true, ..Default::default() }).unwrap();
+    let rel = vault.board(&project).unwrap().relationships[0].clone();
+    assert_eq!((rel.label.as_str(), rel.directed), ("is owed by", true));
+    assert_eq!(rel.between, (teodor, mara));
+
+    vault.edit_relationship(&owner, &note.path, &RelationshipEdit { directed: Some(false), ..Default::default() }).unwrap();
+    let header = project.notes().read(&note.path).unwrap().header().unwrap();
+    assert!(!header.contains("directed"), "mutual is written by leaving it out");
+}
+
+#[test]
+fn a_relationship_brings_its_history_to_the_board() {
+    let (_dir, vault, project) = board_vault();
+    let notes = project.notes();
+    notes.create(NoteKind::Relationship, "Mara and Teodor").unwrap();
+    // The way the design writes one: `changes` as a list of inline tables.
+    fs::write(
+        notes.file_path("relationships/mara-and-teodor").unwrap(),
+        r#"+++
+id = "nt_rel1"
+type = "relationship"
+title = "Mara and Teodor"
+between = ["Mara Venn", "Old Teodor"]
+label = "trusts"
+begins = "The harbor"
+ends = " "
+changes = [{ at = "The ledger leaves port", label = "distrusts" }, { at = "The Drowning" }]
++++
+"#,
+    )
+    .unwrap();
+    let rel = vault.board(&project).unwrap().relationships[0].clone();
+
+    assert_eq!(rel.begins.as_deref(), Some("The harbor"));
+    assert_eq!(rel.ends, None, "an empty field is no end");
+    assert_eq!(
+        rel.changes,
+        [
+            Change { at: "The ledger leaves port".into(), label: "distrusts".into() },
+            Change { at: "The Drowning".into(), label: String::new() },
+        ]
+    );
+}

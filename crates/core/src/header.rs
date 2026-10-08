@@ -65,6 +65,27 @@ impl Header {
         self.set_value(key, Value::Array(array));
     }
 
+    /// A list of small tables, like a relationship's `changes = [{ at = "…", label = "…" }]`,
+    /// with each table's string fields. Written inline or as `[[changes]]`, it reads the same;
+    /// anything that isn't a table, and any field that isn't a string, is skipped.
+    pub fn tables(&self, key: &str) -> Vec<Vec<(String, String)>> {
+        let strings = |pairs: Vec<(&str, &Value)>| -> Vec<(String, String)> {
+            pairs.into_iter().filter_map(|(k, v)| Some((k.to_owned(), v.as_str()?.to_owned()))).collect()
+        };
+        match self.doc.get(key) {
+            Some(Item::Value(Value::Array(items))) => items
+                .iter()
+                .filter_map(Value::as_inline_table)
+                .map(|t| strings(t.iter().collect()))
+                .collect(),
+            Some(Item::ArrayOfTables(tables)) => tables
+                .iter()
+                .map(|t| strings(t.iter().filter_map(|(k, item)| Some((k, item.as_value()?))).collect()))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
     pub fn remove(&mut self, key: &str) {
         self.doc.remove(key);
     }
@@ -153,6 +174,18 @@ mood = "uneasy"
         h.set_str("status", "idea");
         h.set_list("places", &["Night Market"]);
         assert_eq!(h.to_string(), "id = \"sc_1\"\nstatus = \"idea\"\nplaces = [\"Night Market\"]\n");
+    }
+
+    #[test]
+    fn reads_a_list_of_tables_either_way_its_written() {
+        let inline = Header::parse(r#"changes = [{ at = "The harbor", label = "distrusts" }, "stray", { at = 3 }]"#).unwrap();
+        assert_eq!(
+            inline.tables("changes"),
+            [vec![("at".to_owned(), "The harbor".to_owned()), ("label".to_owned(), "distrusts".to_owned())], vec![]]
+        );
+        let long = Header::parse("[[changes]]\nat = \"The harbor\"\nlabel = \"distrusts\"\n").unwrap();
+        assert_eq!(long.tables("changes"), inline.tables("changes")[..1]);
+        assert!(inline.tables("nothing").is_empty());
     }
 
     #[test]
