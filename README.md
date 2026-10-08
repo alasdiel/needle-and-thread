@@ -2,7 +2,7 @@
 
 A structure-first writing app for long fiction and nonfiction. Your work lives in a vault: a folder of plain Markdown files, with a history of snapshots kept alongside. No AI.
 
-**Status:** early. Writing, restructuring, notes, links and search work; a command palette and exports are next. See [docs/DESIGN.md](docs/DESIGN.md) for the plan.
+**Status:** early. Writing, restructuring, notes, links, search, history and backup work; the network map (DESIGN §7) is next, then the timeline. See [docs/DESIGN.md](docs/DESIGN.md) for the plan.
 Built releases will also come later.
 
 ## What works
@@ -43,7 +43,7 @@ pnpm --dir editor test
 |---|---|
 | `crates/core` | Shared model: scene and note files, headers, outline, links and names, diff, spelling |
 | `crates/vault` | Reading and writing vaults on disk: projects, scenes, notes, worlds |
-| `crates/vcs` | Snapshots and history (git) |
+| `crates/vcs` | Snapshots, history and backup pushes (git) |
 | `crates/index` | The search index (SQLite), a cache kept outside the vault |
 | `crates/desktop` | The Tauri app: Leptos frontend, backend in `src-tauri/` |
 | `editor/` | The ProseMirror editor (TypeScript) |
