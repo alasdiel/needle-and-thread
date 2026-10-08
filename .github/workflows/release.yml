@@ -16,6 +16,8 @@ name: Release
 on:
   push:
     tags: ["v*"]
+    # TEMPORARY: proves the Windows build before merging. Remove before merging feat/windows.
+    branches: [feat/windows]
   workflow_dispatch:
 
 permissions:
