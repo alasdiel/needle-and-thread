@@ -55,6 +55,29 @@
   --mark: light-dark(rgb(11 159 176 / 0.16), rgb(116 245 248 / 0.16)); /* search matches */
   --scrim: light-dark(rgb(21 35 45 / 0.25), rgb(5 10 14 / 0.55));
 
+  /* The network board (§7): cork, stained in the dark theme, and the papers pinned to it. */
+  --cork: light-dark(#c69c6d, #3b2b1f);
+  --cork-speck-a: light-dark(rgb(167 123 78 / 0.55), #2a1e15);
+  --cork-speck-b: light-dark(rgb(220 184 138 / 0.6), #4e3a2b);
+  --paper: light-dark(#fdfaf2, #e8e1d1); /* a card stays pale on a dark board */
+  --paper-ink: #2a2420;
+  --paper-muted: #6d6458;
+  --paper-rule: rgb(30 95 166 / 0.25);
+  --photo: light-dark(#2f3b45, #26313a); /* a polaroid's picture */
+  --manila: light-dark(#e2c68e, #d8bd85);
+  --tape: light-dark(rgb(244 234 200 / 0.9), rgb(232 220 180 / 0.88));
+  --string: light-dark(#c42b36, #e0505a);
+  --string-shadow: light-dark(rgb(60 30 10 / 0.35), rgb(0 0 0 / 0.45));
+  --twine: light-dark(rgb(255 250 235 / 0.85), rgb(232 222 200 / 0.5));
+  --card-drop: light-dark(rgb(60 30 10 / 0.35), rgb(0 0 0 / 0.5));
+  /* The writer's own marker: dark ink on pale cork, chalky white on the stained cork. */
+  --marker: light-dark(#1f2b6e, #f3ecdc);
+  /* Cards stay pale in both themes, so anything written on one is in dark ink. */
+  --marker-on-paper: #1f2b6e;
+  /* Zones: kraft paper, a shade darker than the cork so a sheet reads on it. */
+  --kraft: light-dark(#a87a48, #5a4330);
+  --kraft-fibre: light-dark(rgb(255 240 210 / 0.1), rgb(0 0 0 / 0.08));
+
   /* The type scale: small caps in two sizes, the interface font in two, titles in four. */
   --size-label: 14.5px; /* small-caps headings and labels */
   --size-label-small: 13px; /* small caps on chips, pills and minor labels */
@@ -2977,4 +3000,726 @@ del {
 .notice > span {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* --- The network board ----------------------------------------------------------------------
+   A cork board of pinned cards, strung with red thread (DESIGN §7). The whole board moves as
+   one layer, so panning and zooming don't redraw it (spike 3). */
+
+.board {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  background-color: var(--cork);
+  /* Cork's speckle: three sizes of fleck so no pattern repeat is obvious. */
+  background-image:
+    radial-gradient(circle at 30% 40%, var(--cork-speck-a) 0.8px, transparent 1.4px),
+    radial-gradient(circle at 70% 60%, var(--cork-speck-b) 0.9px, transparent 1.6px),
+    radial-gradient(circle at 50% 50%, var(--cork-speck-a) 1.2px, transparent 2px);
+  background-size: 7px 7px, 11px 9px, 23px 19px;
+}
+
+.board:active {
+  cursor: grabbing;
+}
+
+.board-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.board-threads {
+  position: absolute;
+  overflow: visible;
+  /* Only the lines inside that ask for clicks get them, so a zone's tape under this box
+     stays reachable. */
+  pointer-events: none;
+}
+
+.twine {
+  fill: none;
+  stroke: var(--twine);
+  stroke-width: 1.1;
+}
+
+.string {
+  fill: none;
+  stroke: var(--string);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+.string-shadow {
+  fill: none;
+  stroke: var(--string-shadow);
+  stroke-width: 2.4;
+  transform: translate(2px, 4px);
+}
+
+.pin-shadow {
+  fill: rgb(0 0 0 / 0.3);
+}
+
+.pin-head {
+  fill: var(--link);
+  stroke: rgb(0 0 0 / 0.35);
+  stroke-width: 0.8;
+}
+
+/* A pin takes its note's colour, the same four used everywhere else. */
+.pin[data-kind="place"] .pin-head { fill: #e0b26a; }
+.pin[data-kind="event"] .pin-head { fill: #f08fb0; }
+.pin[data-kind="thread"] .pin-head { fill: var(--thread); }
+
+.pin-shine {
+  fill: rgb(255 255 255 / 0.55);
+}
+
+/* --- The cards ------------------------------------------------------------------------------ */
+
+.card {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  color: var(--paper-ink);
+  box-shadow: 0 6px 14px var(--card-drop), 0 1px 2px var(--card-drop);
+  cursor: move;
+  user-select: none;
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  overflow: hidden;
+}
+
+.card-from {
+  margin-top: auto;
+  font-family: var(--font-label);
+  font-size: 10.5px;
+  font-variant: small-caps;
+  letter-spacing: 0.07em;
+  color: var(--paper-muted);
+}
+
+.card-mark {
+  display: flex;
+  color: var(--swatch-print);
+}
+
+.polaroid {
+  padding: 7px 7px 0;
+  text-align: center;
+}
+
+.polaroid .card-mark {
+  align-items: center;
+  justify-content: center;
+  height: 76px;
+  margin-bottom: 5px;
+  background: var(--photo);
+  color: var(--paper);
+}
+
+.postcard {
+  padding: 10px;
+  gap: 4px;
+}
+
+.postcard .card-mark {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 36px;
+  border: 1.5px dashed var(--paper-muted);
+  color: #9a6a1e;
+}
+
+.postcard .card-title,
+.index-card .card-title {
+  padding-right: 36px;
+}
+
+/* An index card's red rule under its heading, then faint blue lines. */
+.index-card {
+  padding: 6px 10px;
+  background-image:
+    linear-gradient(#b0386a 1.5px, transparent 1.5px),
+    repeating-linear-gradient(transparent 0 15px, var(--paper-rule) 15px 16px);
+  background-position: 0 24px, 0 24px;
+}
+
+.index-card .card-mark {
+  color: #b0386a;
+}
+
+.index-card .card-title {
+  margin-top: 10px;
+}
+
+/* A manila folder, with its tab sticking up over the board. */
+.folder {
+  padding: 12px 10px 8px;
+  background: var(--manila);
+  border-radius: 0 4px 4px 4px;
+  flex-direction: row;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.folder::before {
+  /* Set by the board, since a thread is an argument in a nonfiction project. */
+  content: attr(data-tab);
+  position: absolute;
+  top: -14px;
+  left: 0;
+  padding: 0 10px;
+  font-family: var(--font-label);
+  font-size: 10.5px;
+  font-variant: small-caps;
+  letter-spacing: 0.07em;
+  line-height: 15px;
+  color: var(--paper-muted);
+  background: var(--manila);
+  border-radius: 4px 4px 0 0;
+}
+
+.folder .card-mark {
+  color: var(--paper-muted);
+}
+
+/* A relationship's label, on a strip of masking tape across its string. */
+.tape {
+  position: absolute;
+  transform: translate(-50%, -50%) rotate(-1.5deg);
+  padding: 2px 12px;
+  background: var(--tape);
+  color: var(--paper-ink);
+  font-family: var(--font-label);
+  font-size: var(--size-label-small);
+  font-variant: small-caps;
+  letter-spacing: 0.07em;
+  white-space: nowrap;
+  cursor: pointer;
+  /* Torn ends, like tape pulled off a roll. */
+  clip-path: polygon(0 8%, 4% 0, 8% 10%, 12% 0, 100% 0, 97% 30%, 100% 60%, 96% 100%, 6% 100%, 0 85%, 3% 50%);
+}
+
+.board-empty,
+.board-error {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  transform: translate(-50%, -50%);
+  max-width: 34ch;
+  padding: 12px 18px;
+  text-align: center;
+  background: var(--raise);
+  color: var(--text);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+}
+
+/* The pins sit over the cards: a pin holds its card to the board. */
+.board-pins {
+  pointer-events: none;
+}
+
+/* --- Marks you make on the board -------------------------------------------------------------
+   Handwritten notes and marker rings and arrows (DESIGN §7). The only handwriting on the board,
+   because the writer put it there. */
+
+.board.tool-write {
+  cursor: text;
+}
+
+.board.tool-marker {
+  cursor: crosshair;
+}
+
+/* Strokes take clicks only on their wide invisible line, so the cards under a ring still do. */
+.board-marks {
+  pointer-events: none;
+}
+
+.marker-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 16;
+  stroke-linecap: round;
+  pointer-events: stroke;
+  cursor: move;
+}
+
+.board.tool-write .marker-hit,
+.board.tool-marker .marker-hit {
+  pointer-events: none;
+}
+
+.marker-ink {
+  fill: none;
+  stroke: var(--marker);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.88;
+}
+
+.marker.preview .marker-ink {
+  opacity: 0.55;
+}
+
+.marker.chosen .marker-ink {
+  stroke-width: 4;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--marker) 70%, transparent));
+}
+
+.mark-note {
+  position: absolute;
+  /* The board's layer has no width of its own (it only carries the pan and zoom), so a note
+     sizes to its words rather than to its container, up to a line of about five words. */
+  width: max-content;
+  max-width: 220px;
+  padding: 2px 6px;
+  color: var(--marker);
+  font-family: "Caveat", cursive;
+  font-size: 23px;
+  font-weight: 500;
+  line-height: 1.05;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  cursor: move;
+}
+
+.mark-note.on-card {
+  color: var(--marker-on-paper);
+}
+
+.board.tool-write .mark-note {
+  cursor: text;
+}
+
+.mark-note.chosen {
+  outline: 1.5px dashed var(--marker);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* While it's being written: a faint patch, so you can see where the words will go. */
+.mark-note.mark-editing {
+  min-width: 3ch;
+  min-height: 1em;
+  background: color-mix(in srgb, var(--paper) 30%, transparent);
+  outline: 1.5px dashed var(--marker);
+  outline-offset: 2px;
+  border-radius: 3px;
+  cursor: text;
+  user-select: text;
+  caret-color: currentColor;
+}
+
+.mark-note.mark-editing:focus {
+  outline-style: solid;
+}
+
+.board-tools {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--raise);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px var(--card-drop);
+  cursor: default;
+}
+
+.board.tool-tie,
+.board.tool-zone {
+  cursor: crosshair;
+}
+
+.board-tools-gap {
+  width: 1px;
+  margin: 2px 4px;
+  background: var(--rule);
+}
+
+/* --- Strings you tie, and their history ------------------------------------------------------ */
+
+/* A wide invisible line over each string, so it can be clicked without aiming at 2 px. */
+.string-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+/* Only Move picks strings; the other tools draw over them. */
+.board:is(.tool-tie, .tool-write, .tool-marker, .tool-zone) .string-hit {
+  pointer-events: none;
+}
+
+.string.chosen {
+  stroke-width: 3.4;
+}
+
+/* Over by the end of the book: still there to see, but slack and faded. */
+.string.ended {
+  opacity: 0.45;
+  stroke-dasharray: 7 5;
+}
+
+/* A string being pulled, or let go and waiting for its label. */
+.string.pulling {
+  opacity: 0.75;
+  stroke-dasharray: 2 4;
+}
+
+.tape.chosen {
+  outline: 2px solid var(--string);
+  outline-offset: 1px;
+}
+
+.tape.ended {
+  opacity: 0.75;
+  text-decoration: line-through;
+}
+
+.pending-tie {
+  position: absolute;
+  transform: translate(-50%, -50%) rotate(-1.5deg);
+  z-index: 2;
+}
+
+input.tape-input {
+  width: 22ch;
+  padding: 3px 12px;
+  border: 0;
+  border-radius: 0;
+  background: var(--tape);
+  color: var(--paper-ink);
+  font-family: var(--font-label);
+  font-size: var(--size-label-small);
+  letter-spacing: 0.07em;
+  outline: 2px solid var(--string);
+}
+
+/* Labels used before, offered under the box as you type. */
+.label-input {
+  position: relative;
+  display: inline-block;
+}
+
+.label-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 100%;
+  padding: 4px;
+  background: var(--raise);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px var(--card-drop);
+}
+
+.label-suggestions button {
+  justify-content: flex-start;
+  white-space: nowrap;
+}
+
+/* --- Zones: kraft paper under a group of cards ---------------------------------------------- */
+
+.zone {
+  position: absolute;
+  box-sizing: border-box;
+  background-color: var(--kraft);
+  /* Grain: faint streaks running nearly along the sheet, at two uneven spacings, so it reads
+     as paper rather than a woven grid. */
+  background-image:
+    repeating-linear-gradient(-2deg, var(--kraft-fibre) 0 1px, transparent 1px 7px),
+    repeating-linear-gradient(1.5deg, transparent 0 4px, var(--kraft-fibre) 4px 5px, transparent 5px 11px);
+  box-shadow: 0 3px 8px var(--card-drop);
+  /* The paper itself pans the board; only its tape and corner take hold of it. */
+  pointer-events: none;
+}
+
+.zone.preview {
+  opacity: 0.6;
+  outline: 2px dashed var(--marker);
+}
+
+.zone.chosen {
+  outline: 2px dashed var(--marker);
+  outline-offset: 3px;
+}
+
+.zone-tape {
+  position: absolute;
+  top: -11px;
+  left: 18px;
+  min-width: 56px;
+  min-height: 22px;
+  box-sizing: border-box;
+  padding: 2px 14px;
+  background: var(--tape);
+  color: var(--paper-ink);
+  font-family: var(--font-label);
+  font-size: var(--size-label);
+  font-variant: small-caps;
+  letter-spacing: 0.07em;
+  white-space: nowrap;
+  transform: rotate(-2deg);
+  clip-path: polygon(0 10%, 4% 0, 9% 12%, 13% 0, 100% 0, 97% 35%, 100% 65%, 96% 100%, 5% 100%, 0 80%, 3% 50%);
+  pointer-events: auto;
+  cursor: move;
+}
+
+.board:is(.tool-tie, .tool-write, .tool-marker, .tool-zone) .zone-tape {
+  pointer-events: none;
+}
+
+input.zone-tape {
+  width: 20ch;
+  border: 0;
+  border-radius: 0;
+  clip-path: none;
+  outline: 2px solid var(--marker);
+  cursor: text;
+}
+
+.zone-size {
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  width: 14px;
+  height: 14px;
+  background: var(--raise);
+  border: 2px solid var(--marker);
+  border-radius: 3px;
+  pointer-events: auto;
+  cursor: nwse-resize;
+}
+
+/* --- Cards chosen, pinned up, or just begun -------------------------------------------------- */
+
+.card.chosen {
+  outline: 2px solid var(--string);
+  outline-offset: 3px;
+}
+
+/* A plain sheet, for a source or note pinned up by hand. */
+.scrap {
+  padding: 10px 12px;
+  gap: 4px;
+  background-image: linear-gradient(transparent 0 22px, var(--paper-rule) 22px 23px, transparent 23px);
+}
+
+.scrap .card-mark {
+  color: var(--paper-muted);
+}
+
+.pending-card {
+  outline: 2px dashed var(--string);
+  outline-offset: 3px;
+}
+
+input.card-title-input {
+  width: 100%;
+  margin-top: 8px;
+  padding: 2px 0;
+  border: 0;
+  border-bottom: 1px dashed var(--paper-muted);
+  border-radius: 0;
+  background: transparent;
+  color: var(--paper-ink);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* --- The side panel and the popovers -------------------------------------------------------- */
+
+.board-panel,
+.board-popover {
+  position: absolute;
+  box-sizing: border-box;
+  overflow-y: auto;
+  padding: 14px 16px;
+  background: var(--raise);
+  color: var(--text);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px var(--card-drop);
+  cursor: default;
+  user-select: text;
+}
+
+.board-panel {
+  /* Below the toolbar's row, which runs most of the way across a narrow window. */
+  top: 58px;
+  right: 12px;
+  width: 290px;
+  max-height: calc(100% - 70px);
+}
+
+.board-popover {
+  top: 58px;
+  left: 12px;
+  width: 300px;
+  max-height: calc(100% - 70px);
+}
+
+.board-panel-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px;
+}
+
+.panel-kind,
+.panel-heading {
+  display: block;
+  margin: 12px 0 4px;
+  font-family: var(--font-label);
+  font-size: var(--size-label-small);
+  font-variant: small-caps;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+
+.panel-kind {
+  margin-top: 0;
+  padding-right: 28px;
+}
+
+.panel-title {
+  margin: 0 28px 8px 0;
+  font-family: var(--font-title);
+  font-size: var(--size-title-small);
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.panel-arrow {
+  color: var(--string);
+}
+
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.panel-foot {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule);
+}
+
+.panel-field {
+  display: block;
+}
+
+.panel-field .label-input,
+input.panel-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+input.panel-input,
+.board-popover select {
+  padding: 5px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--piece);
+}
+
+.panel-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+button.panel-row {
+  display: flex;
+  width: 100%;
+  gap: 6px;
+  align-items: baseline;
+  padding: 4px 6px;
+  border: 0;
+  text-align: left;
+}
+
+.panel-string-label {
+  font-family: var(--font-label);
+  font-variant: small-caps;
+  letter-spacing: 0.05em;
+}
+
+.panel-when {
+  margin-right: 6px;
+  color: var(--muted);
+  font-size: var(--size-ui-small);
+}
+
+.panel-row .panel-when {
+  margin: 0 0 0 auto;
+  white-space: nowrap;
+}
+
+.panel-history {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.panel-history li {
+  margin: 3px 0;
+}
+
+.panel-hint {
+  margin: 4px 0;
+  color: var(--muted);
+  font-size: var(--size-ui-small);
+}
+
+.popover-check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 0;
+}
+
+.popover-field {
+  display: block;
+  margin-top: 6px;
+}
+
+.popover-field select {
+  width: 100%;
+}
+
+.pin-picker .panel-list {
+  margin-top: 8px;
 }

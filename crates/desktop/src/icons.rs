@@ -28,6 +28,7 @@ pub enum Glyph {
     More,
     Needle,
     Person,
+    Pin,
     Plus,
     Restore,
     Scissors,
@@ -80,6 +81,8 @@ impl Glyph {
                 r#"<path d="M4.5 19.5 16 8"/><ellipse cx="18" cy="6" rx="1.3" ry="3" transform="rotate(45 18 6)"/><path d="M18.8 5.2c3 1.5 1.5 6-2.5 7.5S8.5 15 9.5 19"/>"#
             }
             Self::Person => r#"<circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 0 0-16 0"/>"#,
+            // A dressmaker's pin pushed into the board, head towards the top left.
+            Self::Pin => r#"<path d="M12 12.5 20 21"/><circle cx="8.5" cy="9" r="4.5"/><path d="m11.7 5.8 3.2-3.2a1.5 1.5 0 0 1 2.1 0l2.4 2.4a1.5 1.5 0 0 1 0 2.1l-3.2 3.2"/>"#,
             Self::Plus => r#"<path d="M5 12h14"/><path d="M12 5v14"/>"#,
             Self::Restore => r#"<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>"#,
             Self::Scissors => {

@@ -5,6 +5,7 @@ mod backup;
 mod bin;
 mod closing;
 mod history;
+mod network;
 mod notes;
 mod search;
 mod settings;
@@ -71,6 +72,13 @@ fn main() {
             bin::remove_from_bin,
             bin::restore_scene,
             bin::restore_note,
+            network::project_board,
+            network::save_board,
+            network::add_card,
+            network::pin_card,
+            network::unpin_card,
+            network::add_relationship,
+            network::edit_relationship,
             notes::project_notes,
             notes::open_note,
             notes::save_note,

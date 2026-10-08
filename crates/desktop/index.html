@@ -11,6 +11,19 @@
     <link data-trunk rel="css" href="../../editor/dist/needle-editor.css" />
     <link data-trunk rel="css" href="styles/app.css" />
     <link data-trunk rel="rust" data-bin="needle-desktop-ui" data-wasm-opt="z" />
+    <!-- The chosen theme, remembered here so the first paint is already in it. The backend
+         stays the source of truth and corrects this a moment later; without it the window
+         flashes the desktop's theme before the saved one arrives. -->
+    <script>
+      try {
+        var theme = localStorage.getItem("needle-theme");
+        if (theme === "light" || theme === "dark") {
+          document.documentElement.setAttribute("data-theme", theme);
+        }
+      } catch (e) {
+        // Private mode or blocked storage: the flash is the worst of it.
+      }
+    </script>
     <!-- A classic script, so NeedleEditor exists before trunk's (deferred) wasm loader runs. -->
     <script src="/needle-editor.js"></script>
   </head>

@@ -3,6 +3,7 @@
 //! writes them.
 
 mod bin;
+mod board;
 mod doc;
 mod error;
 mod files;
@@ -21,6 +22,7 @@ use needle_core::project::{ProjectConfig, ProjectKind, WorldConfig};
 use needle_core::settings::{self, BackupSettings, TypographyRule, VaultSettings};
 
 pub use bin::{Bin, CutItem, CutKind, Passage};
+pub use board::{Board, Card, Change, Link, Relationship, RelationshipEdit};
 pub use error::{Error, Result};
 pub use links::{Appearance, Backlink, HeaderName, LinkSource, Mention, NAME_FIELDS, NameHint, NoteLinks, Renamed, SceneNames};
 pub use notes::{NoteInfo, Notes};

@@ -7,6 +7,7 @@ pub mod history;
 pub mod id;
 pub mod links;
 pub mod names;
+pub mod network;
 pub mod outline;
 pub mod project;
 pub mod scene;

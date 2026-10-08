@@ -25,15 +25,17 @@ Needle and Thread is a structure-first writing app for long fiction and long-for
 | Time | Real dates, relative times, invented calendars and order-only placement, mixed within one project |
 | Shared material | Series sharing a world; self-contained projects too |
 | Network | A map you build: automatic links plus named relationships you draw, changing over story time. One per project, can include notes from the world and other projects (§7) |
+| Network map | Drawn as a bulletin board strung with red thread: cork, each kind of note a different pinned paper (polaroid, postcard, index card, folder), zones you drag out and name, and Write and Marker tools for marks you add yourself. A tool for thinking, not for an audience (§7) |
+| Network map drawing | In Rust, Leptos + SVG, not a JavaScript graph library; panned and zoomed as one CSS-transformed layer (spike 3) |
 | Plot points | One note type with events (backstory included); can sit on the timeline |
-| Devices | Linux desktop and the phone (a full client, §9). **Windows is a release target now, not "later"** — other people are meant to run the app, which they weren't before |
+| Devices | A Linux desktop and a phone, both first-class: the same writing, notes, reading and restructuring on each (§9). **Windows is a release target now, not "later"** — other people are meant to run the app, which they weren't before |
 | Packaging | GitHub Actions. CI runs the tests, clippy and the editor's typecheck on every push; a `v*` tag builds the packages and leaves a **draft** release to publish by hand. Linux ships a `.deb` and an AppImage. **Everything the app needs comes with it**, rather than being a system package the reader has to install first: the Hunspell dictionary as a bundled resource, SQLite and libgit2/libssh2 compiled in already. The one exception is the webview, which can't be bundled — WebKitGTK on Linux, WebView2 on Windows |
 | Desktop app | Tauri 2 + Leptos, in Rust |
 | Editor | ProseMirror as a small JavaScript island (Rust has no mature rich-text editor) |
 | Editor feel | Like Medium: formatting shows as formatting, no visible Markdown symbols |
 | Look | A sewing-pattern bench. Each scene is drawn as a pattern piece (cutting line, stitching line, notches); cut lines, seams and stitches mark Split, Merge and scene breaks. Each note is a fabric swatch with pinked edges, pinned to the bench, with a smaller swatch beside it listing what links to it. A scene's POV, cast, places and threads are on its envelope (like the back of a pattern envelope listing notions), beside the scene and staying in view as it scrolls, or a tab on the page's edge when the window is narrow. A link to a note that doesn't exist yet is basted (long loose stitches). The motifs stay in the app's frame, never in the text |
 | Colours | From Gwen (League of Legends): aqua threads, saturated blues, violet. Dark, a Shadow Isles cutting mat, is the main look; light is pattern tissue. System, Light or Dark is chosen per computer |
-| Fonts | Bundled, all OFL: Literata for the text, Fraunces (soft and wonky) for titles, Alegreya SC for labels, Alegreya Sans for controls |
+| Fonts | Bundled, all OFL: Literata for the text, Fraunces (soft and wonky) for titles, Alegreya SC for labels, Alegreya Sans for controls, Caveat for marks you handwrite on the network board (§7) |
 | Typography as you type | Four separate settings, each explained in the app and on by default: curly double quotes, curly single quotes/apostrophes, `--` → em dash, `...` → ellipsis. They never rewrite existing text |
 | Spellcheck | Our own, not the webview's: spellbook (Rust, Hunspell-compatible) with a bundled US English (`en_US`) dictionary — shipped with the app, since an AppImage or a Windows install can't rely on a system `hunspell-en-us`. Underlines everything as soon as a scene opens, accepts names used in `[[links]]`, right-click for suggestions or "Add to dictionary" (`.needle/dictionary.txt`) |
 | Phone app | PWA on GitHub Pages, sharing Rust UI code with the desktop |
@@ -330,12 +332,69 @@ Each scene or event gets a place in time through the `when:` field in its header
 
 A map of a project's characters, places and plot points, and how they connect. You build it by hand, and it can show any moment in the story.
 
+It's drawn as a **bulletin board**, the kind strung with red thread. This is a tool for your own thinking, not something to show an audience, so it favours being expressive over staying tidy: nothing in it exists to keep the board neat.
+
 ### What's on it
 
 - **Nodes:** characters, places, plot points and threads (sources and arguments in nonfiction). Scenes stay off the map; plot points stand in for them.
 - **Links** (thin, automatic): drawn from `[[links]]` and headers, e.g. a plot point that involves Mara.
 - **Relationships** (labelled): lines you draw, like "mentor of", "betrays" or "causes".
+- **Zones:** sheets of kraft paper pinned under a group of cards, which you drag out and name yourself. They mean nothing to the rest of the app: a zone is only how you've arranged your own thinking. Saved in `network.toml`.
+- **Marks:** handwriting and marker you add yourself (see "Marks you make" below).
 - **Scope:** one network per project. World notes and notes from other projects can be added, and are marked with where they come from.
+
+### How it's drawn
+
+The board is cork, stained in the dark theme. Each kind of note is a different piece of pinned paper, so kinds are told apart by shape before colour:
+
+| Kind | Pinned up as |
+|---|---|
+| Character | A polaroid |
+| Place | A postcard |
+| Plot point | A ruled index card |
+| Thread | A manila folder with a tab |
+
+- **Pins** take the kind's colour, the same four already used across the app.
+- **Relationships** are red string from pin to pin, sagging a little, labelled on a strip of masking tape.
+- **Automatic links** are thinner, pale twine.
+- **Cards tilt** a degree or two, never more, so a big board still reads.
+- **Everything the app writes is in the app's own type**, titles included. Handwriting is only ever something you added.
+
+The map is drawn in Rust, with Leptos and SVG, and panned and zoomed as one CSS-transformed layer (spike 3).
+
+### Marks you make
+
+Two tools, for thinking on the board itself:
+
+- **Write:** a handwritten note (Caveat), put anywhere on the board and dragged about. Loose on the board by default; dropped onto a card, it travels with that card.
+- **Marker:** drag around a group to circle it, or between two cards for an arrow. Marks sit above the strings, and each is rubbed out on its own.
+
+Marks are the only handwriting on the board, because you wrote them. They're kept in `network.toml` alongside the node positions.
+
+### `network.toml`
+
+One per project, holding only how the board is arranged. What's *on* the board comes from the notes themselves, so this file never has to be repaired: a card with no entry has simply never been placed, and an entry for a note that's gone is ignored.
+
+```toml
+[nodes]
+nt_8d1c2e5fqa = { at = [120.0, 240.0], turn = -1.5 }
+
+[[zones]]
+id = "zn_4k2m9a7x1q"
+name = "The harbour"
+at = [0.0, 0.0]
+size = [520.0, 380.0]
+
+[[marks]]
+kind = "note"                  # handwritten; "ring" and "arrow" are marker
+id = "mk_7f3k9qa2mx"
+text = "who has it now?"
+at = [600.0, 120.0]
+turn = -6.0
+on = "nt_8d1c2e5fqa"           # dropped on a card: `at` is measured from it, and it travels with it
+```
+
+`turn` is a tilt in degrees, and is left out when it's zero.
 
 ### A plot point
 
@@ -385,11 +444,19 @@ She owes him for the berth, and both of them know it.
 
 ### Building on it
 
-- Drag nodes to arrange them. Positions are saved in `network.toml`, and new nodes are placed automatically.
-- Drag from one node to another to draw a relationship, then type its label (autocompleted from labels used before).
-- Double-click empty space to add a plot point.
-- Click a node or line to edit it in the side panel.
-- Filter by note type or thread, and hide automatic links.
+A toolbar over the cork: **Move**, **String**, **Write**, **Marker** and **Zone**, then **Pin up** and **Show**. A tool stays chosen until another is picked or Escape is pressed.
+
+- **Move:** drag cards to arrange them. Positions are saved in `network.toml`, and new cards are placed automatically, near what they link to.
+- **String:** drag from one card to another to tie them, then type its label on the tape; labels used before are offered as you type. It's a new note in `relationships/`, titled after its two ends ("Mara Venn and Old Teodor"), reading from the first card to the second. Let go anywhere but on a card, or press Escape, and nothing is tied. A card from another project is named `project/Title` in `between`, so the name always finds it again.
+- **Double-click bare cork** to add a plot point: a blank index card appears there for its title. Escape, or leaving it empty, makes nothing.
+- **Click a card or a string** to see it in the side panel; **double-click a card** to open its note.
+  - A string's panel edits its label, makes it one way or both ways, turns it round, lists how it changes along the way (`begins`, `changes`, `ends`), opens its note, and can move it to the cut bin.
+  - A card's panel lists its strings (each opens in the panel) and opens the note. A card pinned up by hand can be taken down there; the note itself stays.
+- **Zone:** drag out a sheet of kraft paper, then name it on its tape. The tape is the sheet's handle: drag it to move the sheet, double-click it to rename. Pressing the paper itself pans the board, so a board covered in zones can still be moved around. A chosen zone has a corner to resize it, and Delete (or Take down) removes it. Cards on it don't move with it.
+- **Pin up:** a list of notes that aren't on the board: other projects', the world's, and this project's plain notes and sources (pinned up as a plain sheet). Picking one pins it in the middle of the view.
+- **Show:** leave kinds of card off, show only one thread and what's tied or linked to it, and hide automatic links. It's a way of looking, so it isn't saved.
+
+Until the story-time slider (M6), the board shows each relationship as it stands at the end of the book: its last label, and slack and faded if it `ends`. The side panel has what came before.
 
 ## 8. Desktop app
 
@@ -433,12 +500,37 @@ ProseMirror owns the text while you type, and Rust owns the files. The editor op
 
 ## 9. Phone app
 
-The phone app is a PWA built from `crates/phone` and published to GitHub Pages by GitHub Actions. Added to the home screen, it behaves like an installed app.
+**A full client, not a capture box.** Writing happens on a phone as much as at a desk, so the phone does the same work: write prose, make notes, read and search, and restructure. It isn't a cut-down companion to the desktop; it's the same vault through a smaller window.
 
-- **Setup:** paste the vault repo name and a fine-grained GitHub token, or scan a QR code from the desktop app. The token only has Contents read & write, on the vault repo only. If you lose the phone, revoke the token on GitHub.
-- **Capture:** one big text box. Saving queues the idea on the phone and sends it to `inbox/` through GitHub's API. Without a connection, the idea is sent the next time the app opens or the connection comes back.
-- **Tagging:** tap to tag the idea with a project, characters, places, threads or scenes. Names autocomplete from `.needle/index.json`, a small list the desktop app keeps current, so the phone never has to crawl the repo.
-- **Lookup:** browse and search notes, read-only. Notes are fetched when opened and cached for offline use, and pinned notes stay available offline.
+It's a PWA built from `crates/phone` and published to GitHub Pages by GitHub Actions. Added to the home screen, it behaves like an installed app.
+
+### How it reaches the vault
+
+The vault is already a private GitHub repo (§5), so the phone talks to GitHub directly and needs no server of our own. Sharing (§10) is the only part that needs the Worker.
+
+- **Setup:** paste the vault repo name and a fine-grained GitHub token, or scan a QR code from the desktop app. The token has Contents read & write on the vault repo only, and nothing else. If you lose the phone, revoke the token on GitHub.
+- **Reading** a file is one API call. The file list comes from the repo's tree, so opening the app costs one call, not one per file.
+- **Writing** a file sends back the SHA it was read at. GitHub refuses a stale SHA, so a file changed elsewhere can never be silently overwritten: the app re-reads it, merges, and asks only when it can't.
+- **Several files at once** (moving a scene between chapters touches `outline.toml` and nothing else; a rename touches every file that links to it) go as one commit through the Git Data API, so the vault is never left half-changed.
+
+### Sharing code with the desktop
+
+`needle-core` already compiles to wasm and holds everything that isn't I/O: headers, the outline, links and names, diff, word counts. Both apps use it.
+
+`needle-vault` is built on `std::fs` and can't be. So the vault operations the two apps share sit behind a **store trait** — read a file, write a file, write several, list — with a Tauri implementation over the file system and a phone implementation over the GitHub API. The screens are then the same Leptos components on both.
+
+The editor is the same ProseMirror island; it already runs in a webview, and a mobile browser is no different. Touch selection and the on-screen keyboard are the parts that need real work.
+
+### What it does
+
+- **Write:** open a scene or note and write, in the same editor, saving as you pause. Snapshots are the commits it makes.
+- **Capture:** one big text box for an idea, filed into `inbox/`. Queued on the phone when offline and sent when the connection returns.
+- **Read and search:** the outline, notes and links. Names and titles come from `.needle/index.json`, a small list the desktop keeps current, so the phone never crawls the repo; full text search needs the file contents and is fetched as needed.
+- **Restructure:** move scenes between chapters, change status, retitle.
+
+### Offline
+
+The first version needs a connection. After that: a service worker caches what's been opened, writes queue while offline and go up when the connection returns, and pinned notes and scenes are kept for reading.
 
 ## 10. Sharing and comments
 
@@ -532,8 +624,8 @@ Requested 2026-10-03; not needed for the first phases.
 | 0 · Spikes | Short experiments, each answering "will this work?" before anything is built on it: ProseMirror island in Tauri + Leptos with a Markdown round-trip; spellcheck in WebKitGTK; git2 commit and push with a token; a Typst PDF from Rust |
 | 1 · Core | Vault and projects, outline tree, editor, notes, links, backlinks and mentions, worlds, status and word counts, cut bin, autosave, snapshots and history, search, backup push to GitHub |
 | 2 · Exports | Compile settings, PDF, EPUB, .docx, copy for Medium |
-| 3 · Timeline + network | Calendars, resolver, timeline view, plot points, relationships, network map with story-time slider |
-| 4 · Sync + phone | Two-way sync, Pages deploy, phone capture, tagging and lookup, inbox filing, QR setup |
+| 3 · Timeline + network | Calendars, resolver, timeline view, plot points, relationships, the network board (zones, marks), story-time slider with the timeline |
+| 4 · Sync + phone | Phone reading first (no sync risk: it only reads), then two-way sync on the desktop, then writing, capture and restructuring from the phone; Pages deploy, inbox filing, QR setup |
 | 5 · Sharing | Worker, encryption, reader page, comments and anchoring, author tools, desktop comments panel |
 | Later | Moving a project out of the vault; a chapter as one continuous document; citation machine for nonfiction (§11); notes-to-self inside the prose |
 
@@ -563,4 +655,3 @@ Requested 2026-10-03; not needed for the first phases.
 - Should you be able to pause a link's updates during a big rewrite?
 - Do you want notes-to-self inside the prose that never appear in exports?
 - Should the Pages site use a custom domain?
-- Network canvas: draw it in Rust (Leptos + SVG), or use a JavaScript graph library as a second island like the editor? Decide with a short spike before building it.
