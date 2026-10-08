@@ -25,6 +25,8 @@ Needle and Thread is a structure-first writing app for long fiction and long-for
 | Time | Real dates, relative times, invented calendars and order-only placement, mixed within one project |
 | Shared material | Series sharing a world; self-contained projects too |
 | Network | A map you build: automatic links plus named relationships you draw, changing over story time. One per project, can include notes from the world and other projects (§7) |
+| Network map | Drawn as a bulletin board strung with red thread: cork, each kind of note a different pinned paper (polaroid, postcard, index card, folder), zones you drag out and name, and Write and Marker tools for marks you add yourself. A tool for thinking, not for an audience (§7) |
+| Network map drawing | In Rust, Leptos + SVG, not a JavaScript graph library; panned and zoomed as one CSS-transformed layer (spike 3) |
 | Plot points | One note type with events (backstory included); can sit on the timeline |
 | Devices | One Linux desktop now. Phone for capture, tagging and lookup. More computers, including Windows, later |
 | Desktop app | Tauri 2 + Leptos, in Rust |
@@ -32,7 +34,7 @@ Needle and Thread is a structure-first writing app for long fiction and long-for
 | Editor feel | Like Medium: formatting shows as formatting, no visible Markdown symbols |
 | Look | A sewing-pattern bench. Each scene is drawn as a pattern piece (cutting line, stitching line, notches); cut lines, seams and stitches mark Split, Merge and scene breaks. Each note is a fabric swatch with pinked edges, pinned to the bench, with a smaller swatch beside it listing what links to it. A scene's POV, cast, places and threads are on its envelope (like the back of a pattern envelope listing notions), beside the scene and staying in view as it scrolls, or a tab on the page's edge when the window is narrow. A link to a note that doesn't exist yet is basted (long loose stitches). The motifs stay in the app's frame, never in the text |
 | Colours | From Gwen (League of Legends): aqua threads, saturated blues, violet. Dark, a Shadow Isles cutting mat, is the main look; light is pattern tissue. System, Light or Dark is chosen per computer |
-| Fonts | Bundled, all OFL: Literata for the text, Fraunces (soft and wonky) for titles, Alegreya SC for labels, Alegreya Sans for controls |
+| Fonts | Bundled, all OFL: Literata for the text, Fraunces (soft and wonky) for titles, Alegreya SC for labels, Alegreya Sans for controls, Caveat for marks you handwrite on the network board (§7) |
 | Typography as you type | Four separate settings, each explained in the app and on by default: curly double quotes, curly single quotes/apostrophes, `--` → em dash, `...` → ellipsis. They never rewrite existing text |
 | Spellcheck | Our own, not the webview's: spellbook (Rust, Hunspell-compatible) with the installed US English (`en_US`) dictionary. Underlines everything as soon as a scene opens, accepts names used in `[[links]]`, right-click for suggestions or "Add to dictionary" (`.needle/dictionary.txt`) |
 | Phone app | PWA on GitHub Pages, sharing Rust UI code with the desktop |
@@ -329,12 +331,44 @@ Each scene or event gets a place in time through the `when:` field in its header
 
 A map of a project's characters, places and plot points, and how they connect. You build it by hand, and it can show any moment in the story.
 
+It's drawn as a **bulletin board**, the kind strung with red thread. This is a tool for your own thinking, not something to show an audience, so it favours being expressive over staying tidy: nothing in it exists to keep the board neat.
+
 ### What's on it
 
 - **Nodes:** characters, places, plot points and threads (sources and arguments in nonfiction). Scenes stay off the map; plot points stand in for them.
 - **Links** (thin, automatic): drawn from `[[links]]` and headers, e.g. a plot point that involves Mara.
 - **Relationships** (labelled): lines you draw, like "mentor of", "betrays" or "causes".
+- **Zones:** sheets of kraft paper pinned under a group of cards, which you drag out and name yourself. They mean nothing to the rest of the app: a zone is only how you've arranged your own thinking. Saved in `network.toml`.
+- **Marks:** handwriting and marker you add yourself (see "Marks you make" below).
 - **Scope:** one network per project. World notes and notes from other projects can be added, and are marked with where they come from.
+
+### How it's drawn
+
+The board is cork, stained in the dark theme. Each kind of note is a different piece of pinned paper, so kinds are told apart by shape before colour:
+
+| Kind | Pinned up as |
+|---|---|
+| Character | A polaroid |
+| Place | A postcard |
+| Plot point | A ruled index card |
+| Thread | A manila folder with a tab |
+
+- **Pins** take the kind's colour, the same four already used across the app.
+- **Relationships** are red string from pin to pin, sagging a little, labelled on a strip of masking tape.
+- **Automatic links** are thinner, pale twine.
+- **Cards tilt** a degree or two, never more, so a big board still reads.
+- **Everything the app writes is in the app's own type**, titles included. Handwriting is only ever something you added.
+
+The map is drawn in Rust, with Leptos and SVG, and panned and zoomed as one CSS-transformed layer (spike 3).
+
+### Marks you make
+
+Two tools, for thinking on the board itself:
+
+- **Write:** a handwritten note (Caveat), put anywhere on the board and dragged about. Loose on the board by default; dropped onto a card, it travels with that card.
+- **Marker:** drag around a group to circle it, or between two cards for an arrow. Marks sit above the strings, and each is rubbed out on its own.
+
+Marks are the only handwriting on the board, because you wrote them. They're kept in `network.toml` alongside the node positions.
 
 ### A plot point
 
@@ -531,7 +565,7 @@ Requested 2026-10-03; not needed for the first phases.
 | 0 · Spikes | Short experiments, each answering "will this work?" before anything is built on it: ProseMirror island in Tauri + Leptos with a Markdown round-trip; spellcheck in WebKitGTK; git2 commit and push with a token; a Typst PDF from Rust |
 | 1 · Core | Vault and projects, outline tree, editor, notes, links, backlinks and mentions, worlds, status and word counts, cut bin, autosave, snapshots and history, search, backup push to GitHub |
 | 2 · Exports | Compile settings, PDF, EPUB, .docx, copy for Medium |
-| 3 · Timeline + network | Calendars, resolver, timeline view, plot points, relationships, network map with story-time slider |
+| 3 · Timeline + network | Calendars, resolver, timeline view, plot points, relationships, the network board (zones, marks), story-time slider with the timeline |
 | 4 · Sync + phone | Two-way sync, Pages deploy, phone capture, tagging and lookup, inbox filing, QR setup |
 | 5 · Sharing | Worker, encryption, reader page, comments and anchoring, author tools, desktop comments panel |
 | Later | Windows builds; moving a project out of the vault; a chapter as one continuous document; citation machine for nonfiction (§11); notes-to-self inside the prose |
@@ -554,4 +588,3 @@ Requested 2026-10-03; not needed for the first phases.
 - Should you be able to pause a link's updates during a big rewrite?
 - Do you want notes-to-self inside the prose that never appear in exports?
 - Should the Pages site use a custom domain?
-- Network canvas: draw it in Rust (Leptos + SVG), or use a JavaScript graph library as a second island like the editor? Decide with a short spike before building it.
