@@ -42,14 +42,22 @@ impl Appearance {
         }
     }
 
-    /// Shows the whole page in this appearance.
+    /// Shows the whole page in this appearance, and remembers it for the next first paint.
     pub fn apply(self) {
-        let Some(root) = web_sys::window().and_then(|w| w.document()).and_then(|d| d.document_element()) else {
-            return;
-        };
-        let _ = match self {
-            Self::System => root.remove_attribute("data-theme"),
-            _ => root.set_attribute("data-theme", self.name()),
-        };
+        let Some(window) = web_sys::window() else { return };
+        if let Some(root) = window.document().and_then(|d| d.document_element()) {
+            let _ = match self {
+                Self::System => root.remove_attribute("data-theme"),
+                _ => root.set_attribute("data-theme", self.name()),
+            };
+        }
+        // `index.html` reads this before the page paints, so the window opens in the right
+        // theme instead of flashing the desktop's. The backend is still what's saved.
+        if let Ok(Some(store)) = window.local_storage() {
+            let _ = match self {
+                Self::System => store.remove_item("needle-theme"),
+                _ => store.set_item("needle-theme", self.name()),
+            };
+        }
     }
 }
