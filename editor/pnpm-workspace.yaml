@@ -1,0 +1,6 @@
+# esbuild's install script fetches its platform binary, so it has to be allowed to run.
+# pnpm 10 took this from package.json's "pnpm" field as "onlyBuiltDependencies"; pnpm 12 reads
+# it only from here, under this name, and refuses the install outright (ERR_PNPM_IGNORED_BUILDS)
+# when a build script goes unapproved. pnpm writes the placeholder itself if this file is missing.
+allowBuilds:
+  esbuild: true
