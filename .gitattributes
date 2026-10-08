@@ -1,0 +1,3 @@
+# LF everywhere, Windows checkouts included: the app reads some of these files verbatim
+# (include_str!, fixtures, the bundled dictionary), and CRLF would change what it sees.
+* text=auto eol=lf

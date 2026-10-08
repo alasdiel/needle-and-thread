@@ -292,9 +292,10 @@ fn host_of(url: &str) -> &str {
     rest.split([':', '/']).next().unwrap_or(rest)
 }
 
-/// The usual private key files in `~/.ssh` that exist, in the order ssh tries them.
+/// The usual private key files in `~/.ssh` that exist, in the order ssh tries them. The home
+/// folder is `HOME` on Linux and `USERPROFILE` on Windows, which doesn't set `HOME`.
 fn ssh_key_files() -> Vec<PathBuf> {
-    let Some(home) = env::var_os("HOME") else { return Vec::new() };
-    let dir = Path::new(&home).join(".ssh");
+    let Some(home) = env::home_dir() else { return Vec::new() };
+    let dir = home.join(".ssh");
     ["id_ed25519", "id_ecdsa", "id_rsa"].iter().map(|name| dir.join(name)).filter(|key| key.is_file()).collect()
 }
