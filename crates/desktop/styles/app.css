@@ -70,6 +70,10 @@
   --string-shadow: light-dark(rgb(60 30 10 / 0.35), rgb(0 0 0 / 0.45));
   --twine: light-dark(rgb(255 250 235 / 0.85), rgb(232 222 200 / 0.5));
   --card-drop: light-dark(rgb(60 30 10 / 0.35), rgb(0 0 0 / 0.5));
+  /* The writer's own marker: dark ink on pale cork, chalky white on the stained cork. */
+  --marker: light-dark(#1f2b6e, #f3ecdc);
+  /* Cards stay pale in both themes, so anything written on one is in dark ink. */
+  --marker-on-paper: #1f2b6e;
 
   /* The type scale: small caps in two sizes, the interface font in two, titles in four. */
   --size-label: 14.5px; /* small-caps headings and labels */
@@ -3227,4 +3231,115 @@ del {
 /* The pins sit over the cards: a pin holds its card to the board. */
 .board-pins {
   pointer-events: none;
+}
+
+/* --- Marks you make on the board -------------------------------------------------------------
+   Handwritten notes and marker rings and arrows (DESIGN §7). The only handwriting on the board,
+   because the writer put it there. */
+
+.board.tool-write {
+  cursor: text;
+}
+
+.board.tool-marker {
+  cursor: crosshair;
+}
+
+/* Strokes take clicks only on their wide invisible line, so the cards under a ring still do. */
+.board-marks {
+  pointer-events: none;
+}
+
+.marker-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 16;
+  stroke-linecap: round;
+  pointer-events: stroke;
+  cursor: move;
+}
+
+.board.tool-write .marker-hit,
+.board.tool-marker .marker-hit {
+  pointer-events: none;
+}
+
+.marker-ink {
+  fill: none;
+  stroke: var(--marker);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.88;
+}
+
+.marker.preview .marker-ink {
+  opacity: 0.55;
+}
+
+.marker.chosen .marker-ink {
+  stroke-width: 4;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--marker) 70%, transparent));
+}
+
+.mark-note {
+  position: absolute;
+  /* The board's layer has no width of its own (it only carries the pan and zoom), so a note
+     sizes to its words rather than to its container, up to a line of about five words. */
+  width: max-content;
+  max-width: 220px;
+  padding: 2px 6px;
+  color: var(--marker);
+  font-family: "Caveat", cursive;
+  font-size: 23px;
+  font-weight: 500;
+  line-height: 1.05;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  cursor: move;
+}
+
+.mark-note.on-card {
+  color: var(--marker-on-paper);
+}
+
+.board.tool-write .mark-note {
+  cursor: text;
+}
+
+.mark-note.chosen {
+  outline: 1.5px dashed var(--marker);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* While it's being written: a faint patch, so you can see where the words will go. */
+.mark-note.mark-editing {
+  min-width: 3ch;
+  min-height: 1em;
+  background: color-mix(in srgb, var(--paper) 30%, transparent);
+  outline: 1.5px dashed var(--marker);
+  outline-offset: 2px;
+  border-radius: 3px;
+  cursor: text;
+  user-select: text;
+  caret-color: currentColor;
+}
+
+.mark-note.mark-editing:focus {
+  outline-style: solid;
+}
+
+.board-tools {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--raise);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px var(--card-drop);
+  cursor: default;
 }

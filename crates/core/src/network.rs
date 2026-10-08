@@ -92,6 +92,59 @@ impl Mark {
             Self::Note { id, .. } | Self::Ring { id, .. } | Self::Arrow { id, .. } => id,
         }
     }
+
+    /// The same mark, picked up and put down `by` further along. An arrow moves both ends; a
+    /// note keeps the card it's on, since its spot is measured from that card.
+    pub fn shifted(&self, by: Point) -> Self {
+        let add = |p: Point| (p.0 + by.0, p.1 + by.1);
+        let mut mark = self.clone();
+        match &mut mark {
+            Self::Note { at, .. } | Self::Ring { at, .. } => *at = add(*at),
+            Self::Arrow { from, to, .. } => (*from, *to) = (add(*from), add(*to)),
+        }
+        mark
+    }
+}
+
+/// A marker loop around a box centred on `at`, as SVG path data. Drawn by hand, it doesn't
+/// close neatly: it starts a little early, wobbles, and runs on past where it began.
+pub fn ring_path(at: Point, size: Point) -> String {
+    let (rx, ry) = (size.0.abs() / 2.0, size.1.abs() / 2.0);
+    let start = -0.5_f64;
+    let end = start + std::f64::consts::TAU + 0.55;
+    let steps = 48;
+    let mut d = String::new();
+    for i in 0..=steps {
+        let t = start + (end - start) * f64::from(i) / f64::from(steps);
+        // The loop swells a touch in three places and comes back a little wider than it set
+        // out, which is what a quick pen stroke does.
+        let wobble = 1.0 + 0.035 * (3.0 * t).sin() + 0.05 * (t - start) / (end - start);
+        let (x, y) = (at.0 + rx * wobble * t.cos(), at.1 + ry * wobble * t.sin());
+        d.push_str(&format!("{}{x:.1},{y:.1}", if i == 0 { "M" } else { " L" }));
+    }
+    d
+}
+
+/// A marker arrow from `from` to `to`, bowed sideways by `bend`: the shaft, and the two short
+/// strokes of its head, as SVG path data.
+pub fn arrow_path(from: Point, to: Point, bend: f64) -> (String, String) {
+    let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+    let len = dx.hypot(dy).max(1.0);
+    // The bow is sideways to the line, at its middle.
+    let (nx, ny) = (-dy / len, dx / len);
+    let (cx, cy) = ((from.0 + to.0) / 2.0 + nx * bend, (from.1 + to.1) / 2.0 + ny * bend);
+    let shaft = format!("M{:.1},{:.1} Q{cx:.1},{cy:.1} {:.1},{:.1}", from.0, from.1, to.0, to.1);
+    // The head points along the curve as it arrives, which is from the bow's peak to the tip.
+    let (hx, hy) = (to.0 - cx, to.1 - cy);
+    let angle = hy.atan2(hx);
+    let reach = 14.0_f64.min(len / 3.0);
+    let barb = |turn: f64| {
+        let a = angle + std::f64::consts::PI + turn;
+        (to.0 + reach * a.cos(), to.1 + reach * a.sin())
+    };
+    let ((ax, ay), (bx, by)) = (barb(0.45), barb(-0.45));
+    let head = format!("M{ax:.1},{ay:.1} L{:.1},{:.1} L{bx:.1},{by:.1}", to.0, to.1);
+    (shaft, head)
 }
 
 impl Network {
@@ -167,6 +220,60 @@ mod tests {
 
     fn node(x: f64, y: f64) -> Node {
         Node { at: (x, y), turn: 0.0 }
+    }
+
+    #[test]
+    fn shifting_a_mark_moves_every_point_of_it() {
+        let arrow = Mark::Arrow { id: "mk_1".into(), from: (0.0, 0.0), to: (100.0, 50.0), bend: 12.0 };
+        assert_eq!(
+            arrow.shifted((10.0, -5.0)),
+            Mark::Arrow { id: "mk_1".into(), from: (10.0, -5.0), to: (110.0, 45.0), bend: 12.0 }
+        );
+        let note = Mark::Note { id: "mk_2".into(), text: "hm".into(), at: (5.0, 5.0), turn: 0.0, on: Some("nt_1".into()) };
+        let Mark::Note { at, on, .. } = note.shifted((1.0, 2.0)) else { unreachable!() };
+        assert_eq!((at, on.as_deref()), ((6.0, 7.0), Some("nt_1")), "stays on its card");
+    }
+
+    /// Pulls the numbers out of SVG path data, as (x, y) pairs.
+    fn points(d: &str) -> Vec<(f64, f64)> {
+        let nums: Vec<f64> = d
+            .split(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+            .filter(|s| !s.is_empty())
+            .map(|s| s.parse().unwrap())
+            .collect();
+        nums.chunks(2).map(|p| (p[0], p[1])).collect()
+    }
+
+    #[test]
+    fn a_ring_goes_round_its_box_and_overshoots() {
+        let pts = points(&ring_path((100.0, 50.0), (80.0, 40.0)));
+        // Every point is near the ellipse: inside 1.15 of its radii, outside 0.85.
+        for (x, y) in &pts {
+            let r = (((x - 100.0) / 40.0).powi(2) + ((y - 50.0) / 20.0).powi(2)).sqrt();
+            assert!((0.85..1.15).contains(&r), "({x}, {y}) is {r} radii out");
+        }
+        // It runs on past where it started, so the two ends sit apart, not on top of each other.
+        let (first, last) = (pts[0], pts[pts.len() - 1]);
+        assert!((first.0 - last.0).hypot(first.1 - last.1) > 5.0, "{first:?} {last:?}");
+    }
+
+    #[test]
+    fn an_arrow_ends_where_it_points_and_its_head_trails_behind() {
+        let (shaft, head) = arrow_path((0.0, 0.0), (200.0, 0.0), 0.0);
+        assert_eq!(points(&shaft).last(), Some(&(200.0, 0.0)));
+        let barbs = points(&head);
+        assert_eq!(barbs[1], (200.0, 0.0), "the head's point is the tip");
+        // A straight arrow pointing right has its barbs behind the tip, one either side.
+        assert!(barbs[0].0 < 200.0 && barbs[2].0 < 200.0);
+        assert!(barbs[0].1 * barbs[2].1 < 0.0, "{barbs:?}");
+    }
+
+    #[test]
+    fn a_bent_arrow_bows_to_one_side() {
+        let (shaft, _) = arrow_path((0.0, 0.0), (200.0, 0.0), 30.0);
+        let control = points(&shaft)[1];
+        assert_eq!(control.0, 100.0);
+        assert!(control.1.abs() > 20.0, "{control:?}");
     }
 
     #[test]
