@@ -228,7 +228,7 @@ fn a_restored_scene_goes_back_where_it_was() {
 
     // With its chapter gone, it waits among the scenes the outline doesn't place, and a name
     // that's been taken meanwhile gets a number.
-    let rename = |title: &str| project.edit_outline(|o| Ok(o.chapters[0].title = title.into())).unwrap();
+    let rename = |title: &str| project.edit_outline(|o| { o.chapters[0].title = title.into(); Ok(()) }).unwrap();
     rename("Arrival");
     project.cut_scene("untitled-scene").unwrap();
     let name = project.bin().list().unwrap()[0].name.clone();

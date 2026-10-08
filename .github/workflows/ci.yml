@@ -1,0 +1,80 @@
+# Tests, lints and a typecheck on every push. The release build lives in release.yml.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch cancels the first; a run on main always finishes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust tests and clippy
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      # Tauri's Linux webview and the libraries it links. hunspell-en-us is the en_US dictionary
+      # that core::spell's tests read from /usr/share/hunspell.
+      - name: Install system libraries
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev \
+            librsvg2-dev hunspell-en-us
+
+      # rust-toolchain.toml pins stable, which the runner already has — and rustup does NOT go
+      # back and add that file's `targets` to a toolchain it installed earlier, so wasm32 has to
+      # be asked for by name or the frontend's clippy pass fails on a missing target.
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component clippy --target wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # The wasm and native builds share this cache; keep them in one key.
+          key: rust-ci
+
+      # needle-desktop-ui only builds for wasm32, so it sits out the native pass.
+      - name: Clippy (native)
+        run: cargo clippy --workspace --exclude needle-desktop-ui --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --exclude needle-desktop-ui
+
+      - name: Clippy (wasm frontend)
+        run: cargo clippy -p needle-desktop-ui --target wasm32-unknown-unknown -- -D warnings
+
+  editor:
+    name: Editor tests and typecheck
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: editor
+    steps:
+      - uses: actions/checkout@v5
+
+      # Matches the pnpm the vault is developed with, so the lockfile isn't rewritten under CI.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: editor/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      # The tests run on Node's type stripping, so no build step first.
+      - run: pnpm test
+
+      - run: pnpm typecheck
