@@ -3723,3 +3723,352 @@ button.panel-row {
 .pin-picker .panel-list {
   margin-top: 8px;
 }
+
+/* --- The timeline (§6) ---------------------------------------------------------------------- */
+
+/* Story order runs down the page, a step per item, with a tape measure in the margin. Lanes are
+   columns; each scene is a little pattern piece with its piece number (its place in reading
+   order), and a plot point is a scrap of the violet note cloth. */
+.timeline {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.timeline-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.timeline-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 26px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.timeline-bar .panel-heading {
+  margin: 0;
+}
+
+.timeline-bar .segmented {
+  width: 240px;
+}
+
+.timeline-bar .segmented button,
+.when-panel .segmented button {
+  padding: 3px 8px;
+  font-size: var(--size-ui-small);
+}
+
+.segmented.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.timeline-calendar {
+  margin-left: auto;
+  font-family: var(--font-label);
+  font-size: var(--size-label);
+  color: var(--muted);
+}
+
+.timeline-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.timeline-inner {
+  position: relative;
+}
+
+/* Lane names stay in view while the timeline scrolls down under them. */
+.timeline-lanes {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  height: 40px;
+  padding-left: 92px;
+  border-bottom: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--mat) 88%, transparent);
+}
+
+.lane-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 204px;
+  padding: 0 12px;
+  overflow: hidden;
+  font-family: var(--font-label);
+  font-size: var(--size-label);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lane-name i {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--lane);
+}
+
+/* Each lane's thread colour, from the app's palette. */
+.lane-0 { --lane: var(--thread); }
+.lane-1 { --lane: var(--link); }
+.lane-2 { --lane: light-dark(#b0721a, #f0b44c); }
+.lane-3 { --lane: light-dark(#1f7a45, #4cc38a); }
+.lane-4 { --lane: light-dark(#c0362c, #ff8a80); }
+.lane-5 { --lane: var(--steel); }
+
+.lane-thread {
+  position: absolute;
+  width: 2px;
+  background: var(--lane);
+  opacity: 0.55;
+}
+
+/* The tape measure: yellow tape with a tick every few pixels, stuck to the left edge. */
+.tape-measure {
+  position: sticky;
+  left: 14px;
+  z-index: 1;
+  width: 64px;
+  margin-left: 14px;
+  border-radius: 2px;
+  background-color: light-dark(#f1dc8a, #d9c26c);
+  background-image: repeating-linear-gradient(transparent 0 7px, rgb(40 30 0 / 0.35) 7px 8px);
+  box-shadow: 0 1px 4px var(--shadow-color);
+}
+
+.tape-tick,
+.tape-gap {
+  position: absolute;
+  left: 0;
+  width: 64px;
+  color: #2a2208;
+  letter-spacing: 0;
+}
+
+.tape-tick {
+  padding: 2px 4px 3px 6px;
+  border-top: 2px solid #2a2208;
+  background: light-dark(#f1dc8a, #d9c26c);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.15;
+}
+
+/* The time between, written on the tape in pencil. */
+.tape-gap {
+  padding: 1px 4px 1px 6px;
+  background: light-dark(#f1dc8a, #d9c26c);
+  font-size: 11.5px;
+  font-style: italic;
+  line-height: 1.2;
+}
+
+/* A piece: a scene's pattern piece, or a plot point's scrap of cloth. */
+.time-piece {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 180px;
+  height: 66px;
+  padding: 7px 10px 7px 36px;
+  overflow: hidden;
+  border: 1px solid var(--print-soft);
+  border-radius: 3px;
+  background: var(--piece);
+  box-shadow: 0 2px 6px var(--piece-drop);
+  text-align: left;
+}
+
+/* The notch at the top of a pattern piece. */
+.time-piece::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  width: 9px;
+  height: 6px;
+  background: var(--print-soft);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+.time-piece:hover {
+  border-color: var(--print);
+}
+
+.time-piece.chosen {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
+.time-piece.event {
+  border-color: var(--swatch-print-soft);
+  background: var(--fabric);
+}
+
+.time-piece.event::after {
+  display: none;
+}
+
+/* Placed by order alone: its neighbours are known, its time isn't. */
+.time-piece.loose {
+  border-style: dashed;
+}
+
+.time-piece.troubled {
+  border-color: var(--error);
+}
+
+.piece-number {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid var(--print);
+  border-radius: 50%;
+  color: var(--print);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 17px;
+  text-align: center;
+  letter-spacing: 0;
+}
+
+.time-piece.event .piece-number {
+  border: 0;
+  color: var(--swatch-print);
+  font-size: 14px;
+}
+
+/* Out of reading order, as a flashback is. */
+.piece-number.flashback {
+  border-color: var(--link);
+  background: var(--link);
+  color: var(--on-blue);
+}
+
+.piece-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-family: var(--font-title);
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.2;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.piece-time,
+.piece-problem {
+  overflow: hidden;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
+.piece-problem {
+  color: var(--error);
+}
+
+.timeline-empty {
+  position: absolute;
+  top: 64px;
+  left: 110px;
+  max-width: 340px;
+  color: var(--muted);
+}
+
+/* What isn't placed yet waits along the foot. */
+.timeline-tray {
+  flex: none;
+  max-height: 168px;
+  overflow-y: auto;
+  padding: 4px 18px 12px;
+  border-top: 1px solid var(--rule);
+  background: var(--side);
+}
+
+.tray-pieces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.tray-pieces .time-piece {
+  position: relative;
+}
+
+/* The panel for setting when: the board's panel, but in a column of its own, so the timeline
+   moves aside for it rather than hiding under it. */
+.when-panel {
+  position: relative;
+  top: auto;
+  right: auto;
+  flex: none;
+  width: 300px;
+  max-height: none;
+  border-width: 0 0 0 1px;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--side);
+}
+
+.when-panel .segmented {
+  margin-bottom: 4px;
+}
+
+.when-panel input[type="text"] {
+  width: 100%;
+  padding: 5px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--piece);
+}
+
+.field-hint {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--size-ui-small);
+  color: var(--muted);
+}
+
+.when-now,
+.when-problem {
+  margin: 0 0 4px;
+  font-size: var(--size-ui-small);
+}
+
+.when-now.muted {
+  color: var(--muted);
+}
+
+.when-problem {
+  color: var(--error);
+}
+
+.when-cast {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.when-cast .chip {
+  padding: 0 9px;
+  font-size: var(--size-ui-small);
+}

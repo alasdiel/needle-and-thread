@@ -513,6 +513,41 @@ impl Calendar {
         moved
     }
 
+    /// How long from `a` to `b`, in words: `40 minutes`, `6 hours`, `a day`, `3 months`,
+    /// `19 years`. Rounded down to the largest unit that fits; months and years are this
+    /// calendar's own. Empty when they're at the same moment.
+    pub fn between(&self, a: Moment, b: Moment) -> String {
+        let (a, b) = if a.minute <= b.minute { (a, b) } else { (b, a) };
+        let minutes = b.minute - a.minute;
+        let words = |n: i64, one: &str, many: &str| match n {
+            1 => one.to_owned(),
+            n => format!("{n} {many}"),
+        };
+        if minutes == 0 {
+            return String::new();
+        }
+        if minutes < 60 {
+            return words(minutes, "a minute", "minutes");
+        }
+        if minutes < MINUTES_PER_DAY {
+            return words(minutes / 60, "an hour", "hours");
+        }
+        let (da, db) = (self.to_date(a), self.to_date(b));
+        let n = self.months.len() as i64;
+        let mut months = (db.year * n + db.month as i64) - (da.year * n + da.month as i64);
+        let later_in_month = (db.day, b.minute.rem_euclid(MINUTES_PER_DAY)) < (da.day, a.minute.rem_euclid(MINUTES_PER_DAY));
+        if later_in_month {
+            months -= 1;
+        }
+        if months >= n {
+            return words(months / n, "a year", "years");
+        }
+        if months >= 1 {
+            return words(months, "a month", "months");
+        }
+        words(minutes / MINUTES_PER_DAY, "a day", "days")
+    }
+
     /// The average length of a month, for ordering things whose dates aren't known.
     pub fn average_month_minutes(&self) -> i64 {
         let leap = self.leap.as_ref().map_or(0.0, |l| l.days as f64 / l.every as f64);
@@ -767,6 +802,24 @@ eras = [{ name = "First Age", years = 500 }, { name = "Second Age", short = "S.A
         assert_eq!(c.day_one, Some(DayOne::Date(Calendar::real().parse("1998-03-12").unwrap())));
         let c = Calendar::from_settings("[calendar]\nday_one = \"The wedding\"").unwrap().unwrap();
         assert_eq!(c.day_one, Some(DayOne::Item("The wedding".into())));
+    }
+
+    #[test]
+    fn the_time_between_two_moments_is_in_words() {
+        let real = Calendar::real();
+        let between = |a: &str, b: &str| real.between(real.parse(a).unwrap(), real.parse(b).unwrap());
+        assert_eq!(between("1998-03-14 19:00", "1998-03-15 01:00"), "6 hours");
+        assert_eq!(between("1998-03-14 19:00", "1998-03-14 19:40"), "40 minutes");
+        assert_eq!(between("1998-03-14", "1998-03-15"), "a day");
+        assert_eq!(between("1998-03-14", "1998-04-13"), "30 days");
+        assert_eq!(between("1998-03-14", "1998-04-14"), "a month");
+        assert_eq!(between("1979-06-02", "1998-03-14"), "18 years");
+        assert_eq!(between("1979-06-02", "1998-06-02"), "19 years");
+        assert_eq!(between("1998-06-02", "1979-06-02"), "19 years", "either way round");
+        assert_eq!(between("1998-06-02", "1998-06-02"), "");
+        let c = glass_coast();
+        assert_eq!(c.between(c.parse("3 Thaw 412").unwrap(), c.parse("3 Thaw 413").unwrap()), "a year");
+        assert_eq!(c.between(c.parse("3 Thaw 412").unwrap(), c.parse("3 Ember 412").unwrap()), "3 months");
     }
 
     #[test]

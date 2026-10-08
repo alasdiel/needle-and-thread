@@ -36,6 +36,7 @@ pub enum Glyph {
     Settings,
     Spool,
     Sun,
+    Tape,
     Thread,
 }
 
@@ -96,6 +97,10 @@ impl Glyph {
                 r#"<rect x="4.5" y="2.5" width="15" height="3" rx="1.5"/><rect x="4.5" y="18.5" width="15" height="3" rx="1.5"/><path d="M7 5.5v13"/><path d="M17 5.5v13"/><path d="m7 9.5 10-2"/><path d="m7 13 10-2"/><path d="m7 16.5 10-2"/>"#
             }
             Self::Thread => r#"<path d="M2 14c2.5-5 5.5-5 8 0s5.5 5 8 0c1-2 2.2-3 4-3"/>"#,
+            // Our own: a tape measure's case, with the tape pulled out along the bottom.
+            Self::Tape => {
+                r#"<circle cx="9" cy="11" r="6.5"/><circle cx="9" cy="11" r="1.6"/><path d="M9 17.5h12.5v-3.5"/><path d="M13.5 17.5v-1.8"/><path d="M17.5 17.5v-1.8"/>"#
+            }
             Self::Sun => {
                 r#"<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>"#
             }

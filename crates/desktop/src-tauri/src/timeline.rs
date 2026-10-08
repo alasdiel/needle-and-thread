@@ -3,7 +3,7 @@
 
 use needle_core::names::Owner;
 use needle_core::timeline::Problem;
-use needle_vault::{ItemKind, ProjectTimeline, WhenEdit};
+use needle_vault::{ItemKind, ProjectTimeline, WhenEdit, Written};
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
@@ -38,15 +38,41 @@ pub struct ItemView {
     places: Vec<String>,
     cast: Vec<String>,
     /// The `when` as written, for editing.
-    when: String,
+    when: WrittenView,
     /// Its time in words, if it has one.
     time: Option<String>,
     /// Minutes from the calendar's start, for spacing things out; `None` when only its order
     /// is known.
     minute: Option<i64>,
     loose: bool,
+    /// How long after the item before it in story order, if that's worth saying.
+    gap: Option<String>,
     /// Why it isn't on the timeline, or is on it under protest, in words.
     problem: Option<String>,
+}
+
+/// A `when` as written, split into the fields the side panel edits. `kind` is "none",
+/// "text", "from" or "order".
+#[derive(Serialize, Default)]
+pub struct WrittenView {
+    kind: &'static str,
+    text: String,
+    from: String,
+    offset: String,
+    after: String,
+    before: String,
+}
+
+fn written_view(written: &Written) -> WrittenView {
+    let field = |key: &str| written.field(key).unwrap_or_default().to_owned();
+    match written {
+        Written::None => WrittenView { kind: "none", ..WrittenView::default() },
+        Written::Text(text) => WrittenView { kind: "text", text: text.clone(), ..WrittenView::default() },
+        Written::Table(_) if written.field("from").is_some() || written.field("offset").is_some() => {
+            WrittenView { kind: "from", from: field("from"), offset: field("offset"), ..WrittenView::default() }
+        }
+        Written::Table(_) => WrittenView { kind: "order", after: field("after"), before: field("before"), ..WrittenView::default() },
+    }
 }
 
 fn item_kind(kind: &str) -> Result<ItemKind, String> {
@@ -95,10 +121,11 @@ fn timeline_view(timeline: ProjectTimeline) -> TimelineView {
                     threads: item.threads.clone(),
                     places: item.places.clone(),
                     cast: item.cast.clone(),
-                    when: item.when.clone(),
+                    when: written_view(&item.when),
                     time: item.time_label.clone(),
                     minute: item.placed.time.map(|t| t.minute),
                     loose: item.placed.loose,
+                    gap: item.gap.clone(),
                     problem: item.placed.problem.as_ref().map(problem),
                 }
             })

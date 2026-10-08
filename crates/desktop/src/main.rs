@@ -19,6 +19,7 @@ mod settings;
 mod spell;
 mod status;
 mod tauri;
+mod timeline;
 mod typography;
 mod welcome;
 mod workspace;

@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::fs;
 
-use needle_core::calendar::Calendar;
+use needle_core::calendar::{Calendar, MINUTES_PER_DAY, Moment};
 use needle_core::header::Header;
 use needle_core::links::name_key;
 use needle_core::names::Owner;
@@ -39,11 +39,14 @@ pub struct TimelineItem {
     pub threads: Vec<String>,
     pub places: Vec<String>,
     pub cast: Vec<String>,
-    /// The `when` as written, for editing; empty if there's none.
-    pub when: String,
+    /// The `when` as written, for editing.
+    pub when: Written,
     pub placed: Placed,
     /// Its time in words (`14 March 1998, 19:00`, `Day 4`), if it has one.
     pub time_label: Option<String>,
+    /// How long after the item before it in story order: `6 hours`, `19 years`, or `then` when
+    /// either is placed by order alone. `None` for the first, for the tray, and at the same time.
+    pub gap: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,6 +104,7 @@ impl Vault {
                 path: slug,
                 placed: Placed::default(),
                 time_label: None,
+                gap: None,
             });
         }
         let mut owners = vec![project.notes()];
@@ -127,6 +131,7 @@ impl Vault {
                     path: note.path,
                     placed: Placed::default(),
                     time_label: None,
+                    gap: None,
                 });
             }
         }
@@ -136,6 +141,15 @@ impl Vault {
         for (item, placed) in items.iter_mut().zip(resolved.items.iter()) {
             item.time_label = placed.time.map(|t| resolved.label(&calendar, t));
             item.placed = placed.clone();
+        }
+        for pair in resolved.order.windows(2) {
+            let (before, after) = (&items[pair[0]].placed, &items[pair[1]].placed);
+            items[pair[1]].gap = match (before.time, after.time) {
+                (Some(a), Some(b)) if resolved.days_only => Some(days_between(a, b)),
+                (Some(a), Some(b)) => Some(calendar.between(a, b)),
+                _ => Some("then".to_owned()),
+            }
+            .filter(|gap| !gap.is_empty());
         }
         Ok(ProjectTimeline { calendar: calendar.name.clone(), items, order: resolved.order, days_only: resolved.days_only })
     }
@@ -207,6 +221,20 @@ impl Vault {
     }
 }
 
+/// The time between two days of a timeline counted in days: hours, then days, never months.
+fn days_between(a: Moment, b: Moment) -> String {
+    let minutes = (b.minute - a.minute).abs();
+    let days = minutes / MINUTES_PER_DAY;
+    match (days, minutes / 60) {
+        (0, 0) if minutes == 0 => String::new(),
+        (0, 0) => format!("{minutes} minutes"),
+        (0, 1) => "an hour".to_owned(),
+        (0, hours) => format!("{hours} hours"),
+        (1, _) => "a day".to_owned(),
+        (days, _) => format!("{days} days"),
+    }
+}
+
 /// A plot point's aliases, by owner and path, so `when` can name it by one.
 fn aliases(vault: &Vault, project: &Project) -> Result<HashMap<(Owner, String), Vec<String>>> {
     let mut found = HashMap::new();
@@ -222,14 +250,33 @@ fn aliases(vault: &Vault, project: &Project) -> Result<HashMap<(Owner, String), 
     Ok(found)
 }
 
-/// The `when` as the writer would type it again: the text itself, or a table's fields.
-fn when_text(header: &Header) -> String {
+/// A `when` as it's written in the header, whether or not it can be read.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Written {
+    #[default]
+    None,
+    /// `when = "3 Thaw 412"` or `when = "Day 4"`.
+    Text(String),
+    /// `when = { from = …, offset = … }` or `{ after = …, before = … }`: its string fields.
+    Table(Vec<(String, String)>),
+}
+
+impl Written {
+    pub fn field(&self, key: &str) -> Option<&str> {
+        match self {
+            Self::Table(fields) => fields.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str()),
+            _ => None,
+        }
+    }
+}
+
+fn when_text(header: &Header) -> Written {
     if let Some(text) = header.text("when") {
-        return text;
+        return Written::Text(text);
     }
     match header.table("when") {
-        Some(fields) => fields.iter().map(|(k, v)| format!("{k} = {v:?}")).collect::<Vec<_>>().join(", "),
-        None => String::new(),
+        Some(fields) => Written::Table(fields),
+        None => Written::None,
     }
 }
 

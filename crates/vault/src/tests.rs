@@ -1104,7 +1104,10 @@ fn the_timeline_places_scenes_and_plot_points_in_the_worlds_calendar() {
     assert_eq!(titles, ["Flashback", "The Drowning", "Untitled scene", "Next", "The ledger leaves port", "Lost"]);
     let item = |title: &str| timeline.items.iter().find(|i| i.title == title).unwrap();
     assert_eq!(item("Next").time_label.as_deref(), Some("4 Bloom 412 AD, 01:00"));
-    assert_eq!(item("Next").when, "from = \"untitled scene\", offset = \"+6h\"");
+    assert_eq!(item("Next").when.field("offset"), Some("+6h"));
+    assert_eq!(item("Untitled scene").when, Written::Text("3 Bloom 412 AD 19:00".into()));
+    let gaps: Vec<Option<&str>> = timeline.order.iter().map(|&i| timeline.items[i].gap.as_deref()).collect();
+    assert_eq!(gaps, [None, Some("then"), Some("411 years"), Some("6 hours"), Some("then"), Some("then")]);
     assert_eq!(item("Untitled scene").reading, Some(1));
     assert_eq!(item("Untitled scene").pov.as_deref(), Some("Mara Venn"));
     assert_eq!(item("The Drowning").owner, Owner::World("glass-coast".into()));
