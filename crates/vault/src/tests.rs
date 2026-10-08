@@ -719,3 +719,38 @@ fn a_scene_lists_its_names_and_hints_at_missing_ones() {
     assert!(!tidewater.scene("next").unwrap().header().unwrap().contains("pov"));
     assert!(vault.set_scene_names(&tidewater, "next", "mood", &[]).is_err());
 }
+
+#[test]
+fn a_project_with_no_board_reads_as_an_empty_one() {
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    assert_eq!(project.network().unwrap(), needle_core::network::Network::default());
+    assert!(!project.root().join("network.toml").exists(), "nothing is written until the board is arranged");
+}
+
+#[test]
+fn the_board_survives_a_round_trip_to_disk() {
+    use needle_core::network::{Mark, Network, Node, Zone};
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+
+    let mut board = Network::default();
+    board.nodes.insert("nt_mara".into(), Node { at: (120.0, 240.0), turn: -1.5 });
+    board.zones.push(Zone { id: "zn_1".into(), name: "The harbour".into(), at: (0.0, 0.0), size: (520.0, 380.0), turn: 0.0 });
+    board.marks.push(Mark::Note { id: "mk_1".into(), text: "who has it now?".into(), at: (600.0, 120.0), turn: -6.0, on: None });
+    project.save_network(&board).unwrap();
+
+    assert_eq!(project.network().unwrap(), board);
+    // Reopening the project, as the app does when switching back to it, reads the same board.
+    let reopened = vault.project(&project.slug).unwrap();
+    assert_eq!(reopened.network().unwrap(), board);
+}
+
+#[test]
+fn a_damaged_board_file_is_reported_not_ignored() {
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    fs::write(project.root().join("network.toml"), "nodes = \"not a table\"").unwrap();
+    let error = project.network().unwrap_err().to_string();
+    assert!(error.contains("network.toml"), "{error}");
+}

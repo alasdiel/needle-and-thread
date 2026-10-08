@@ -6,6 +6,7 @@ use std::time::SystemTime;
 use needle_core::header::Header;
 use needle_core::id::{make_id, slugify};
 use needle_core::names::Owner;
+use needle_core::network::Network;
 use needle_core::outline::{Chapter, Outline, OutlineError};
 use needle_core::project::ProjectConfig;
 use needle_core::scene::SceneFile;
@@ -96,6 +97,20 @@ impl Project {
 
     pub fn save_outline(&self, outline: &Outline) -> Result<()> {
         Ok(write_atomically(&self.root.join("outline.toml"), outline.to_toml().as_bytes())?)
+    }
+
+    /// How the network board is arranged (`network.toml`). A project that has never had its
+    /// board opened has no file, which is an empty board rather than an error.
+    pub fn network(&self) -> Result<Network> {
+        match fs::read_to_string(self.root.join("network.toml")) {
+            Ok(text) => Ok(Network::parse(&text).map_err(Error::Invalid)?),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Network::default()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    pub fn save_network(&self, network: &Network) -> Result<()> {
+        Ok(write_atomically(&self.root.join("network.toml"), network.to_toml().as_bytes())?)
     }
 
     /// Reads the outline, applies `edit`, and saves it if `edit` succeeded.

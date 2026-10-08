@@ -370,6 +370,31 @@ Two tools, for thinking on the board itself:
 
 Marks are the only handwriting on the board, because you wrote them. They're kept in `network.toml` alongside the node positions.
 
+### `network.toml`
+
+One per project, holding only how the board is arranged. What's *on* the board comes from the notes themselves, so this file never has to be repaired: a card with no entry has simply never been placed, and an entry for a note that's gone is ignored.
+
+```toml
+[nodes]
+nt_8d1c2e5fqa = { at = [120.0, 240.0], turn = -1.5 }
+
+[[zones]]
+id = "zn_4k2m9a7x1q"
+name = "The harbour"
+at = [0.0, 0.0]
+size = [520.0, 380.0]
+
+[[marks]]
+kind = "note"                  # handwritten; "ring" and "arrow" are marker
+id = "mk_7f3k9qa2mx"
+text = "who has it now?"
+at = [600.0, 120.0]
+turn = -6.0
+on = "nt_8d1c2e5fqa"           # dropped on a card: `at` is measured from it, and it travels with it
+```
+
+`turn` is a tilt in degrees, and is left out when it's zero.
+
 ### A plot point
 
 ```markdown
