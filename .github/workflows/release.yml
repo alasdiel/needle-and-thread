@@ -1,0 +1,117 @@
+# Builds the Linux packages and attaches them to a draft GitHub Release.
+#
+# To cut a release: set the version in Cargo.toml (workspace.package) and
+# crates/desktop/src-tauri/tauri.conf.json, commit, then
+#   git tag v0.1.0 && git push origin v0.1.0
+# The release is left as a DRAFT so you can read the notes and try the packages before
+# anyone can download them. Publish it from the Releases page when you're happy.
+#
+# Run it from the Actions tab (workflow_dispatch) to build the packages without releasing
+# anything; they come back as workflow artifacts.
+#
+# Windows is not built here yet. See docs/DESIGN.md §2 "Packaging".
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  # Lets linuxdeploy's AppImage tooling run without FUSE, which CI runners don't have.
+  APPIMAGE_EXTRACT_AND_RUN: 1
+
+jobs:
+  linux:
+    name: Linux packages
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      # The tag has to agree with the version in the manifests, or the packages come out
+      # labelled with a version nobody asked for.
+      - name: Check the tag matches the version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          conf=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' crates/desktop/src-tauri/tauri.conf.json | head -1)
+          crate=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -1)
+          echo "tag $tag · tauri.conf.json $conf · Cargo.toml $crate"
+          if [ "$tag" != "$conf" ] || [ "$tag" != "$crate" ]; then
+            echo "::error::Tag v$tag doesn't match tauri.conf.json ($conf) and Cargo.toml ($crate)."
+            exit 1
+          fi
+
+      # Built on 24.04 so the packages run on anything with that glibc or newer. Tauri uses the
+      # system WebKitGTK at runtime rather than bundling it, so this is a build dependency only.
+      - name: Install system libraries
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      # wasm32 by name: trunk builds the Leptos frontend for it, and rustup won't add a target
+      # from rust-toolchain.toml to a stable toolchain the runner already had.
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: rust-release
+
+      # trunk builds the Leptos frontend; its pre_build hook runs the editor's esbuild bundle,
+      # so pnpm has to be here before cargo tauri build.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: editor/pnpm-lock.yaml
+
+      - name: Install the editor's packages
+        run: pnpm install --frozen-lockfile
+        working-directory: editor
+
+      # Prebuilt binaries: compiling these from source costs more than the app does.
+      - uses: cargo-bins/cargo-binstall@main
+
+      - name: Install trunk and the Tauri CLI
+        run: cargo binstall -y --no-confirm trunk tauri-cli
+
+      - name: Build
+        run: cargo tauri build --bundles deb,appimage
+        working-directory: crates/desktop
+
+      - name: Collect the packages
+        id: collect
+        run: |
+          target=$(cargo metadata --no-deps --format-version 1 | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
+          mkdir -p packages
+          cp "$target"/release/bundle/deb/*.deb packages/
+          cp "$target"/release/bundle/appimage/*.AppImage packages/
+          cp "$target"/release/needle-desktop packages/needle-and-thread-linux-x86_64
+          ls -lh packages/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: packages/*
+          if-no-files-found: error
+
+      # Draft, so nothing is public until you say so.
+      - name: Draft the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" packages/* \
+            --draft \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes

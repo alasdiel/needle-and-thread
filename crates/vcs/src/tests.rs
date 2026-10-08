@@ -135,7 +135,12 @@ fn timing_on_a_million_word_vault() {
 
 fn bare_remote() -> (TempDir, String) {
     let dir = TempDir::new().unwrap();
-    Repository::init_bare(dir.path()).unwrap();
+    // Name the branch, like open_or_init does. Left to init_bare, HEAD follows whatever this
+    // machine's init.defaultBranch says, and a clone of the remote comes out on that branch
+    // instead of main — so pushing main back finds nothing to push.
+    let mut options = RepositoryInitOptions::new();
+    options.bare(true).initial_head(BRANCH);
+    Repository::init_opts(dir.path(), &options).unwrap();
     let url = dir.path().to_str().unwrap().to_owned();
     (dir, url)
 }

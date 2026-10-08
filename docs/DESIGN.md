@@ -26,7 +26,8 @@ Needle and Thread is a structure-first writing app for long fiction and long-for
 | Shared material | Series sharing a world; self-contained projects too |
 | Network | A map you build: automatic links plus named relationships you draw, changing over story time. One per project, can include notes from the world and other projects (§7) |
 | Plot points | One note type with events (backstory included); can sit on the timeline |
-| Devices | One Linux desktop now. Phone for capture, tagging and lookup. More computers, including Windows, later |
+| Devices | Linux desktop and the phone (a full client, §9). **Windows is a release target now, not "later"** — other people are meant to run the app, which they weren't before |
+| Packaging | GitHub Actions. CI runs the tests, clippy and the editor's typecheck on every push; a `v*` tag builds the packages and leaves a **draft** release to publish by hand. Linux ships a `.deb` and an AppImage. **Everything the app needs comes with it**, rather than being a system package the reader has to install first: the Hunspell dictionary as a bundled resource, SQLite and libgit2/libssh2 compiled in already. The one exception is the webview, which can't be bundled — WebKitGTK on Linux, WebView2 on Windows |
 | Desktop app | Tauri 2 + Leptos, in Rust |
 | Editor | ProseMirror as a small JavaScript island (Rust has no mature rich-text editor) |
 | Editor feel | Like Medium: formatting shows as formatting, no visible Markdown symbols |
@@ -34,7 +35,7 @@ Needle and Thread is a structure-first writing app for long fiction and long-for
 | Colours | From Gwen (League of Legends): aqua threads, saturated blues, violet. Dark, a Shadow Isles cutting mat, is the main look; light is pattern tissue. System, Light or Dark is chosen per computer |
 | Fonts | Bundled, all OFL: Literata for the text, Fraunces (soft and wonky) for titles, Alegreya SC for labels, Alegreya Sans for controls |
 | Typography as you type | Four separate settings, each explained in the app and on by default: curly double quotes, curly single quotes/apostrophes, `--` → em dash, `...` → ellipsis. They never rewrite existing text |
-| Spellcheck | Our own, not the webview's: spellbook (Rust, Hunspell-compatible) with the installed US English (`en_US`) dictionary. Underlines everything as soon as a scene opens, accepts names used in `[[links]]`, right-click for suggestions or "Add to dictionary" (`.needle/dictionary.txt`) |
+| Spellcheck | Our own, not the webview's: spellbook (Rust, Hunspell-compatible) with a bundled US English (`en_US`) dictionary — shipped with the app, since an AppImage or a Windows install can't rely on a system `hunspell-en-us`. Underlines everything as soon as a scene opens, accepts names used in `[[links]]`, right-click for suggestions or "Add to dictionary" (`.needle/dictionary.txt`) |
 | Phone app | PWA on GitHub Pages, sharing Rust UI code with the desktop |
 | Storage & sync | One private GitHub "vault" repo for all writing; any project can be moved out to its own repo later |
 | Vault location | Chosen with a folder picker on first launch; the app remembers it |
@@ -534,7 +535,15 @@ Requested 2026-10-03; not needed for the first phases.
 | 3 · Timeline + network | Calendars, resolver, timeline view, plot points, relationships, network map with story-time slider |
 | 4 · Sync + phone | Two-way sync, Pages deploy, phone capture, tagging and lookup, inbox filing, QR setup |
 | 5 · Sharing | Worker, encryption, reader page, comments and anchoring, author tools, desktop comments panel |
-| Later | Windows builds; moving a project out of the vault; a chapter as one continuous document; citation machine for nonfiction (§11); notes-to-self inside the prose |
+| Later | Moving a project out of the vault; a chapter as one continuous document; citation machine for nonfiction (§11); notes-to-self inside the prose |
+
+**Windows builds** are a high priority, taken on their own rather than inside a phase, because other people are meant to run the app. In order:
+
+1. **Bundle the Hunspell dictionary** as a Tauri resource instead of reading `/usr/share/hunspell` (`src-tauri/src/spelling.rs`). Needed for the Linux AppImage too, so it comes first and pays off immediately.
+2. **Build on a `windows-latest` runner** in `release.yml`, producing an MSI and an NSIS installer. SQLite (`rusqlite` bundled) and libgit2/libssh2 (`git2` vendored) already compile from source, so they need no system packages.
+3. **Check what WebView2 does differently.** This is the real work: the Linux webview is WebKitGTK and Windows substitutes Chromium-based WebView2, which can't be bundled away. `light-dark()`, container queries and CSS masks are all in current Chromium, so the styling should hold, but it has to be looked at rather than assumed.
+4. **Keys for backup.** `ssh_key_files` (`crates/vcs/src/lib.rs`) finds keys through `HOME`, which Windows doesn't set — it uses `USERPROFILE` — so backup would quietly find no keys at all. ssh-agent is a service there rather than a socket, and libgit2 looks for `known_hosts` in its own way. The app's own folders are fine: they come from Tauri's `app_data_dir`/`app_cache_dir`, which are already per-platform.
+5. **Unsigned installers** warn on first run (SmartScreen). A certificate costs money; decide whether to buy one or tell readers to click through.
 
 ## 14. Risks
 
