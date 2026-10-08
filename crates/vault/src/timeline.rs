@@ -3,7 +3,6 @@
 //! files every time it's asked for, so it's never out of date.
 
 use std::collections::HashMap;
-use std::fs;
 
 use needle_core::calendar::{Calendar, MINUTES_PER_DAY, Moment};
 use needle_core::header::Header;
@@ -63,7 +62,7 @@ impl Vault {
     /// The calendar `project` uses: its own `[calendar]`, else its world's, else the real one.
     pub fn calendar(&self, project: &Project) -> Result<Calendar> {
         let read = |path: std::path::PathBuf, what: &str| -> Result<Option<Calendar>> {
-            let text = fs::read_to_string(path)?;
+            let text = self.store.read_opt(&path)?.unwrap_or_default();
             Calendar::from_settings(&text).map_err(|e| Error::Invalid(format!("the calendar in {what}: {e}")))
         };
         if let Some(calendar) = read(project.root().join("project.toml"), "project.toml")? {

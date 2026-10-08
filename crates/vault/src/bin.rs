@@ -3,8 +3,8 @@
 //! with `cut_*` fields added to its header; a passage becomes a file of its own, which records
 //! the scene it came from and the text either side of it.
 
-use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use needle_core::header::Header;
 use needle_core::names::Owner;
@@ -13,7 +13,8 @@ use needle_core::scene::SceneFile;
 use needle_core::words::count_markdown_words;
 
 use crate::doc;
-use crate::files::{checked_name, unique_file, write_atomically};
+use crate::files::checked_name;
+use crate::store::{Store, unique_file};
 use crate::{Error, Result};
 
 /// The fields cutting adds to a scene's or note's header, taken out again when it's restored.
@@ -68,11 +69,12 @@ pub struct CutItem {
 pub struct Bin {
     owner: Owner,
     dir: PathBuf,
+    store: Arc<dyn Store>,
 }
 
 impl Bin {
-    pub(crate) fn new(owner: Owner, dir: PathBuf) -> Self {
-        Self { owner, dir }
+    pub(crate) fn new(owner: Owner, dir: PathBuf, store: Arc<dyn Store>) -> Self {
+        Self { owner, dir, store }
     }
 
     pub fn owner(&self) -> &Owner {
@@ -85,24 +87,21 @@ impl Bin {
     }
 
     pub(crate) fn read(&self, name: &str) -> Result<SceneFile> {
-        doc::read(&self.file_path(name)?, &format!("{name} in the cut bin"))
+        doc::read(self.store.as_ref(), &self.file_path(name)?, &format!("{name} in the cut bin"))
     }
 
     /// Writes `file` into the bin as `stem.md` (or `stem-2.md`…) and returns its name.
     pub(crate) fn add(&self, stem: &str, file: &SceneFile) -> Result<String> {
-        let path = unique_file(&self.dir, stem, "md");
-        write_atomically(&path, file.to_string().as_bytes())?;
+        let path = unique_file(self.store.as_ref(), &self.dir, stem, "md");
+        self.store.write(&path, file.to_string().as_bytes())?;
         Ok(path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_owned())
     }
 
     /// The names of everything in the bin, in no particular order.
     pub fn names(&self) -> Result<Vec<String>> {
         let mut names = Vec::new();
-        if !self.dir.is_dir() {
-            return Ok(names);
-        }
-        for entry in fs::read_dir(&self.dir)? {
-            let path = entry?.path();
+        for entry in self.store.list(&self.dir)? {
+            let path = entry.path;
             if path.extension().is_some_and(|ext| ext == "md")
                 && let Some(name) = path.file_stem().and_then(|s| s.to_str()).filter(|n| !n.starts_with('.'))
             {
@@ -174,7 +173,7 @@ impl Bin {
         if self.item(name)?.kind != CutKind::Passage {
             return Err(Error::Invalid(format!("{name} isn't a passage")));
         }
-        Ok(fs::remove_file(self.file_path(name)?)?)
+        self.store.remove_file(&self.file_path(name)?)
     }
 
     /// Reads a scene or note to restore: its file with the `cut_*` fields taken out of its

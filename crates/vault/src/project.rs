@@ -1,7 +1,6 @@
-use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::sync::Arc;
 
 use needle_core::header::Header;
 use needle_core::id::{make_id, slugify};
@@ -14,8 +13,9 @@ use needle_core::words::count_markdown_words;
 
 use crate::bin::{self, Bin, CutItem, CutKind, Passage};
 use crate::doc;
-use crate::files::{checked_name, unique_file, utc_iso, utc_stamp, write_atomically};
+use crate::files::{checked_name, utc_iso, utc_stamp};
 use crate::notes::Notes;
+use crate::store::{Store, unique_file};
 use crate::{Error, Result};
 
 #[derive(Debug, Clone)]
@@ -26,6 +26,7 @@ pub struct Project {
     root: PathBuf,
     /// The vault's note templates.
     templates: PathBuf,
+    store: Arc<dyn Store>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,11 +48,13 @@ pub enum Placement {
 }
 
 impl Project {
-    pub(crate) fn open(root: PathBuf, templates: PathBuf) -> Result<Self> {
+    pub(crate) fn open(root: PathBuf, templates: PathBuf, store: Arc<dyn Store>) -> Result<Self> {
         let config_path = root.join("project.toml");
-        let text = fs::read_to_string(&config_path).map_err(|e| match e.kind() {
-            io::ErrorKind::NotFound => Error::NotFound(format!("no project at {}", root.display())),
-            _ => Error::Io(e),
+        let text = store.read_to_string(&config_path).map_err(|e| match &e {
+            Error::Io(e) if e.kind() == io::ErrorKind::NotFound => {
+                Error::NotFound(format!("no project at {}", root.display()))
+            }
+            _ => e,
         })?;
         let config = ProjectConfig::parse(&text).map_err(Error::Invalid)?;
         let slug = root
@@ -63,6 +66,7 @@ impl Project {
             config,
             root,
             templates,
+            store,
         })
     }
 
@@ -72,48 +76,52 @@ impl Project {
 
     /// The project's own notes, in `notes/`.
     pub fn notes(&self) -> Notes {
-        Notes::new(Owner::Project(self.slug.clone()), self.root.join("notes"), self.root.join("cut"), self.templates.clone())
+        Notes::new(
+            Owner::Project(self.slug.clone()),
+            self.root.join("notes"),
+            self.root.join("cut"),
+            self.templates.clone(),
+            self.store.clone(),
+        )
     }
 
     /// The project's cut bin, in `cut/`. Its notes are binned there too.
     pub fn bin(&self) -> Bin {
-        Bin::new(Owner::Project(self.slug.clone()), self.root.join("cut"))
+        Bin::new(Owner::Project(self.slug.clone()), self.root.join("cut"), self.store.clone())
     }
 
     /// Saves new settings to `project.toml`, leaving anything else in it (a `[calendar]`, say)
     /// as it was.
     pub fn save_config(&mut self, config: ProjectConfig) -> Result<()> {
         let path = self.root.join("project.toml");
-        let existing = fs::read_to_string(&path).unwrap_or_default();
-        write_atomically(&path, config.update_toml(&existing).as_bytes())?;
+        let existing = self.store.read_opt(&path)?.unwrap_or_default();
+        self.store.write(&path, config.update_toml(&existing).as_bytes())?;
         self.config = config;
         Ok(())
     }
 
     pub fn outline(&self) -> Result<Outline> {
-        match fs::read_to_string(self.root.join("outline.toml")) {
-            Ok(text) => Ok(Outline::parse(&text)?),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Outline::default()),
-            Err(e) => Err(e.into()),
+        match self.store.read_opt(&self.root.join("outline.toml"))? {
+            Some(text) => Ok(Outline::parse(&text)?),
+            None => Ok(Outline::default()),
         }
     }
 
     pub fn save_outline(&self, outline: &Outline) -> Result<()> {
-        Ok(write_atomically(&self.root.join("outline.toml"), outline.to_toml().as_bytes())?)
+        self.store.write(&self.root.join("outline.toml"), outline.to_toml().as_bytes())
     }
 
     /// How the network board is arranged (`network.toml`). A project that has never had its
     /// board opened has no file, which is an empty board rather than an error.
     pub fn network(&self) -> Result<Network> {
-        match fs::read_to_string(self.root.join("network.toml")) {
-            Ok(text) => Ok(Network::parse(&text).map_err(Error::Invalid)?),
-            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Network::default()),
-            Err(e) => Err(e.into()),
+        match self.store.read_opt(&self.root.join("network.toml"))? {
+            Some(text) => Ok(Network::parse(&text).map_err(Error::Invalid)?),
+            None => Ok(Network::default()),
         }
     }
 
     pub fn save_network(&self, network: &Network) -> Result<()> {
-        Ok(write_atomically(&self.root.join("network.toml"), network.to_toml().as_bytes())?)
+        self.store.write(&self.root.join("network.toml"), network.to_toml().as_bytes())
     }
 
     /// Reads the outline, applies `edit`, and saves it if `edit` succeeded.
@@ -148,7 +156,7 @@ impl Project {
     }
 
     pub fn scene(&self, slug: &str) -> Result<SceneFile> {
-        doc::read(&self.scene_path(slug)?, &format!("scene {slug}"))
+        doc::read(self.store.as_ref(), &self.scene_path(slug)?, &format!("scene {slug}"))
     }
 
     pub fn scene_info(&self, slug: &str) -> Result<SceneInfo> {
@@ -161,13 +169,9 @@ impl Project {
     }
 
     fn scene_slugs(&self) -> Result<Vec<String>> {
-        let dir = self.root.join("manuscript");
         let mut slugs = Vec::new();
-        if !dir.is_dir() {
-            return Ok(slugs);
-        }
-        for entry in fs::read_dir(dir)? {
-            let path = entry?.path();
+        for entry in self.store.list(&self.root.join("manuscript"))? {
+            let path = entry.path;
             if path.extension().is_some_and(|ext| ext == "md")
                 && let Some(slug) = path.file_stem().and_then(|s| s.to_str())
             {
@@ -183,7 +187,7 @@ impl Project {
         let mut order: Vec<String> = outline.scenes().map(str::to_owned).collect();
         let mut unplaced: Vec<String> = self.scene_slugs()?.into_iter().filter(|s| !order.contains(s)).collect();
         unplaced.sort();
-        order.retain(|slug| self.scene_path(slug).is_ok_and(|p| p.is_file()));
+        order.retain(|slug| self.scene_path(slug).is_ok_and(|p| self.store.is_file(&p)));
         order.extend(unplaced);
         Ok(order)
     }
@@ -213,7 +217,7 @@ impl Project {
             Placement::After { .. } => {}
         }
 
-        let path = unique_file(&self.root.join("manuscript"), &slugify(title), "md");
+        let path = unique_file(self.store.as_ref(), &self.root.join("manuscript"), &slugify(title), "md");
         let slug = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_owned();
         let mut header = Header::new();
         header.set_str("id", &make_id("sc", fastrand::u64(..)));
@@ -224,7 +228,7 @@ impl Project {
         if !markdown.is_empty() {
             scene.set_markdown(markdown);
         }
-        write_atomically(&path, scene.to_string().as_bytes())?;
+        self.store.write(&path, scene.to_string().as_bytes())?;
 
         match placement {
             Placement::End { chapter } => outline.insert_scene(&chapter, usize::MAX, &slug)?,
@@ -236,17 +240,17 @@ impl Project {
 
     /// Replaces a scene's text, keeping its header. Returns whether the file changed.
     pub fn save_body(&self, slug: &str, markdown: &str) -> Result<bool> {
-        doc::save_body(&self.scene_path(slug)?, &format!("scene {slug}"), markdown)
+        doc::save_body(self.store.as_ref(), &self.scene_path(slug)?, &format!("scene {slug}"), markdown)
     }
 
     /// Changes a scene with `edit`, writing it back if anything changed.
     pub(crate) fn edit_scene(&self, slug: &str, edit: impl FnOnce(&mut SceneFile) -> Result<()>) -> Result<bool> {
-        doc::edit(&self.scene_path(slug)?, &format!("scene {slug}"), edit)
+        doc::edit(self.store.as_ref(), &self.scene_path(slug)?, &format!("scene {slug}"), edit)
     }
 
     /// Edits a scene's header in place; fields `edit` doesn't touch keep their formatting.
     pub fn update_header(&self, slug: &str, edit: impl FnOnce(&mut Header)) -> Result<SceneInfo> {
-        let scene = doc::update_header(&self.scene_path(slug)?, &format!("scene {slug}"), edit)?;
+        let scene = doc::update_header(self.store.as_ref(), &self.scene_path(slug)?, &format!("scene {slug}"), edit)?;
         info(slug, &scene)
     }
 
@@ -274,7 +278,7 @@ impl Project {
             (title, after)
         });
 
-        let now = SystemTime::now();
+        let now = self.store.now();
         let mut header = scene.header()?;
         header.set_str("cut_at", &utc_iso(now));
         header.set_str("cut_from_scene", slug);
@@ -286,12 +290,12 @@ impl Project {
 
         // Copy first, then update the outline, then remove: a crash midway leaves a duplicate,
         // never a loss.
-        let cut_path = unique_file(&self.root.join("cut"), &format!("{}-{slug}", utc_stamp(now)), "md");
-        write_atomically(&cut_path, scene.to_string().as_bytes())?;
+        let cut_path = unique_file(self.store.as_ref(), &self.root.join("cut"), &format!("{}-{slug}", utc_stamp(now)), "md");
+        self.store.write(&cut_path, scene.to_string().as_bytes())?;
         if outline.remove_scene(slug) {
             self.save_outline(&outline)?;
         }
-        fs::remove_file(path)?;
+        self.store.remove_file(&path)?;
         Ok(cut_path)
     }
 
@@ -301,7 +305,7 @@ impl Project {
             return Err(Error::Invalid("there's no text to cut".into()));
         }
         let title = self.scene_info(scene)?.title;
-        let now = SystemTime::now();
+        let now = self.store.now();
         let file = bin::passage_file(passage, &utc_iso(now), scene, &title);
         let bin = self.bin();
         let name = bin.add(&format!("{}-{scene}-passage", utc_stamp(now)), &file)?;
@@ -322,10 +326,10 @@ impl Project {
             .str("cut_from_scene")
             .filter(|s| checked_name(s).is_ok())
             .map_or_else(|| slugify(header.title().unwrap_or(name)), str::to_owned);
-        let path = unique_file(&self.root.join("manuscript"), &stem, "md");
+        let path = unique_file(self.store.as_ref(), &self.root.join("manuscript"), &stem, "md");
         let slug = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default().to_owned();
         // Copy, then place, then remove: a crash midway leaves a duplicate, never a loss.
-        write_atomically(&path, scene.to_string().as_bytes())?;
+        self.store.write(&path, scene.to_string().as_bytes())?;
 
         let mut outline = self.outline()?;
         let after = cut.str("cut_after_scene");
@@ -342,7 +346,7 @@ impl Project {
         if placed {
             self.save_outline(&outline)?;
         }
-        fs::remove_file(bin.file_path(name)?)?;
+        self.store.remove_file(&bin.file_path(name)?)?;
         info(&slug, &scene)
     }
 

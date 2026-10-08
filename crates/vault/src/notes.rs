@@ -3,9 +3,8 @@
 //! in its folder, in one folder per type. Like a scene, a note keeps the file name it was made
 //! with: links find notes by title, so retitling one never moves it.
 
-use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::sync::Arc;
 
 use needle_core::header::Header;
 use needle_core::id::{make_id, slugify};
@@ -15,7 +14,8 @@ use needle_core::scene::SceneFile;
 
 use crate::bin::{Bin, CutKind};
 use crate::doc;
-use crate::files::{checked_name, unique_file, utc_iso, utc_stamp, write_atomically};
+use crate::files::{checked_name, utc_iso, utc_stamp};
+use crate::store::{Store, unique_file};
 use crate::{Error, Result};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +38,7 @@ pub struct Notes {
     /// The owner's cut bin. A world's sits beside its type folders, so listing skips it.
     bin: PathBuf,
     templates: PathBuf,
+    store: Arc<dyn Store>,
 }
 
 /// Header fields each type of note starts with, when the vault has no template for it yet.
@@ -56,8 +57,14 @@ const DEFAULT_TEMPLATES: [(NoteKind, &str); 7] = [
 const OWN_FIELDS: [&str; 3] = ["id", "type", "title"];
 
 impl Notes {
-    pub(crate) fn new(owner: Owner, root: PathBuf, bin: PathBuf, templates: PathBuf) -> Self {
-        Self { owner, root, bin, templates }
+    pub(crate) fn new(owner: Owner, root: PathBuf, bin: PathBuf, templates: PathBuf, store: Arc<dyn Store>) -> Self {
+        Self {
+            owner,
+            root,
+            bin,
+            templates,
+            store,
+        }
     }
 
     pub fn owner(&self) -> &Owner {
@@ -79,20 +86,17 @@ impl Notes {
     /// Every note's path, without reading any of them, in no particular order.
     pub fn paths(&self) -> Result<Vec<String>> {
         let mut paths = Vec::new();
-        if !self.root.is_dir() {
-            return Ok(paths);
-        }
-        for entry in fs::read_dir(&self.root)? {
-            let path = entry?.path();
+        for entry in self.store.list(&self.root)? {
+            let path = entry.path;
             if path == self.bin {
                 continue;
             }
             let Some(name) = path.file_name().and_then(|n| n.to_str()).filter(|n| !n.starts_with('.')) else {
                 continue;
             };
-            if path.is_dir() {
-                for inner in fs::read_dir(&path)? {
-                    if let Some(stem) = markdown_stem(&inner?.path()) {
+            if entry.is_dir {
+                for inner in self.store.list(&path)? {
+                    if let Some(stem) = markdown_stem(&inner.path) {
                         paths.push(format!("{name}/{stem}"));
                     }
                 }
@@ -113,7 +117,7 @@ impl Notes {
     }
 
     pub fn read(&self, path: &str) -> Result<SceneFile> {
-        doc::read(&self.file_path(path)?, &format!("note {path}"))
+        doc::read(self.store.as_ref(), &self.file_path(path)?, &format!("note {path}"))
     }
 
     pub fn info(&self, path: &str) -> Result<NoteInfo> {
@@ -143,8 +147,8 @@ impl Notes {
         if !body.trim().is_empty() {
             note.set_markdown(&body);
         }
-        let file = unique_file(&self.root.join(kind.folder()), &slugify(title), "md");
-        write_atomically(&file, note.to_string().as_bytes())?;
+        let file = unique_file(self.store.as_ref(), &self.root.join(kind.folder()), &slugify(title), "md");
+        self.store.write(&file, note.to_string().as_bytes())?;
         let stem = markdown_stem(&file).unwrap_or_default();
         Ok(info(&format!("{}/{stem}", kind.folder()), &note))
     }
@@ -154,7 +158,7 @@ impl Notes {
     pub fn cut(&self, path: &str) -> Result<PathBuf> {
         let file = self.file_path(path)?;
         let mut note = self.read(path)?;
-        let now = SystemTime::now();
+        let now = self.store.now();
         let mut header = note.header()?;
         header.set_str("cut_at", &utc_iso(now));
         header.set_str("cut_from_note", path);
@@ -162,15 +166,15 @@ impl Notes {
 
         // Copy, then remove: a crash in between leaves two copies, never none.
         let stem = path.rsplit_once('/').map_or(path, |(_, stem)| stem);
-        let cut_path = unique_file(&self.bin, &format!("{}-{stem}", utc_stamp(now)), "md");
-        write_atomically(&cut_path, note.to_string().as_bytes())?;
-        fs::remove_file(file)?;
+        let cut_path = unique_file(self.store.as_ref(), &self.bin, &format!("{}-{stem}", utc_stamp(now)), "md");
+        self.store.write(&cut_path, note.to_string().as_bytes())?;
+        self.store.remove_file(&file)?;
         Ok(cut_path)
     }
 
     /// The owner's cut bin, where its notes go when they're cut.
     pub fn bin(&self) -> Bin {
-        Bin::new(self.owner.clone(), self.bin.clone())
+        Bin::new(self.owner.clone(), self.bin.clone(), self.store.clone())
     }
 
     /// Puts a note from the bin back where it was, or beside it if that name is taken now.
@@ -187,10 +191,10 @@ impl Notes {
             }
             _ => (shown.kind.folder().to_owned(), slugify(&shown.title)),
         };
-        let file = unique_file(&self.root.join(&folder), &stem, "md");
+        let file = unique_file(self.store.as_ref(), &self.root.join(&folder), &stem, "md");
         // Copy, then remove: a crash in between leaves two copies, never none.
-        write_atomically(&file, note.to_string().as_bytes())?;
-        fs::remove_file(bin.file_path(name)?)?;
+        self.store.write(&file, note.to_string().as_bytes())?;
+        self.store.remove_file(&bin.file_path(name)?)?;
         let stem = markdown_stem(&file).unwrap_or_default();
         let path = if folder.is_empty() { stem.to_owned() } else { format!("{folder}/{stem}") };
         Ok(info(&path, &note))
@@ -198,17 +202,17 @@ impl Notes {
 
     /// Changes a note with `edit`, writing it back if anything changed.
     pub(crate) fn edit(&self, path: &str, edit: impl FnOnce(&mut SceneFile) -> Result<()>) -> Result<bool> {
-        doc::edit(&self.file_path(path)?, &format!("note {path}"), edit)
+        doc::edit(self.store.as_ref(), &self.file_path(path)?, &format!("note {path}"), edit)
     }
 
     /// Replaces a note's text, keeping its header. Returns whether the file changed.
     pub fn save_body(&self, path: &str, markdown: &str) -> Result<bool> {
-        doc::save_body(&self.file_path(path)?, &format!("note {path}"), markdown)
+        doc::save_body(self.store.as_ref(), &self.file_path(path)?, &format!("note {path}"), markdown)
     }
 
     /// Edits a note's header in place; fields `edit` doesn't touch keep their formatting.
     pub fn update_header(&self, path: &str, edit: impl FnOnce(&mut Header)) -> Result<NoteInfo> {
-        let note = doc::update_header(&self.file_path(path)?, &format!("note {path}"), edit)?;
+        let note = doc::update_header(self.store.as_ref(), &self.file_path(path)?, &format!("note {path}"), edit)?;
         Ok(info(path, &note))
     }
 
@@ -216,11 +220,11 @@ impl Notes {
     fn template(&self, kind: NoteKind) -> Result<SceneFile> {
         for (default_kind, text) in DEFAULT_TEMPLATES {
             let file = self.templates.join(format!("{}.md", default_kind.as_str()));
-            if !file.exists() {
-                write_atomically(&file, text.as_bytes())?;
+            if !self.store.exists(&file) {
+                self.store.write(&file, text.as_bytes())?;
             }
         }
-        doc::read(&self.templates.join(format!("{}.md", kind.as_str())), &format!("template for {kind}"))
+        doc::read(self.store.as_ref(), &self.templates.join(format!("{}.md", kind.as_str())), &format!("template for {kind}"))
     }
 }
 
