@@ -1,45 +1,18 @@
-// Drives the network board's marks in a browser against `trunk serve`, with tauri-mock.js
-// standing in for the backend. `pnpm test` (Chromium) or `pnpm test:webkit`, with trunk
-// serving on :1420 or NEEDLE_URL pointing elsewhere; screenshots land in shots/. Each step says what it did and what it found; anything wrong
-// is reported as FAIL and the run carries on, so one broken tool doesn't hide the others.
-import { chromium, webkit } from 'playwright';
-import { readFileSync } from 'node:fs';
+// The writer's own marks on the network board: handwritten notes, marker rings and arrows,
+// moving them, rubbing them out. See harness.mjs for how a suite runs.
+import { openBoard } from './harness.mjs';
 
-const engine = process.argv[2] === 'webkit' ? webkit : chromium;
-const here = (f) => new URL(f, import.meta.url).pathname;
-const browser = await engine.launch();
-const page = await browser.newPage({ viewport: { width: 946, height: 1030 } });
-await page.addInitScript({ content: readFileSync(here('./tauri-mock.js'), 'utf8') });
-
-const problems = [];
-page.on('pageerror', (e) => problems.push(`page error: ${e.message}`));
-page.on('console', (m) => {
-  if (m.type() === 'error') problems.push(`console error: ${m.text().slice(0, 300)}`);
-});
-
-let failures = 0;
-const check = (what, ok, detail = '') => {
-  if (!ok) failures++;
-  console.log(`${ok ? 'ok  ' : 'FAIL'} ${what}${detail ? ` — ${detail}` : ''}`);
-};
-const shot = (name) => page.screenshot({ path: here(`./shots/board-${name}.png`) });
-const saves = () => page.evaluate(() => window.__saves);
+const { page, check, shot, saves, settle, finish } = await openBoard('marks');
 const lastMarks = async () => (await saves()).at(-1)?.marks ?? [];
-const settle = () => page.waitForTimeout(250);
 // A new note takes focus on the next frame; type before then and the keys go nowhere.
 const focused = () => page.waitForFunction(() => document.activeElement?.classList.contains('mark-editing'), null, { timeout: 3000 });
-
-await page.goto(process.env.NEEDLE_URL ?? 'http://127.0.0.1:1420/');
-await page.waitForSelector('[title="Network board"]', { timeout: 60000 });
-await page.click('[title="Network board"]');
-await page.waitForSelector('.board [data-card]', { timeout: 10000 });
-await settle();
 await shot('1-open');
 
 // What network.toml already held is drawn.
 check('saved note is drawn', (await page.locator('.mark-note', { hasText: 'he knows' }).count()) === 1);
 check('saved ring is drawn', (await page.locator('.board-marks .marker-ink').count()) >= 1);
-check('toolbar shows three tools', (await page.locator('.board-tools button').count()) === 3);
+const tools = await page.locator('.board-tools button').allTextContents();
+check('toolbar has the tools in order', ['Move', 'String', 'Write', 'Marker', 'Zone'].every((t, i) => tools[i]?.trim() === t), tools.join(', '));
 
 // Screen spot of a card's middle, and of a point on the board in board units.
 const cardBox = async (title) => page.locator('[data-card]', { hasText: title }).boundingBox();
@@ -180,7 +153,4 @@ const drawnNotes = await page.locator('.mark-note').count();
 const savedNotes = (await lastMarks()).filter((m) => m.kind === 'note').length;
 check('reopened board draws every saved note', drawnNotes === savedNotes, `${drawnNotes} drawn, ${savedNotes} saved, ${kept} marks`);
 
-check('no page or console errors', problems.length === 0, problems.join(' | '));
-console.log(`\n${failures === 0 ? 'all passed' : `${failures} failed`} (${process.argv[2] ?? 'chromium'})`);
-await browser.close();
-process.exit(failures === 0 ? 0 : 1);
+process.exitCode = (await finish()) === 0 ? 0 : 1;

@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node board.mjs chromium",
-    "test:webkit": "node board.mjs webkit"
+    "test": "node marks.mjs chromium && node building.mjs chromium",
+    "test:webkit": "node marks.mjs webkit && node building.mjs webkit"
   },
   "devDependencies": {
     "playwright": "1.63.0"
