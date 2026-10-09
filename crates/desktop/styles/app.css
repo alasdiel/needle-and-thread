@@ -3787,14 +3787,26 @@ button.panel-row {
 
 /* --- The timeline (§6) ---------------------------------------------------------------------- */
 
-/* Story order runs down the page, a step per item, with a tape measure in the margin. Lanes are
-   columns; each scene is a little pattern piece with its piece number (its place in reading
-   order), and a plot point is a scrap of the violet note cloth. */
+/* Story order runs across the page, a step per item, with a tape measure along the top. Lanes
+   are rows whose names stay at the left; each scene is a little pattern piece with its piece
+   number (its place in reading order), and a plot point is a scrap of the violet note cloth.
+
+   timeline.rs puts no pixels in the markup: each row carries `--band` and `--row`, the board
+   carries `--lanes` and `--steps`, and everything below works those out. (`--lane` is
+   already the lane's colour, a few rules down, so the index is `--band`.) The container query at
+   the end of this section is what turns the same markup into a plain list at phone width. */
 .timeline {
   position: relative;
   flex: 1;
   display: flex;
   min-height: 0;
+  container-type: inline-size;
+  container-name: timeline;
+  /* The names column, the tape's depth, one step across, and a lane's depth. */
+  --tl-names: 136px;
+  --tl-tape: 46px;
+  --tl-step: 192px;
+  --tl-lane: 112px;
 }
 
 .timeline-main {
@@ -3842,35 +3854,40 @@ button.panel-row {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  /* Scrolling a piece into view has to clear the tape and the names, which sit over it. */
+  scroll-padding: var(--tl-tape) 0 0 var(--tl-names);
 }
 
 .timeline-inner {
   position: relative;
+  width: calc(var(--tl-names) + var(--steps) * var(--tl-step) + 24px);
+  height: calc(var(--tl-tape) + var(--lanes) * var(--tl-lane) + 24px);
 }
 
-/* Lane names stay in view while the timeline scrolls down under them. */
+/* Lane names stay at the left while the story scrolls past them. They follow the tape in flow,
+   so they start just below it without being told where. */
 .timeline-lanes {
   position: sticky;
-  top: 0;
+  left: 0;
   z-index: 2;
   display: flex;
-  height: 40px;
-  padding-left: 92px;
-  border-bottom: 1px solid var(--rule);
+  flex-direction: column;
+  width: var(--tl-names);
+  border-right: 1px solid var(--rule);
   background: color-mix(in srgb, var(--mat) 88%, transparent);
 }
 
 .lane-name {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 204px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  height: var(--tl-lane);
   padding: 0 12px;
   overflow: hidden;
   font-family: var(--font-label);
   font-size: var(--size-label);
   letter-spacing: 0.04em;
-  white-space: nowrap;
   text-overflow: ellipsis;
 }
 
@@ -3890,38 +3907,46 @@ button.panel-row {
 .lane-4 { --lane: light-dark(#c0362c, #ff8a80); }
 .lane-5 { --lane: var(--steel); }
 
+/* The lane's thread runs under its pieces rather than behind them: at this step a piece all but
+   fills its column, so a thread down the middle would be hidden and the lane would read as
+   loose cards. */
 .lane-thread {
   position: absolute;
-  width: 2px;
+  top: calc(var(--tl-tape) + var(--band) * var(--tl-lane) + 96px);
+  left: calc(var(--tl-names) + (var(--from) + 0.5) * var(--tl-step));
+  width: calc(var(--span) * var(--tl-step));
+  height: 2px;
   background: var(--lane);
   opacity: 0.55;
 }
 
-/* The tape measure: yellow tape with a tick every few pixels, stuck to the left edge. */
+/* The tape measure: yellow tape with a tick every few pixels, stuck along the top. */
 .tape-measure {
   position: sticky;
-  left: 14px;
-  z-index: 1;
-  width: 64px;
-  margin-left: 14px;
+  top: 0;
+  z-index: 3;
+  height: var(--tl-tape);
+  margin-left: var(--tl-names);
   border-radius: 2px;
   background-color: light-dark(#f1dc8a, #d9c26c);
-  background-image: repeating-linear-gradient(transparent 0 7px, rgb(40 30 0 / 0.35) 7px 8px);
+  background-image: repeating-linear-gradient(90deg, transparent 0 7px, rgb(40 30 0 / 0.35) 7px 8px);
   box-shadow: 0 1px 4px var(--shadow-color);
 }
 
 .tape-tick,
 .tape-gap {
   position: absolute;
-  left: 0;
-  width: 64px;
+  top: 0;
   color: #2a2208;
   letter-spacing: 0;
 }
 
+/* A time sits at its step; the gap sits in the space before it. */
 .tape-tick {
-  padding: 2px 4px 3px 6px;
-  border-top: 2px solid #2a2208;
+  left: calc(var(--row) * var(--tl-step));
+  width: 104px;
+  padding: 3px 5px 3px 7px;
+  border-left: 2px solid #2a2208;
   background: light-dark(#f1dc8a, #d9c26c);
   font-size: 11.5px;
   font-weight: 500;
@@ -3930,16 +3955,32 @@ button.panel-row {
 
 /* The time between, written on the tape in pencil. */
 .tape-gap {
-  padding: 1px 4px 1px 6px;
+  left: calc(var(--row) * var(--tl-step) - 86px);
+  width: 84px;
+  padding: 1px 4px;
   background: light-dark(#f1dc8a, #d9c26c);
   font-size: 11.5px;
   font-style: italic;
   line-height: 1.2;
+  text-align: right;
 }
 
-/* A piece: a scene's pattern piece, or a plot point's scrap of cloth. */
+/* A row is only a carrier for where its piece goes: in lanes it adds no box of its own. */
+.time-row {
+  display: contents;
+}
+
+/* The gap's words again, for the list; the tape has them in lanes. */
+.row-gap {
+  display: none;
+}
+
+/* A piece: a scene's pattern piece, or a plot point's scrap of cloth. Its place comes from the
+   row it sits in, through `--lane` and `--row`. */
 .time-piece {
   position: absolute;
+  top: calc(var(--tl-tape) + var(--band) * var(--tl-lane) + 20px);
+  left: calc(var(--tl-names) + var(--row) * var(--tl-step) + 6px);
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -4073,6 +4114,8 @@ button.panel-row {
 
 .tray-pieces .time-piece {
   position: relative;
+  top: auto;
+  left: auto;
 }
 
 /* The panel for setting when: the board's panel, but in a column of its own, so the timeline
@@ -4132,4 +4175,68 @@ button.panel-row {
 .when-cast .chip {
   padding: 0 9px;
   font-size: var(--size-ui-small);
+}
+
+/* A narrow window — a phone, or the panel open in a small one — can't hold lanes side by side:
+   one lane would fill the screen and the comparison lanes exist for would be lost. So the same
+   rows become a plain list in story order, and a lane is the colour down the left instead of a
+   place. Nothing scrolls sideways. */
+@container timeline (max-width: 620px) {
+  .timeline-inner {
+    width: auto;
+    height: auto;
+    padding: 6px 0 10px;
+  }
+
+  /* The tape, the names and the threads are all about where things sit, so they go. */
+  .tape-measure,
+  .timeline-lanes,
+  .lane-thread {
+    display: none;
+  }
+
+  .time-row {
+    display: block;
+    padding: 0 14px;
+  }
+
+  .row-gap {
+    display: block;
+    padding: 4px 0 2px 58px;
+    color: var(--faint);
+    font-size: var(--size-count);
+    font-style: italic;
+  }
+
+  .time-row .time-piece {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: 100%;
+    height: auto;
+    min-height: 56px;
+    border-left: 4px solid var(--lane);
+  }
+
+  .time-piece::after {
+    display: none;
+  }
+
+  .timeline-empty {
+    position: relative;
+    top: auto;
+    left: auto;
+    padding: 0 14px;
+  }
+
+  /* The bar has to wrap here, or "Lanes" and the three choices sit on top of each other. */
+  .timeline-bar {
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    padding: 8px 14px;
+  }
+
+  .timeline-tray {
+    padding: 4px 14px 12px;
+  }
 }

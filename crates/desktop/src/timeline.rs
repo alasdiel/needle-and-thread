@@ -1,10 +1,17 @@
 //! The timeline (DESIGN §6): a project's scenes and plot points in story time.
 //!
-//! Story order runs down the page, one step per item, with a tape measure in the margin giving
-//! each one's time and how long since the one before. Lanes are columns, by POV, thread or
-//! place. Each scene is a small pattern piece carrying its piece number, its place in reading
-//! order, so a flashback's number stands out; a plot point is a scrap of note cloth. Anything
-//! placed by order alone has a dashed edge. What isn't placed waits in the tray at the foot.
+//! Story order runs across the page, one step per item, with a tape measure along the top giving
+//! each one's time and how long since the one before. Lanes are rows, by POV, thread or place,
+//! and their names stay at the left as the story scrolls past. Each scene is a small pattern
+//! piece carrying its piece number, its place in reading order, so a flashback's number stands
+//! out; a plot point is a scrap of note cloth. Anything placed by order alone has a dashed edge.
+//! What isn't placed waits in the tray at the foot.
+//!
+//! **Where each piece goes is the stylesheet's business, not ours.** Every row carries its lane
+//! and its step as the custom properties `--band` and `--row`, and the whole board carries
+//! `--lanes` and `--steps`; app.css lays those out. That is what lets the same markup become a
+//! plain list in a narrow window (a phone), where lanes are a colour down the left rather than a
+//! row of their own: see the container query under "The timeline" there.
 //!
 //! Click an item to set its time in the panel; double-click to open it. The panel takes a column
 //! of its own, so in a narrow window the chosen piece is scrolled back into view beside it.
@@ -17,14 +24,6 @@ use needle_core::project::{NoteKind, ProjectKind};
 use crate::icons::{Glyph, Icon};
 use crate::tauri::{self, NoteKey, TimelineItemView, TimelineView, WhenInput};
 
-/// The tape measure's width, a lane's width, the lane names' row, and one step of story order.
-const TAPE: f64 = 92.0;
-const LANE: f64 = 204.0;
-const HEAD: f64 = 40.0;
-const STEP: f64 = 100.0;
-/// Within a step: the gap's words, then the piece.
-const PIECE_TOP: f64 = 26.0;
-const PIECE_HEIGHT: f64 = 66.0;
 /// How many lane colours there are in the stylesheet (`lane-0`…).
 const COLOURS: usize = 6;
 
@@ -135,7 +134,7 @@ pub fn Timeline(
         }
     };
 
-    let piece = move |item: TimelineItemView, flashback: bool, style: Option<String>| {
+    let piece = move |item: TimelineItemView, flashback: bool| {
         let id = item.id.clone();
         let chosen_id = id.clone();
         let opened = item.clone();
@@ -157,7 +156,6 @@ pub fn Timeline(
                 class:loose=item.loose
                 class:troubled=item.problem.is_some()
                 class:chosen=move || chosen.with(|c| c.as_deref() == Some(chosen_id.as_str()))
-                style=style
                 title=item.summary.clone()
                 on:click=move |_| chosen.set(Some(id.clone()))
                 on:dblclick=move |_| open(&opened)
@@ -173,17 +171,12 @@ pub fn Timeline(
         let t = timeline.get()?;
         let lay = layout(&t, lanes_by.get(), kind.get());
         let n = lay.rows.len();
-        let width = TAPE + lay.lanes.len() as f64 * LANE + 24.0;
-        let height = HEAD + n as f64 * STEP + 24.0;
         // Each lane's thread, from its first piece to its last.
         let threads = (0..lay.lanes.len())
             .filter_map(|lane| {
                 let rows: Vec<usize> = lay.rows.iter().enumerate().filter(|(_, (_, l))| *l == lane).map(|(r, _)| r).collect();
                 let (first, last) = (*rows.first()?, *rows.last()?);
-                let x = TAPE + lane as f64 * LANE + LANE / 2.0 - 1.0;
-                let top = HEAD + first as f64 * STEP + PIECE_TOP + PIECE_HEIGHT / 2.0;
-                let length = (last - first) as f64 * STEP;
-                let style = format!("left: {x}px; top: {top}px; height: {length}px");
+                let style = format!("--band: {lane}; --from: {first}; --span: {}", last - first);
                 Some(view! { <div class=format!("lane-thread lane-{}", lane % COLOURS) style=style></div> })
             })
             .collect_view();
@@ -195,34 +188,40 @@ pub fn Timeline(
                 view! { <div class=format!("lane-name lane-{}", i % COLOURS)><i></i>{name.clone()}</div> }
             })
             .collect_view();
-        let marks = lay
+        // One row per step of story order. The row carries where it belongs; the stylesheet puts
+        // it there, so the same markup is lanes in a wide window and a list in a narrow one. The
+        // gap's words are here as well as on the tape, for the list, where there is no tape.
+        let rows = lay
             .rows
             .iter()
             .enumerate()
             .map(|(row, &(i, lane))| {
                 let item = t.items[i].clone();
-                let top = HEAD + row as f64 * STEP;
-                let style = format!("left: {}px; top: {}px", TAPE + lane as f64 * LANE + 12.0, top + PIECE_TOP);
                 let flashback = out_of_order(&t, row);
-                view! { <div class=format!("lane-{}", lane % COLOURS)>{piece(item, flashback, Some(style))}</div> }
+                let gap = item.gap.clone().map(|gap| view! { <span class="row-gap">{gap}</span> });
+                let style = format!("--band: {lane}; --row: {row}");
+                view! {
+                    <div class=format!("time-row lane-{}", lane % COLOURS) style=style>
+                        {gap}
+                        {piece(item, flashback)}
+                    </div>
+                }
             })
             .collect_view();
-        // The tape stays at the left as the lanes scroll sideways, so its marks are on it: each
-        // piece's time level with the piece, and the time between written in the gap.
+        // The tape stays along the top as the story scrolls past, so its marks are on it: each
+        // piece's time over the piece, and the time between written in the gap.
         let ticks = lay
             .rows
             .iter()
             .enumerate()
             .map(|(row, &(i, _))| {
                 let item = &t.items[i];
-                let top = row as f64 * STEP;
+                let style = format!("--row: {row}");
                 let tick = item.time.clone().map(|time| {
-                    let style = format!("top: {}px", top + PIECE_TOP);
-                    view! { <div class="tape-tick" style=style>{time}</div> }
+                    view! { <div class="tape-tick" style=style.clone()>{time}</div> }
                 });
                 let gap = item.gap.clone().map(|gap| {
-                    let style = format!("top: {}px", top + 3.0);
-                    view! { <div class="tape-gap" style=style>{gap}</div> }
+                    view! { <div class="tape-gap" style=style.clone()>{gap}</div> }
                 });
                 view! { {tick} {gap} }
             })
@@ -234,14 +233,12 @@ pub fn Timeline(
                 </p>
             }
         });
-        let inner = format!("width: {width}px; height: {height}px");
-        let tape = format!("height: {}px", height - HEAD);
         Some(view! {
-            <div class="timeline-inner" style=inner>
+            <div class="timeline-inner" style=format!("--steps: {n}; --lanes: {}", lay.lanes.len())>
+                <div class="tape-measure">{ticks}</div>
                 <div class="timeline-lanes">{lane_names}</div>
-                <div class="tape-measure" style=tape>{ticks}</div>
                 {threads}
-                {marks}
+                {rows}
                 {empty}
             </div>
         })
@@ -255,7 +252,7 @@ pub fn Timeline(
             return None;
         }
         let count = waiting.len();
-        let pieces = waiting.into_iter().map(|item| piece(item, false, None)).collect_view();
+        let pieces = waiting.into_iter().map(|item| piece(item, false)).collect_view();
         Some(view! {
             <div class="timeline-tray">
                 <p class="panel-heading">{format!("Not placed yet · {count}")}</p>

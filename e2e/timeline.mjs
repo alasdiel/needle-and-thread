@@ -1,6 +1,6 @@
-// The timeline: story order down the page, lanes, the tray, and setting when something happens
-// from the panel. See harness.mjs for how a suite runs; the mock's timeline changes the way a
-// header would.
+// The timeline: story order across the page, lanes as rows, the tray, and setting when something
+// happens from the panel. Also that the same markup becomes a list at phone width. See
+// harness.mjs for how a suite runs; the mock's timeline changes the way a header would.
 import { openApp } from './harness.mjs';
 
 const { page, check, shot, calls, settle, finish } = await openApp('timeline');
@@ -13,17 +13,22 @@ const tray = () => page.locator('.timeline-tray .piece-title').allTextContents()
 const piece = (title) => page.locator('.time-piece').filter({ has: page.locator('.piece-title').getByText(title, { exact: true }) });
 const panel = page.locator('.when-panel');
 const top = async (title) => (await piece(title).boundingBox()).y;
+const left = async (title) => (await piece(title).boundingBox()).x;
 
 // --- Story order and lanes ------------------------------------------------------------------
 check('the board button and the timeline are not both open', (await page.locator('.board').count()) === 0);
 check('the scene’s envelope tab hides with the page', (await page.locator('.envelope-tab').count()) === 0);
-check('story order runs down the page', JSON.stringify(await placed()) === JSON.stringify(['What Teodor saw', 'The harbor', 'The night market', 'The ledger leaves port', 'The long night']), (await placed()).join(' | '));
-const tops = await Promise.all(['What Teodor saw', 'The harbor', 'The night market'].map(top));
-check('…each a step below the last', tops[0] < tops[1] && tops[1] < tops[2], tops.join(', '));
+check('story order runs across the page', JSON.stringify(await placed()) === JSON.stringify(['What Teodor saw', 'The harbor', 'The night market', 'The ledger leaves port', 'The long night']), (await placed()).join(' | '));
+const lefts = await Promise.all(['What Teodor saw', 'The harbor', 'The night market'].map(left));
+check('…each a step after the last', lefts[0] < lefts[1] && lefts[1] < lefts[2], lefts.join(', '));
 const lanes = await page.locator('.lane-name').allTextContents();
 check('lanes by POV, plot points last', JSON.stringify(lanes) === JSON.stringify(['Old Teodor', 'Mara Venn', 'Plot points']), lanes.join(' | '));
-const x = async (title) => (await piece(title).boundingBox()).x;
-check('a POV keeps to its lane', (await x('The harbor')) === (await x('The night market')) && (await x('The harbor')) !== (await x('The long night')));
+check('a POV keeps to its lane', (await top('The harbor')) === (await top('The night market')) && (await top('The harbor')) !== (await top('The long night')));
+// `--lane` is the lane's colour in app.css, so the positional index has to be called something
+// else: when it wasn't, every thread was painted with the colour "1" and vanished.
+const threads = await page.locator('.lane-thread').evaluateAll((els) => els.map((e) => ({ w: Math.round(e.getBoundingClientRect().width), bg: getComputedStyle(e).backgroundColor })));
+check('a lane with pieces apart is joined by its thread', threads.some((t) => t.w > 100), JSON.stringify(threads));
+check('…painted in the lane’s colour', threads.every((t) => /^rgba?\(/.test(t.bg)), JSON.stringify(threads.map((t) => t.bg)));
 check('the flashback’s piece number stands out', (await piece('What Teodor saw').locator('.piece-number.flashback').count()) === 1);
 check('…and only it', (await page.locator('.piece-number.flashback').count()) === 1);
 check('a plot point placed by order is dashed', await piece('The ledger leaves port').evaluate((el) => el.classList.contains('loose') && el.classList.contains('event')));
@@ -36,15 +41,20 @@ check('what has no time waits in the tray', JSON.stringify(await tray()) === JSO
 check('…with the reason, if there is one', (await page.locator('.timeline-tray .piece-problem').textContent()) === 'nothing is called The harbour');
 await shot('1-pov');
 
-// Scrolled sideways, the tape and its marks stay at the left, over the lanes.
+// Scrolled sideways, the lane names stay at the left; scrolled down, the tape stays on top.
 await page.locator('.timeline-scroll').evaluate((el) => { el.scrollLeft = 300; });
+await settle();
+const namesBox = await page.locator('.timeline-lanes').boundingBox();
+const scrollBox = await page.locator('.timeline-scroll').boundingBox();
+check('scrolled sideways, the lane names stay in view', Math.abs(namesBox.x - scrollBox.x) < 2, `${namesBox.x} vs ${scrollBox.x}`);
+check('…and the story has moved under them', (await left('What Teodor saw')) < namesBox.x + namesBox.width);
+await page.locator('.timeline-scroll').evaluate((el) => { el.scrollTop = 120; el.scrollLeft = 0; });
 await settle();
 const tapeBox = await page.locator('.tape-measure').boundingBox();
 const tickBox = await page.locator('.tape-tick').first().boundingBox();
-const scrollBox = await page.locator('.timeline-scroll').boundingBox();
-check('scrolled sideways, the tape stays in view', Math.abs(tapeBox.x - (scrollBox.x + 14)) < 2, `${tapeBox.x} vs ${scrollBox.x}`);
-check('…and its times stay on it', Math.abs(tickBox.x - tapeBox.x) < 2);
-await page.locator('.timeline-scroll').evaluate((el) => { el.scrollLeft = 0; });
+check('scrolled down, the tape stays on top', Math.abs(tapeBox.y - scrollBox.y) < 2, `${tapeBox.y} vs ${scrollBox.y}`);
+check('…and its times stay on it', Math.abs(tickBox.y - tapeBox.y) < 2);
+await page.locator('.timeline-scroll').evaluate((el) => { el.scrollTop = 0; });
 
 await page.locator('.timeline-bar').getByRole('button', { name: 'Thread' }).click();
 await settle();
@@ -113,7 +123,32 @@ check('a piece the panel would cover is scrolled into view beside it', chosenBox
 await page.keyboard.press('Escape');
 await settle();
 
+// --- At phone width, the lanes become a list ------------------------------------------------
+await page.setViewportSize({ width: 390, height: 844 });
+await settle();
+check('the tape goes', (await page.locator('.tape-measure').isVisible()) === false);
+check('the lane names go', (await page.locator('.timeline-lanes').isVisible()) === false);
+check('story order is still the same list', JSON.stringify(await placed()) === JSON.stringify(['What Teodor saw', 'The harbor', 'The night market', 'The ledger leaves port', 'The long night']), (await placed()).join(' | '));
+const phoneTops = await Promise.all(['What Teodor saw', 'The harbor', 'The night market'].map(top));
+check('…now one under the other', phoneTops[0] < phoneTops[1] && phoneTops[1] < phoneTops[2], phoneTops.join(', '));
+const phoneLefts = await Promise.all(['The harbor', 'The long night'].map(left));
+check('…with every row on one left edge, lanes or not', phoneLefts[0] === phoneLefts[1], phoneLefts.join(', '));
+const rowWidth = (await piece('The harbor').boundingBox()).width;
+const roomWidth = (await page.locator('.timeline-scroll').boundingBox()).width;
+check('…each row filling the room it has', rowWidth > roomWidth - 32, `${rowWidth} of ${roomWidth}`);
+check('nothing scrolls sideways', await page.locator('.timeline-scroll').evaluate((el) => el.scrollWidth <= el.clientWidth + 1));
+check('the time between is in the row now that there is no tape', (await page.locator('.row-gap').first().isVisible()) && (await page.locator('.row-gap').allTextContents()).includes('6 hours'));
+check('a piece still carries its own time', (await piece('The harbor').textContent()).includes('14 March 1998, 19:00'));
+await shot('5-phone');
+await page.setViewportSize({ width: 946, height: 1030 });
+await settle();
+check('back at window width, the lanes come back', await page.locator('.timeline-lanes').isVisible());
+
 // --- Opening -----------------------------------------------------------------------------
+// Chosen first, so the panel has already taken its column: opening it shifts the board, and a
+// piece that moves out from under the pointer swallows the second click.
+await piece('The long night').click();
+await settle();
 await piece('The long night').dblclick();
 await settle();
 check('a double-click opens the scene', (await page.locator('.timeline').count()) === 0 && (await calls('open_scene')).length >= 1);

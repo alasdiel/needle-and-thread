@@ -336,12 +336,13 @@ A name in a `when` finds a scene or plot point by title, then a plot point by al
 - Order-only items are placed between their neighbours: a topological sort over "after" and "before", tie-broken by rough time, so every stated order holds.
 - What can't be placed waits in the tray with the reason: a name that finds nothing or more than one thing, a chain that comes back on itself (every item on it is flagged, and what hangs off it "waits for" it), "Day 4" among dates with no `day_one`, or a `when` that can't be read. An item after something later than what it's before is placed by its "after" and flagged.
 
-**The timeline view** (picked without the user, as "Tape 1"; see the handoff):
+**The timeline view** ("Tape 2" on the canvas):
 - Opens from the topbar, in place of the page, like the board.
-- Story order runs down the page, a step per item, evenly spaced. A tape measure in the margin gives each item's time and the time between ("6 hours", "19 years", "then" when either is placed by order), and stays put as the lanes scroll sideways.
-- Lanes are columns, by POV (plot points in their own lane), thread or place. Something with several threads or places goes in its first one's lane.
+- Story order runs **across** the page, a step per item, evenly spaced. A tape measure along the top gives each item's time and the time between ("6 hours", "19 years", "then" when either is placed by order), and stays on top as the lanes scroll under it.
+- Lanes are **rows**, by POV (plot points in their own lane), thread or place. Something with several threads or places goes in its first one's lane. Their names stay at the left as the story scrolls past, and each lane's thread runs under its pieces from the first to the last.
 - A scene is a small pattern piece carrying its piece number, its place in reading order. A number out of step (a later item in the story has a smaller one) is filled violet, which is how a flashback stands out. A plot point is a scrap of the violet note cloth. Order-only items have a dashed edge.
 - Click an item to set its time in a panel beside the timeline: a date, measured from something, between two things, or not yet. One the calendar can't read is refused with the reason, not saved. Double-click to open the scene or plot point.
+- **In a narrow window it becomes a list** ("Phone 2" on the canvas), one row per item in story order, with the lane as a colour down the left rather than a place of its own, and the time between written in the row. Lanes side by side need width that a phone hasn't got, and one lane filling the screen would lose the comparison lanes are for. Nothing scrolls sideways. The same markup does both: a row carries `--band` and `--row` and app.css places it, so there is one component, not two.
 - Not yet: dragging order-only items.
 
 ## 7. Network
