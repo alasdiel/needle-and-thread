@@ -238,6 +238,10 @@ const SAMPLE: &[(&str, &str)] = &[
         "projects/tidewater/notes/threads/the-missing-ledger.md",
         include_str!("../../../../fixtures/sample-vault/projects/tidewater/notes/threads/the-missing-ledger.md"),
     ),
+    (
+        "projects/tidewater/notes/events/the-harbor.md",
+        include_str!("../../../../fixtures/sample-vault/projects/tidewater/notes/events/the-harbor.md"),
+    ),
 ];
 
 fn write_sample(root: &Path) -> Result<(), String> {

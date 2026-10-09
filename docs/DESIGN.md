@@ -291,10 +291,10 @@ All of these timings can be changed in `vault.toml`.
 
 ## 6. Timeline
 
-Each project uses **one calendar**. A project that belongs to a world uses the world's calendar.
+Each project uses **one calendar**: its own `[calendar]` in `project.toml`, else its world's in `world.toml`, else the real one. A world's plot points show on every one of its projects' timelines.
 
-- **Real**: Gregorian dates and times.
-- **Invented**: defined in `world.toml` or `project.toml`, with months and their lengths, eras, and optional leap-year rules and weekday names.
+- **Real**: Gregorian dates and times (proleptic, so `44 BC` works; 1 BC is year 0).
+- **Invented**: months and their lengths, eras, and optional leap years, weekday names and Day 1.
 
 ```toml
 [calendar]
@@ -304,29 +304,45 @@ months = [
   { name = "Bloom", days = 31 },
   # …
 ]
-eras = [{ name = "After the Drowning", short = "AD" }]
+# In order. Each era but the last says how many years it lasts; the first can count down
+# instead, like BC, and the next starts at its year 1.
+eras = [
+  { name = "Before the Drowning", short = "BD", counts_down = true },
+  { name = "After the Drowning", short = "AD" },
+]
+leap = { every = 4, month = "Bloom" }   # also days = 1, except_every = 100, unless_every = 400
+weekdays = ["Firstday", "Midday", "Lastday"]
+first_weekday = "Midday"                 # the weekday of 1 Thaw 1 AD
+day_one = "The wedding"                  # for "Day 4": a date, or a scene or plot point
 ```
 
-Each scene or event gets a place in time through the `when:` field in its header:
+A `[calendar]` with no `months` is the real calendar; it can still set `day_one`. A mistake in it (an unknown leap month, a middle era with no length, a field the app doesn't know) is reported with where it is, rather than ignored.
+
+Each scene or plot point gets a place in time through the `when` field in its header:
 
 | Kind | Example | Meaning |
 |---|---|---|
-| Fixed | `when: 1998-03-14 19:00` or `when: 3 Thaw 412 AD` | A point in the calendar |
-| Relative | `when: { from: The wedding, offset: +3d }` | Measured from another scene or event. "Day 4" counts from a chosen Day 1 |
-| Order only | `when: { after: The harbour }` | Just after, before or between other items |
-| Unplaced | *(no `when`)* | Waits in a tray beside the timeline |
+| Fixed | `when = "1998-03-14 19:00"`, `"14 March 1998"`, `"3 Thaw 412 AD"`, or a TOML date | A point in the calendar. A year with no era is in the last era |
+| Day | `when = "Day 4"`, `"Day 4 08:00"` | Counted from `day_one`. With no `day_one` and no dates anywhere, the timeline is just days |
+| Relative | `when = { from = "The wedding", offset = "+3d" }` | Measured from another scene or plot point. Offsets: `+6h`, `-2d`, `+1y 2mo`, `+2 weeks`; years and months are the calendar's own, so a month after 31 January is the last day of February |
+| Order only | `when = { after = "The harbor" }`, `{ before = … }`, or both | Just after, before or between other items |
+| Unplaced | *(no `when`)* | Waits in the tray at the timeline's foot |
 
-**How the resolver in `core` works:**
+A name in a `when` finds a scene or plot point by title, then a plot point by alias, then a scene by its file name; this project's before its world's. Case, spacing and curly apostrophes don't matter.
+
+**How the resolver in `core` works** (`core::calendar`, `core::timeline`):
 - Every fixed date becomes a single number (minutes since the calendar's start). Sorting and offsets are then plain arithmetic in any calendar.
-- A relative time is worked out by following its chain back to a fixed point.
-- Order-only items are placed between their neighbours.
-- Contradictions ("X is 3 days after Y but also before Y") and cycles are flagged.
+- A relative time is worked out by following its chain back to a fixed point. One measured from an order-only item is placed by order too.
+- Order-only items are placed between their neighbours: a topological sort over "after" and "before", tie-broken by rough time, so every stated order holds.
+- What can't be placed waits in the tray with the reason: a name that finds nothing or more than one thing, a chain that comes back on itself (every item on it is flagged, and what hangs off it "waits for" it), "Day 4" among dates with no `day_one`, or a `when` that can't be read. An item after something later than what it's before is placed by its "after" and flagged.
 
-**The timeline view:**
-- Shows story order, in lanes by POV character, thread or place.
-- Labels each item with its reading-order number, so flashbacks stand out.
-- Shows order-only items between their neighbours with dashed spacing.
-- Times are edited in the side panel. Order-only items can also be dragged.
+**The timeline view** (picked without the user, as "Tape 1"; see the handoff):
+- Opens from the topbar, in place of the page, like the board.
+- Story order runs down the page, a step per item, evenly spaced. A tape measure in the margin gives each item's time and the time between ("6 hours", "19 years", "then" when either is placed by order), and stays put as the lanes scroll sideways.
+- Lanes are columns, by POV (plot points in their own lane), thread or place. Something with several threads or places goes in its first one's lane.
+- A scene is a small pattern piece carrying its piece number, its place in reading order. A number out of step (a later item in the story has a smaller one) is filled violet, which is how a flashback stands out. A plot point is a scrap of the violet note cloth. Order-only items have a dashed edge.
+- Click an item to set its time in a panel beside the timeline: a date, measured from something, between two things, or not yet. One the calendar can't read is refused with the reason, not saved. Double-click to open the scene or plot point.
+- Not yet: dragging order-only items.
 
 ## 7. Network
 
@@ -438,9 +454,9 @@ She owes him for the berth, and both of them know it.
 
 ### Moving through the story
 
-- A slider along the bottom follows story time (the timeline's order).
-- At each point, relationships show their state then, plot points still to come are dimmed, and characters are dimmed until they first appear.
-- Relationships that point at unplaced items are flagged, since they can't be placed in time.
+- A slider along the bottom follows story time: a step per scene or plot point on the timeline, with the end of the book as its last stop, which is where the board starts.
+- At each step, relationships show their label then, aren't there before they begin and are faded once they end; plot points still to come are faded, and characters are faded until the first scene or plot point they're in (`pov`, `cast` or `involves`).
+- A relationship whose `begins`, `changes` or `ends` names something not on the timeline is outlined while the slider is away from the end, saying what, since it can't be placed in time.
 
 ### Building on it
 
@@ -456,7 +472,7 @@ A toolbar over the cork: **Move**, **String**, **Write**, **Marker** and **Zone*
 - **Pin up:** a list of notes that aren't on the board: other projects', the world's, and this project's plain notes and sources (pinned up as a plain sheet). Picking one pins it in the middle of the view.
 - **Show:** leave kinds of card off, show only one thread and what's tied or linked to it, and hide automatic links. It's a way of looking, so it isn't saved.
 
-Until the story-time slider (M6), the board shows each relationship as it stands at the end of the book: its last label, and slack and faded if it `ends`. The side panel has what came before.
+At the end of the book, where the slider starts, the board shows each relationship as it finally stands: its last label, and faded if it `ends`. The side panel has what came before.
 
 ## 8. Desktop app
 

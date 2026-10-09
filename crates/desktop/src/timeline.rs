@@ -59,7 +59,7 @@ fn layout(t: &TimelineView, by: LaneBy, kind: ProjectKind) -> Layout {
         };
         named.filter(|n| !n.trim().is_empty()).unwrap_or_else(|| none.clone())
     };
-    // Lanes in the order they first come up in the story, with the catch-alls last.
+    // Lanes in the order they first come up in the story, then the catch-all, then plot points.
     let mut lanes: Vec<String> = Vec::new();
     for &i in &t.order {
         let lane = lane_of(&t.items[i]);
@@ -67,7 +67,7 @@ fn layout(t: &TimelineView, by: LaneBy, kind: ProjectKind) -> Layout {
             lanes.push(lane);
         }
     }
-    lanes.sort_by_key(|l| (*l == none) as u8 * 2 + (*l == events) as u8);
+    lanes.sort_by_key(|l| (*l == none) as u8 + (*l == events) as u8 * 2);
     let rows = t.order.iter().map(|&i| (i, lanes.iter().position(|l| *l == lane_of(&t.items[i])).unwrap_or(0))).collect();
     Layout { lanes, rows }
 }

@@ -395,7 +395,14 @@ fn the_sample_vault_opens_and_every_scene_is_placed() {
     assert_eq!((market.title.as_str(), market.status.as_str()), ("The night market", "draft"));
 
     let notes: Vec<String> = project.notes().list().unwrap().into_iter().map(|n| n.title).collect();
-    assert_eq!(notes, ["Mara Venn", "Old Teodor", "Night Market", "The missing ledger"]);
+    assert_eq!(notes, ["Mara Venn", "Old Teodor", "Night Market", "The missing ledger", "The harbor"]);
+    let timeline = vault.timeline(project).unwrap();
+    let story: Vec<(&str, Option<&str>)> =
+        timeline.order.iter().map(|&i| (timeline.items[i].title.as_str(), timeline.items[i].time_label.as_deref())).collect();
+    assert_eq!(
+        story,
+        [("The harbor", Some("14 March 1998, 19:00")), ("The night market", Some("15 March 1998, 01:00")), ("The long night", None)]
+    );
     let mara = vault.note_links(project, &Owner::Project("tidewater".into()), "characters/mara-venn").unwrap();
     assert_eq!(mara.appears_in.len(), 1);
     assert_eq!(mara.linked_from.len(), 2, "both scenes");
