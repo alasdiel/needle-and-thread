@@ -75,9 +75,8 @@
   --story-text: light-dark(#2a2017, #f2ece0);
   --story-muted: light-dark(#42331f, #bcae99);
   --story-rule: light-dark(rgb(42 32 23 / 0.35), rgb(242 236 224 / 0.3));
-  /* The cassette and pencil are drawn in outline, in the app's aqua. On the pale cork the light
-     theme's --thread is too faint, so it's a deep aqua there. */
-  --cassette-line: light-dark(#054e59, #74f5f8);
+  /* The cassette and pencil are drawn in outline, in the app's aqua. */
+  --cassette-line: var(--thread);
   --cassette-glow: light-dark(transparent, rgb(116 245 248 / 0.35));
   /* The writer's own marker: dark ink on pale cork, chalky white on the stained cork. */
   --marker: light-dark(#1f2b6e, #f3ecdc);
