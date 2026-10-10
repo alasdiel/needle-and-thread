@@ -294,7 +294,7 @@ pub fn push_problem(error: &Error, url: &str) -> String {
 
 /// The host in an SSH address: `github.com` in `git@github.com:me/novel.git` or
 /// `ssh://git@github.com/me/novel.git`.
-fn host_of(url: &str) -> &str {
+pub fn host_of(url: &str) -> &str {
     let rest = url.strip_prefix("ssh://").unwrap_or(url);
     let rest = rest.split_once('@').map_or(rest, |(_, host)| host);
     rest.split([':', '/']).next().unwrap_or(rest)

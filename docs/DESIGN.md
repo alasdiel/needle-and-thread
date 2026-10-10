@@ -283,10 +283,14 @@ All of these timings can be changed in `vault.toml`.
   - Set up in Settings › Backup: the repository's SSH address (`git@github.com:you/novel.git`) and an **After each snapshot** switch, both kept in `vault.toml` under `[backup]`. **Back up now** pushes at once, and the vault also backs up when it opens.
   - It pushes over SSH with your own keys, built in (libgit2 with libssh2): those in ssh-agent, then `~/.ssh/id_ed25519`, `id_ecdsa` or `id_rsa` without a passphrase. The server's key must already be in `~/.ssh/known_hosts` (connect once with `ssh -T git@github.com`). `~/.ssh/config` isn't read.
   - Beside "Saved": "· backed up", "· backing up…", or "· not backed up" in red, with the reason on hover; a click opens the settings. Pushes never force, so a repository with history this vault lacks is refused and left as it is.
-- **Phase 4:** full two-way sync.
-  - The app pulls when it starts and every few minutes after.
-  - Local snapshots are rebased onto whatever came from GitHub. That's usually phone ideas, which can't conflict.
-  - If two computers changed the same scene while offline, both versions are kept side by side and flagged for you to merge. Nothing is overwritten.
+- **Taking in what was made elsewhere** (built ahead of phase 4, so the phone or a second computer can write without leaving this one stuck):
+  - Every push fetches first, and the app also looks when the vault opens and every five minutes, even with **After each snapshot** off. A look that can't reach the repository says nothing.
+  - If the repository has snapshots this vault lacks, the mark says "bringing in…". The window saves what's being typed, the vault snapshots, and the new snapshots are taken in: as they were made if nothing changed here since, otherwise with a merge snapshot ("Brought in from github.com: Edited night-market (+40 words)") that has both histories as parents. Nothing already saved changes, so named versions and History stay as they were; rebasing would have given every local snapshot a new id. Then the push goes ahead.
+  - Edits to different paragraphs or files simply combine. Where both sides changed the same paragraph, this vault's version stays in place and the other is kept in `.needle/conflicts/<date-time>/<its path>`, never beside it (a second copy of a note would give two notes one title); the merge snapshot says "· 1 file to merge by hand". A file changed on one side and deleted on the other is kept. Named versions made elsewhere are adopted; one this vault has keeps its own name.
+  - The outline, notes and bin are read again, and the open scene or note is shown as it now is if it changed, with a note saying so.
+  - A repository whose history isn't this vault's is refused, and nothing changes.
+  - Still to come: comparing a clash's two versions and settling it (on the canvas first).
+- **Phase 4:** the phone writing to the same repository (§9), using the above.
 - **Move out:** copies a project and its full history into a new private repo (`git subtree split`), then removes it from the vault.
 
 ## 6. Timeline
