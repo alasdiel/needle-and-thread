@@ -248,7 +248,9 @@ pub fn take_in(app: AppHandle, state: State<'_, AppState>) -> Result<TakenInView
         if remote.is_empty() {
             return Ok(TakenIn::default().into());
         }
-        let taken = match open.history.take_in(&app, needle_vcs::host_of(remote)) {
+        // "github.com"; a repository given as a folder has no host to name.
+        let from = Some(needle_vcs::host_of(remote)).filter(|host| host.contains('.')).unwrap_or("the backup");
+        let taken = match open.history.take_in(&app, from) {
             Ok(taken) => taken,
             Err(error) => {
                 backup.set_status(&app, BackupStatus::Failed { at: now(), error: error.clone() });

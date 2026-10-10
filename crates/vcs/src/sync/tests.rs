@@ -157,7 +157,7 @@ fn a_clash_keeps_this_version_and_puts_the_other_aside() {
     assert!(here.read(&clash.copy).unwrap().contains("on the phone"));
     assert!(taken.changed.contains(&clash.copy));
     let message = &here.vault.history(Path::new(&clash.copy)).unwrap()[0].message;
-    assert!(message.ends_with("· 1 file to merge by hand"), "{message}");
+    assert_eq!(message, "Brought in from the repository · 1 file to merge by hand");
 }
 
 #[test]

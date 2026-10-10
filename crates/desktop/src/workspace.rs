@@ -599,10 +599,9 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
             let replaced = now.is_some_and(|md| {
                 editor.with_value(|h| {
                     h.as_ref().is_some_and(|h| {
-                        if h.markdown() == md {
+                        if h.markdown() == md || !h.replace_markdown(&md) {
                             return false;
                         }
-                        h.set_content(&md);
                         words.set(h.word_count() as usize);
                         markdown.set(h.markdown());
                         true

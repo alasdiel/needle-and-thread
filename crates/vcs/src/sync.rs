@@ -146,7 +146,11 @@ impl Vault {
         let ours_tree = ours.tree()?;
         let changed = self.move_to(Some(&ours_tree), &merged)?;
 
-        let mut message = format!("Brought in from {from}: {}", self.describe(Some(&ours_tree), &merged)?);
+        // What came in, leaving out the other side's versions of clashing files.
+        let mut message = match self.describe_where(Some(&ours_tree), &merged, |p| !p.starts_with(CONFLICTS))? {
+            Some(what) => format!("Brought in from {from}: {what}"),
+            None => format!("Brought in from {from}"),
+        };
         match clashes.len() {
             0 => {}
             1 => message.push_str(" · 1 file to merge by hand"),

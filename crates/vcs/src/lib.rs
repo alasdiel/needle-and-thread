@@ -190,12 +190,17 @@ impl Vault {
         if old.is_none() {
             return Ok("First snapshot".to_owned());
         }
+        Ok(self.describe_where(old, new, |_| true)?.unwrap_or_else(|| "Edited the vault".to_owned()))
+    }
+
+    /// Describes the changes to the files `keep` picks out, or None if there are none.
+    fn describe_where(&self, old: Option<&Tree>, new: &Tree, keep: impl Fn(&Path) -> bool) -> Result<Option<String>, Error> {
         let diff = self.repo.diff_tree_to_tree(old, Some(new), None)?;
         let mut names = Vec::new();
         let mut words: i64 = 0;
         let mut statuses = Vec::new();
         for delta in diff.deltas() {
-            let Some(path) = delta.new_file().path().or(delta.old_file().path()) else {
+            let Some(path) = delta.new_file().path().or(delta.old_file().path()).filter(|p| keep(p)) else {
                 continue;
             };
             if path.extension().is_some_and(|ext| ext == "md") {
@@ -211,18 +216,18 @@ impl Vault {
             _ => "Edited",
         };
         let what = match names.as_slice() {
-            [] => "the vault".to_owned(),
+            [] => return Ok(None),
             [one] => one.clone(),
             [a, b] => format!("{a} and {b}"),
             [a, rest @ ..] => format!("{a} and {} other files", rest.len()),
         };
-        Ok(match words {
+        Ok(Some(match words {
             0 => format!("{verb} {what}"),
             1 => format!("{verb} {what} (+1 word)"),
             -1 => format!("{verb} {what} (−1 word)"),
             n if n > 0 => format!("{verb} {what} (+{n} words)"),
             n => format!("{verb} {what} (−{} words)", -n),
-        })
+        }))
     }
 
     fn words_in(&self, blob: Oid) -> Result<i64, Error> {
