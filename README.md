@@ -22,7 +22,7 @@ It installs from source for now; packaged downloads come later.
 
 ## Install it
 
-You'll need Rust (stable), a C compiler, [trunk](https://trunkrs.dev), the [Tauri CLI](https://tauri.app) (`cargo install --locked tauri-cli --version '^2'`), pnpm, and on Linux, WebKitGTK and a Hunspell `en_US` dictionary.
+You'll need Rust (stable), a C compiler, [trunk](https://trunkrs.dev), the [Tauri CLI](https://tauri.app) (`cargo install --locked tauri-cli --version '^2'`), pnpm, and on Linux, WebKitGTK.
 
 ```sh
 pnpm --dir editor install

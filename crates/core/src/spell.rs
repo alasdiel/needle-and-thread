@@ -116,11 +116,10 @@ mod tests {
         assert!(s.check("Teodor’s"));
     }
 
-    /// Needs a system en_US Hunspell dictionary: `cargo test -p needle-core -- --ignored`.
+    /// The dictionary the app ships with (/dictionaries).
     #[test]
-    #[ignore]
-    fn system_dictionary_smoke() {
-        let read = |ext: &str| std::fs::read_to_string(format!("/usr/share/hunspell/en_US.{ext}")).unwrap();
+    fn bundled_dictionary_smoke() {
+        let read = |ext: &str| std::fs::read_to_string(format!("{}/../../dictionaries/en_US.{ext}", env!("CARGO_MANIFEST_DIR"))).unwrap();
         let started = std::time::Instant::now();
         let s = Speller::new(&read("aff"), &read("dic")).unwrap();
         eprintln!("loaded in {:?}", started.elapsed());

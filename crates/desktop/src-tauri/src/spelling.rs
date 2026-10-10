@@ -14,33 +14,27 @@ use tauri::State;
 
 use crate::state::{AppState, OrString};
 
-const LANGUAGE: &str = "en_US";
-
-// Where Linux distributions install Hunspell dictionaries. Windows will need one bundled.
-const DICTIONARY_DIRS: &[&str] = &["/usr/share/hunspell", "/usr/share/myspell/dicts", "/usr/share/myspell"];
+// The US English dictionary, built in (see /dictionaries), so spelling works the same on every
+// machine whether or not it has Hunspell dictionaries installed.
+const AFF: &str = include_str!("../../../../dictionaries/en_US.aff");
+const DIC: &str = include_str!("../../../../dictionaries/en_US.dic");
 
 #[derive(Serialize)]
 pub struct SpellDictionary {
-    aff: String,
-    dic: String,
+    aff: &'static str,
+    dic: &'static str,
     personal_words: Vec<String>,
 }
 
 #[tauri::command]
 pub fn spell_dictionary(state: State<'_, AppState>) -> Result<SpellDictionary, String> {
-    let dir = DICTIONARY_DIRS
-        .iter()
-        .map(Path::new)
-        .find(|dir| dir.join(format!("{LANGUAGE}.dic")).exists())
-        .ok_or_else(|| format!("no {LANGUAGE} Hunspell dictionary found (install hunspell-en_us)"))?;
-    let read = |ext: &str| fs::read_to_string(dir.join(format!("{LANGUAGE}.{ext}"))).or_string();
     let personal_words = match state.lock().as_ref() {
         Some(open) => personal_words(&open.vault.dictionary_path()).or_string()?,
         None => Vec::new(),
     };
     Ok(SpellDictionary {
-        aff: read("aff")?,
-        dic: read("dic")?,
+        aff: AFF,
+        dic: DIC,
         personal_words,
     })
 }

@@ -22,14 +22,13 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Tauri's Linux webview and the libraries it links. hunspell-en-us is the en_US dictionary
-      # that core::spell's tests read from /usr/share/hunspell.
+      # Tauri's Linux webview and the libraries it links.
       - name: Install system libraries
         run: |
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
             libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev \
-            librsvg2-dev hunspell-en-us
+            librsvg2-dev
 
       # rust-toolchain.toml pins stable, which the runner already has — and rustup does NOT go
       # back and add that file's `targets` to a toolchain it installed earlier, so wasm32 has to
@@ -51,6 +50,28 @@ jobs:
 
       - name: Clippy (wasm frontend)
         run: cargo clippy -p needle-desktop-ui --target wasm32-unknown-unknown -- -D warnings
+
+  # The same tests on Windows, which other people are meant to run the app on: paths, line
+  # endings and home folders all differ there. The wasm frontend is the same on both, so it's
+  # only checked on Linux.
+  windows:
+    name: Rust tests on Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: rust-ci-windows
+
+      - name: Clippy
+        run: cargo clippy --workspace --exclude needle-desktop-ui --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --exclude needle-desktop-ui
 
   editor:
     name: Editor tests and typecheck
