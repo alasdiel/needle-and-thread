@@ -1838,11 +1838,10 @@ fn StoryCassette(story: RwSignal<StoryView>, at: RwSignal<Option<usize>>, #[prop
             view! {
                 {arrow.map(|d| view! { <path class="cassette-arrow" d=d></path> })}
                 <g class="cassette-pencil" transform=format!("translate({cx} {HUB_Y}) rotate({angle:.1})")>
-                    <polygon points="0,0 9,-4.5 9,4.5" fill="#c9a37a"></polygon>
-                    <polygon points="0,0 3.6,-1.8 3.6,1.8" fill="#39393c"></polygon>
-                    <rect x="9" y="-4.5" width="54" height="9" fill="#d9a62b"></rect>
-                    <rect x="63" y="-4.5" width="7" height="9" fill="#9aa3ab"></rect>
-                    <rect x="70" y="-4.5" width="9" height="9" rx="3" fill="#d1756c"></rect>
+                    <path d="M0,0 L9,-4.5 L9,4.5 Z M3.6,-1.8 L3.6,1.8"></path>
+                    <rect x="9" y="-4.5" width="54" height="9"></rect>
+                    <rect x="63" y="-4.5" width="7" height="9"></rect>
+                    <rect x="70" y="-4.5" width="9" height="9" rx="3"></rect>
                 </g>
             }
         })
