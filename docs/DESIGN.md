@@ -455,7 +455,10 @@ She owes him for the berth, and both of them know it.
 
 ### Moving through the story
 
-- A slider along the bottom follows story time: a step per scene or plot point on the timeline, with the end of the book as its last stop, which is where the board starts.
+- A cassette along the board's foot follows story time ("Reel 1" and "Reel 1b" on the canvas): a step per scene or plot point on the timeline, with the end of the book as its last stop, which is where the board starts. The left reel holds the story still to come and the right what's behind you, so the reels' sizes say how far through the book you are. Its label carries the project's name and the step's date.
+  - Wind either reel with the pointer: clockwise goes on, anticlockwise back, a step per sixth of a turn. A pencil sits in the held reel's hub, pointing at the pointer, with an arrow the way it's going; it's only there while winding, never at rest.
+  - Clicking a reel without winding goes a step towards it. With the cassette focused, the arrow keys step, Page Up and Down go five, Home and End go to the start and the end, and "Wind to the end" beside it returns there.
+  - The plastic stays dark on both corks; the label is set in the app's type, never handwritten. In a narrow board the "Where it stops" side goes and the cassette shrinks.
 - At each step, relationships show their label then, aren't there before they begin and are faded once they end; plot points still to come are faded, and characters are faded until the first scene or plot point they're in (`pov`, `cast` or `involves`).
 - A relationship whose `begins`, `changes` or `ends` names something not on the timeline is outlined while the slider is away from the end, saying what, since it can't be placed in time.
 

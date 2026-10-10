@@ -70,6 +70,18 @@
   --string-shadow: light-dark(rgb(60 30 10 / 0.35), rgb(0 0 0 / 0.45));
   --twine: light-dark(rgb(255 250 235 / 0.85), rgb(232 222 200 / 0.5));
   --card-drop: light-dark(rgb(60 30 10 / 0.35), rgb(0 0 0 / 0.5));
+  /* The cassette at the board's foot: a strip across the cork, and the cassette's plastic and tape. */
+  --story-bar: light-dark(rgb(44 26 12 / 0.2), rgb(0 0 0 / 0.38));
+  --story-text: light-dark(#2a2017, #f2ece0);
+  --story-muted: light-dark(#42331f, #bcae99);
+  --story-rule: light-dark(rgb(42 32 23 / 0.35), rgb(242 236 224 / 0.3));
+  --plastic: light-dark(#3b4046, #5b636b);
+  --plastic-dark: light-dark(#22262b, #31373d);
+  --plastic-edge: light-dark(rgb(0 0 0 / 0.35), rgb(0 0 0 / 0.45));
+  --plastic-window: light-dark(#15181b, #1c2024);
+  --tape-wound: light-dark(#6b4a2a, #7d5a34);
+  --tape-ribbon: light-dark(#b98f5f, #c39a6b);
+  --grip: light-dark(rgb(255 250 240 / 0.8), rgb(242 236 224 / 0.75));
   /* The writer's own marker: dark ink on pale cork, chalky white on the stained cork. */
   --marker: light-dark(#1f2b6e, #f3ecdc);
   /* Cards stay pale in both themes, so anything written on one is in dark ink. */
@@ -3724,55 +3736,205 @@ button.panel-row {
   margin-top: 8px;
 }
 
-/* Moving through the story: a slider along the board's foot. What hasn't come in yet fades, and a
-   string whose times aren't all on the timeline is outlined in red pencil. */
+/* Moving through the story: a cassette at the board's foot, wound with a pencil. What hasn't come
+   in yet fades, and a string whose times aren't all on the timeline is outlined in red pencil. The
+   plastic is dark on both corks, a shade lighter on the stained one so it doesn't sink into it. */
+.board {
+  --story-foot: 168px;
+}
+
 .board-story {
   position: absolute;
-  left: 50%;
-  bottom: 14px;
+  inset: auto 0 0 0;
+  height: var(--story-foot);
   display: flex;
   align-items: center;
-  gap: 12px;
-  width: min(620px, calc(100% - 28px));
-  padding: 8px 14px;
-  transform: translateX(-50%);
-  background: var(--raise);
-  border: 1px solid var(--rule);
-  border-radius: 10px;
-  box-shadow: 0 4px 16px var(--card-drop);
+  gap: 24px;
+  padding: 0 28px;
+  background: var(--story-bar);
+  border-top: 1px solid rgb(0 0 0 / 0.3);
+  color: var(--story-text);
   cursor: default;
 }
 
-.board-story .panel-heading {
-  margin: 0;
-  white-space: nowrap;
-}
-
-.board-story input[type="range"] {
-  flex: 1;
+.board-story-side {
+  flex: 1 1 0;
   min-width: 0;
-  accent-color: var(--string);
-}
-
-.board-story-now {
   display: flex;
   flex-direction: column;
-  width: 180px;
-  min-width: 0;
-  line-height: 1.25;
+  line-height: 1.3;
+}
+
+.board-story-side.end {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.board-story-caps {
+  font-family: var(--font-label);
+  font-size: var(--size-label-small);
+  letter-spacing: 0.07em;
+  color: var(--story-muted);
 }
 
 .board-story-title {
   overflow: hidden;
+  margin-top: 2px;
   font-family: var(--font-title);
+  font-size: 19px;
   font-weight: 500;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.board-story-time {
+.board-story-when,
+.board-story-stop {
+  margin-top: 2px;
+}
+
+.board-story-step::after {
+  content: " · ";
+  color: var(--story-muted);
+}
+
+.board-story-hint {
+  margin-top: 8px;
   font-size: var(--size-ui-small);
-  color: var(--muted);
+  font-style: italic;
+  color: var(--story-muted);
+}
+
+.board-story-return {
+  margin-top: 8px;
+  padding: 3px 10px;
+  font-family: var(--font-label);
+  font-size: var(--size-label-small);
+  letter-spacing: 0.07em;
+  color: var(--story-muted);
+  background: transparent;
+  border: 1px solid var(--story-rule);
+  border-radius: 12px;
+}
+
+.board-story-return:hover {
+  color: var(--story-text);
+}
+
+.cassette {
+  flex: none;
+  overflow: visible;
+}
+
+.cassette:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 4px;
+  border-radius: 10px;
+}
+
+.cassette-shell {
+  fill: var(--plastic);
+  stroke: var(--plastic-edge);
+}
+
+.cassette-label {
+  fill: var(--paper);
+}
+
+.cassette-name {
+  fill: var(--paper-ink);
+  font-family: var(--font-label);
+  font-size: 12.5px;
+  letter-spacing: 1.1px;
+}
+
+.cassette-date {
+  fill: var(--paper-muted);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+}
+
+.cassette-window {
+  fill: var(--plastic-window);
+}
+
+.cassette-ribbon {
+  stroke: var(--tape-ribbon);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+
+.cassette-reel {
+  cursor: grab;
+  touch-action: none;
+}
+
+.cassette.winding .cassette-reel {
+  cursor: grabbing;
+}
+
+.cassette-hit {
+  fill: transparent;
+}
+
+.cassette-wound {
+  fill: var(--tape-wound);
+}
+
+.cassette-grip {
+  fill: none;
+  stroke: var(--grip);
+  stroke-width: 1.6;
+}
+
+.cassette-hub {
+  fill: var(--plastic-dark);
+}
+
+.cassette-spokes line {
+  stroke: var(--plastic);
+  stroke-width: 1.3;
+}
+
+.cassette-arrow {
+  fill: none;
+  stroke: var(--story-muted);
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-dasharray: 3 3;
+}
+
+.cassette-pencil {
+  pointer-events: none;
+}
+
+/* The side panel and the lists stop short of the cassette. */
+.board:has(.board-story) :is(.board-panel, .board-popover) {
+  max-height: calc(100% - 70px - var(--story-foot));
+}
+
+/* In a tiled window the strip tightens up; on a phone the cassette keeps the middle, the step
+   what's left of it, and "Wind to the end" goes (winding or End does the same). */
+@container main (max-width: 760px) {
+  .board-story {
+    gap: 16px;
+    padding: 0 16px;
+  }
+}
+
+@container main (max-width: 520px) {
+  .board-story {
+    gap: 12px;
+    padding: 0 12px;
+  }
+
+  .board-story-side.end {
+    display: none;
+  }
+
+  .cassette {
+    width: 170px;
+    height: auto;
+  }
 }
 
 .card.not-yet,

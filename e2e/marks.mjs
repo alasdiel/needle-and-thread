@@ -18,7 +18,8 @@ check('toolbar has the tools in order', ['Move', 'String', 'Write', 'Marker', 'Z
 const cardBox = async (title) => page.locator('[data-card]', { hasText: title }).boundingBox();
 const middle = (b) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
 const boardBox = await page.locator('.board').boundingBox();
-const emptySpot = { x: boardBox.x + 120, y: boardBox.y + boardBox.height - 140 };
+// Above the cassette along the foot.
+const emptySpot = { x: boardBox.x + 120, y: boardBox.y + boardBox.height - 230 };
 
 // --- Write, loose on the cork -------------------------------------------------------------
 await page.click('.board-tools button:has-text("Write")');

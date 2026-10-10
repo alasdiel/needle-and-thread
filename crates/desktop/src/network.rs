@@ -169,6 +169,9 @@ pub fn NetworkBoard(
     /// Fiction or nonfiction, which decides what a thread card's tab is called.
     #[prop(into)]
     kind: Signal<ProjectKind>,
+    /// The project's title, for the cassette's label.
+    #[prop(into)]
+    title: Signal<String>,
     on_open_note: impl Fn(NoteKey) + Copy + Send + Sync + 'static,
 ) -> impl IntoView {
     let board = RwSignal::new(None::<BoardView>);
@@ -195,7 +198,7 @@ pub fn NetworkBoard(
     let pending = RwSignal::new(None::<Pending>);
     let popover = RwSignal::new(None::<Popover>);
     let filters = RwSignal::new(Filters::default());
-    // Story time: where along the timeline the slider is, or `None` at the end of the book,
+    // Story time: where along the timeline the cassette is wound to, or `None` at the end of the book,
     // which is where the board starts.
     let story = RwSignal::new(StoryView::default());
     let at_step = RwSignal::new(None::<usize>);
@@ -1630,7 +1633,7 @@ pub fn NetworkBoard(
             </div>
             {move || {
                 let steps = story.with(|s| s.steps.len());
-                (steps > 0).then(|| view! { <StorySlider story=story at=at_step /> })
+                (steps > 0).then(|| view! { <StoryCassette story=story at=at_step title=title /> })
             }}
             {pin_picker}
             {show_filter}
@@ -1666,39 +1669,272 @@ fn relationship_at(r: &RelationshipView, story: &StoryView, at: Option<usize>) -
     }
 }
 
-/// The slider along the board's foot: story time, a step per scene or plot point on the
-/// timeline, with the end of the book (where the board starts) as its last stop.
+/// How far a reel turns for one step of the story: a sixth of a turn.
+const STEP_TURN: f64 = std::f64::consts::PI / 3.0;
+/// A reel's radius with none of the story on it (the hub and a turn or two of tape) and with all
+/// of it, in the cassette's own units. The two reels' areas always add up to the same.
+const REEL_EMPTY: f64 = 11.0;
+const REEL_FULL: f64 = 26.0;
+/// Where the reels' hubs are in the cassette.
+const LEFT_HUB: f64 = 76.0;
+const RIGHT_HUB: f64 = 162.0;
+const HUB_Y: f64 = 94.0;
+
+/// A reel being wound: which, where its hub is on screen, the pointer's last angle about it,
+/// how far it has turned since the last step, and whether it has turned at all.
+#[derive(Clone, Copy)]
+struct Winding {
+    left: bool,
+    hub: (f64, f64),
+    last: f64,
+    turned: f64,
+    moved: bool,
+}
+
+/// The cassette at the board's foot: story time, a step per scene or plot point on the
+/// timeline, with the end of the book (where the board starts) as its last stop. The left reel
+/// holds the story still to come and the right what's behind you; winding either clockwise goes
+/// on, anticlockwise goes back. Clicking a reel without winding goes a step towards it, and the
+/// arrow keys step too. The pencil only shows while a reel is held.
 #[component]
-fn StorySlider(story: RwSignal<StoryView>, at: RwSignal<Option<usize>>) -> impl IntoView {
+fn StoryCassette(story: RwSignal<StoryView>, at: RwSignal<Option<usize>>, #[prop(into)] title: Signal<String>) -> impl IntoView {
     let count = move || story.with(|s| s.steps.len());
+    // 0..=count, where count is the end of the book.
     let value = move || at.get().unwrap_or_else(count);
+    let go = move |v: usize| {
+        let n = count();
+        at.set((v < n).then_some(v));
+    };
+    let step_by = move |by: isize| go(value().saturating_add_signed(by).min(count()));
+
+    let winding = StoredValue::new(None::<Winding>);
+    // What shows while winding: which reel is held, the pointer's angle about it in degrees, and
+    // which way it last went (+1 on, -1 back).
+    let held = RwSignal::new(None::<(bool, f64, i8)>);
+    // The spokes turn with the reels while winding.
+    let spin = RwSignal::new(0.0_f64);
+
+    // Each reel's radius: the right one holds what's behind you.
+    let radius = move |part: f64| (REEL_EMPTY.powi(2) + part * (REEL_FULL.powi(2) - REEL_EMPTY.powi(2))).sqrt();
+    let behind = move || {
+        let n = count();
+        if n == 0 { 1.0 } else { value() as f64 / n as f64 }
+    };
+    let left_r = move || radius(1.0 - behind());
+    let right_r = move || radius(behind());
+
     let caption = move || match at.get() {
-        None => ("The end".to_owned(), "How everything stands at the end of the book".to_owned()),
+        None => ("The end".to_owned(), String::new(), String::new()),
         Some(step) => story.with(|s| {
             let here = &s.steps[step];
-            (format!("{}. {}", step + 1, here.title), here.time.clone().unwrap_or_default())
+            (here.title.clone(), format!("Step {} of {}", step + 1, s.steps.len()), here.time.clone().unwrap_or_default())
         }),
     };
+    let label_time = move || {
+        let (title, _, time) = caption();
+        if at.get().is_none() { "The end".to_owned() } else if time.is_empty() { title } else { time }
+    };
+
+    let angle_of = |w: &Winding, ev: &web_sys::PointerEvent| (ev.client_y() as f64 - w.hub.1).atan2(ev.client_x() as f64 - w.hub.0);
+
+    let on_down = move |left: bool, ev: web_sys::PointerEvent| {
+        ev.stop_propagation();
+        ev.prevent_default();
+        let Some(el) = ev.current_target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) else { return };
+        let r = el.get_bounding_client_rect();
+        let mut w = Winding { left, hub: (r.left() + r.width() / 2.0, r.top() + r.height() / 2.0), last: 0.0, turned: 0.0, moved: false };
+        w.last = angle_of(&w, &ev);
+        winding.set_value(Some(w));
+        held.set(Some((left, w.last.to_degrees(), 0)));
+        let _ = el.set_pointer_capture(ev.pointer_id());
+    };
+    let on_move = move |ev: web_sys::PointerEvent| {
+        let Some(mut w) = winding.get_value() else { return };
+        ev.stop_propagation();
+        // Too near the hub, the angle jumps about.
+        if (ev.client_x() as f64 - w.hub.0).hypot(ev.client_y() as f64 - w.hub.1) < 6.0 {
+            return;
+        }
+        let now = angle_of(&w, &ev);
+        let mut turn = now - w.last;
+        if turn > std::f64::consts::PI {
+            turn -= std::f64::consts::TAU;
+        } else if turn < -std::f64::consts::PI {
+            turn += std::f64::consts::TAU;
+        }
+        w.last = now;
+        w.turned += turn;
+        if w.turned.abs() > 0.15 {
+            w.moved = true;
+        }
+        while w.turned >= STEP_TURN {
+            w.turned -= STEP_TURN;
+            step_by(1);
+        }
+        while w.turned <= -STEP_TURN {
+            w.turned += STEP_TURN;
+            step_by(-1);
+        }
+        winding.set_value(Some(w));
+        spin.update(|s| *s += turn.to_degrees());
+        let way = if turn > 0.0 { 1 } else if turn < 0.0 { -1 } else { 0 };
+        held.update(|h| {
+            if let Some((_, angle, last_way)) = h {
+                *angle = now.to_degrees();
+                if way != 0 {
+                    *last_way = way;
+                }
+            }
+        });
+    };
+    let on_up = move |ev: web_sys::PointerEvent| {
+        let Some(w) = winding.get_value() else { return };
+        ev.stop_propagation();
+        winding.set_value(None);
+        held.set(None);
+        if !w.moved {
+            step_by(if w.left { -1 } else { 1 });
+        }
+    };
+
+    let reel = move |left: bool| {
+        let cx = if left { LEFT_HUB } else { RIGHT_HUB };
+        let r = move || if left { left_r() } else { right_r() };
+        let spokes = move || format!("rotate({:.1} {cx} {HUB_Y})", spin.get());
+        view! {
+            <g
+                class="cassette-reel"
+                class:left=left
+                on:pointerdown=move |ev| on_down(left, ev)
+                on:pointermove=on_move
+                on:pointerup=on_up
+                on:pointercancel=on_up
+            >
+                <circle class="cassette-hit" cx=cx cy=HUB_Y r="30"></circle>
+                <circle class="cassette-wound" cx=cx cy=HUB_Y r=move || format!("{:.2}", r())></circle>
+                {move || held.get().filter(|h| h.0 == left).map(|_| view! {
+                    <circle class="cassette-grip" cx=cx cy=HUB_Y r=move || format!("{:.2}", r() + 2.5)></circle>
+                })}
+                <circle class="cassette-hub" cx=cx cy=HUB_Y r="9"></circle>
+                <g class="cassette-spokes" transform=spokes>
+                    <line x1=cx - 9.0 y1=HUB_Y x2=cx + 9.0 y2=HUB_Y></line>
+                    <line x1=cx - 4.5 y1=HUB_Y - 7.8 x2=cx + 4.5 y2=HUB_Y + 7.8></line>
+                    <line x1=cx - 4.5 y1=HUB_Y + 7.8 x2=cx + 4.5 y2=HUB_Y - 7.8></line>
+                </g>
+            </g>
+        }
+    };
+
+    // The pencil in the held reel's hub, its end towards the pointer, and an arrow over the reel
+    // the way it's going.
+    let pencil = move || {
+        held.get().map(|(left, angle, way)| {
+            let cx = if left { LEFT_HUB } else { RIGHT_HUB };
+            let arrow = match way {
+                1 => Some(format!("M{},66 A24,24 0 0 1 {},66 l-5,-4 m5,4 l-5,4", cx - 18.0, cx + 18.0)),
+                -1 => Some(format!("M{},66 A24,24 0 0 0 {},66 l5,-4 m-5,4 l5,4", cx + 18.0, cx - 18.0)),
+                _ => None,
+            };
+            view! {
+                {arrow.map(|d| view! { <path class="cassette-arrow" d=d></path> })}
+                <g class="cassette-pencil" transform=format!("translate({cx} {HUB_Y}) rotate({angle:.1})")>
+                    <polygon points="0,0 9,-4.5 9,4.5" fill="#c9a37a"></polygon>
+                    <polygon points="0,0 3.6,-1.8 3.6,1.8" fill="#39393c"></polygon>
+                    <rect x="9" y="-4.5" width="54" height="9" fill="#d9a62b"></rect>
+                    <rect x="63" y="-4.5" width="7" height="9" fill="#9aa3ab"></rect>
+                    <rect x="70" y="-4.5" width="9" height="9" rx="3" fill="#d1756c"></rect>
+                </g>
+            }
+        })
+    };
+
+    let on_key = move |ev: web_sys::KeyboardEvent| {
+        let by: isize = match ev.key().as_str() {
+            "ArrowLeft" | "ArrowDown" => -1,
+            "ArrowRight" | "ArrowUp" => 1,
+            "PageDown" => -5,
+            "PageUp" => 5,
+            "Home" => {
+                ev.prevent_default();
+                go(0);
+                return;
+            }
+            "End" => {
+                ev.prevent_default();
+                go(count());
+                return;
+            }
+            _ => return,
+        };
+        ev.prevent_default();
+        step_by(by);
+    };
+
     view! {
         <div class="board-story" on:pointerdown=|ev| ev.stop_propagation() on:wheel=|ev| ev.stop_propagation()>
-            <span class="panel-heading">"Story so far"</span>
-            <input
-                type="range"
-                min="0"
-                max=move || count().to_string()
-                step="1"
-                prop:value=move || value().to_string()
-                aria-label="Story time"
-                aria-valuetext=move || caption().0
-                on:input=move |ev| {
-                    let step: usize = event_target_value(&ev).parse().unwrap_or(0);
-                    at.set((step < count()).then_some(step));
-                }
-            />
-            <span class="board-story-now">
+            <div class="board-story-side">
+                <span class="board-story-caps">
+                    {move || match held.get() {
+                        Some((_, _, 1)) => "Winding on",
+                        Some((_, _, -1)) => "Winding back",
+                        _ => "Story time",
+                    }}
+                </span>
                 <span class="board-story-title">{move || caption().0}</span>
-                <span class="board-story-time">{move || caption().1}</span>
-            </span>
+                <span class="board-story-when">
+                    {move || {
+                        let (_, step, _) = caption();
+                        (!step.is_empty()).then(|| view! { <span class="board-story-step">{step}</span> })
+                    }}
+                    <span class="board-story-time">
+                        {move || match at.get() {
+                            None => "How everything stands at the end of the book".to_owned(),
+                            Some(_) => caption().2,
+                        }}
+                    </span>
+                </span>
+            </div>
+            <svg
+                class="cassette"
+                class:winding=move || held.get().is_some()
+                width="238"
+                height="134"
+                viewBox="0 0 238 134"
+                tabindex="0"
+                role="slider"
+                aria-label="Story time"
+                aria-valuemin="0"
+                aria-valuemax=move || count().to_string()
+                aria-valuenow=move || value().to_string()
+                aria-valuetext=move || caption().0
+                on:keydown=on_key
+            >
+                <rect class="cassette-shell" x="14" y="0.5" width="210" height="133" rx="9"></rect>
+                <rect class="cassette-label" x="26" y="10" width="186" height="46" rx="3"></rect>
+                <text class="cassette-name" x="36" y="30">{move || title.get()}</text>
+                <text class="cassette-date" x="36" y="47">{label_time}</text>
+                <rect class="cassette-window" x="26" y="66" width="186" height="56" rx="4"></rect>
+                <line
+                    class="cassette-ribbon"
+                    x1=LEFT_HUB
+                    y1=move || format!("{:.2}", HUB_Y - left_r())
+                    x2=RIGHT_HUB
+                    y2=move || format!("{:.2}", HUB_Y - right_r())
+                ></line>
+                {reel(true)}
+                {reel(false)}
+                {pencil}
+            </svg>
+            <div class="board-story-side end">
+                <span class="board-story-caps">"Where it stops"</span>
+                <span class="board-story-stop">"The end of the book"</span>
+                {move || match at.get() {
+                    Some(_) => view! {
+                        <button class="board-story-return" on:click=move |_| go(count())>"Wind to the end"</button>
+                    }.into_any(),
+                    None => view! { <span class="board-story-hint">"Wind a reel back to go through the story"</span> }.into_any(),
+                }}
+            </div>
         </div>
     }
 }
@@ -2022,7 +2258,9 @@ fn mark_bounds<'a>(cards: &[CardView], marks: impl Iterator<Item = &'a Mark>) ->
 /// content is centred, and zoomed out far enough to fit if it's bigger than the window.
 fn show_it_all(board_el: NodeRef<leptos::html::Div>, cards: RwSignal<Vec<CardView>>, view_at: Viewport) {
     let Some(el) = board_el.get_untracked() else { return };
-    let (w, h) = (el.client_width() as f64, el.client_height() as f64);
+    // The cassette along the foot covers the bottom of the board, so the cards fit above it.
+    let foot = el.query_selector(".board-story").ok().flatten().map_or(0.0, |s| s.get_bounding_client_rect().height());
+    let (w, h) = (el.client_width() as f64, el.client_height() as f64 - foot);
     let Some((minx, miny, maxx, maxy)) = card_bounds(&cards.get_untracked()) else { return };
     const MARGIN: f64 = 48.0;
     let fits = ((w - MARGIN * 2.0) / (maxx - minx).max(1.0)).min((h - MARGIN * 2.0) / (maxy - miny).max(1.0));
