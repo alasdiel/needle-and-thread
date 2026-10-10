@@ -25,7 +25,7 @@ Needle and Thread is a structure-first writing app for long fiction and long-for
 | Time | Real dates, relative times, invented calendars and order-only placement, mixed within one project |
 | Shared material | Series sharing a world; self-contained projects too |
 | Network | A map you build: automatic links plus named relationships you draw, changing over story time. One per project, can include notes from the world and other projects (§7) |
-| Network map | Drawn as a bulletin board strung with red thread: cork, each kind of note a different pinned paper (polaroid, postcard, index card, folder), zones you drag out and name, and Write and Marker tools for marks you add yourself. A tool for thinking, not for an audience (§7) |
+| Network map | Drawn as a bulletin board strung with red thread: a pinboard covered in the app's aqua cloth, each kind of note a different pinned paper (polaroid, postcard, index card, folder), zones you drag out and name, and Write and Marker tools for marks you add yourself. A tool for thinking, not for an audience (§7) |
 | Network map drawing | In Rust, Leptos + SVG, not a JavaScript graph library; panned and zoomed as one CSS-transformed layer (spike 3) |
 | Plot points | One note type with events (backstory included); can sit on the timeline |
 | Devices | A Linux desktop and a phone, both first-class: the same writing, notes, reading and restructuring on each (§9). **Windows is a release target now, not "later"** — other people are meant to run the app, which they weren't before |
@@ -356,13 +356,13 @@ It's drawn as a **bulletin board**, the kind strung with red thread. This is a t
 - **Nodes:** characters, places, plot points and threads (sources and arguments in nonfiction). Scenes stay off the map; plot points stand in for them.
 - **Links** (thin, automatic): drawn from `[[links]]` and headers, e.g. a plot point that involves Mara.
 - **Relationships** (labelled): lines you draw, like "mentor of", "betrays" or "causes".
-- **Zones:** sheets of kraft paper pinned under a group of cards, which you drag out and name yourself. They mean nothing to the rest of the app: a zone is only how you've arranged your own thinking. Saved in `network.toml`.
+- **Zones:** sheets of paper pinned under a group of cards, which you drag out and name yourself. They mean nothing to the rest of the app: a zone is only how you've arranged your own thinking. Saved in `network.toml`.
 - **Marks:** handwriting and marker you add yourself (see "Marks you make" below).
 - **Scope:** one network per project. World notes and notes from other projects can be added, and are marked with where they come from.
 
 ### How it's drawn
 
-The board is cork, stained in the dark theme. Each kind of note is a different piece of pinned paper, so kinds are told apart by shape before colour:
+The board is a pinboard covered in aqua cloth, the links swatch's cloth with its weave ("Board 7" on the canvas; it was brown cork until 2026-10-10, when the cork was the one surface outside the app's colours). Each kind of note is a different piece of pinned paper, so kinds are told apart by shape before colour:
 
 | Kind | Pinned up as |
 |---|---|
@@ -458,21 +458,21 @@ She owes him for the berth, and both of them know it.
 - A cassette along the board's foot follows story time ("Reel 1" and "Reel 1b" on the canvas): a step per scene or plot point on the timeline, with the end of the book as its last stop, which is where the board starts. The left reel holds the story still to come and the right what's behind you, so the reels' sizes say how far through the book you are. Its label carries the project's name and the step's date.
   - Wind either reel with the pointer: clockwise goes on, anticlockwise back, a step per sixth of a turn. A pencil sits in the held reel's hub, pointing at the pointer, with an arrow the way it's going; it's only there while winding, never at rest.
   - Clicking a reel without winding goes a step towards it. With the cassette focused, the arrow keys step, Page Up and Down go five, Home and End go to the start and the end, and "Wind to the end" beside it returns there.
-  - The cassette and the pencil are drawn in outline: the app's aqua on the dark cork, and on the pale cork the light theme's navy pattern-marking ink (its aqua is too faint there); the label is set in the app's type, never handwritten. In a narrow board the "Where it stops" side goes and the cassette shrinks.
+  - The cassette and the pencil are drawn in outline in the app's aqua, the label's small type navy in the light theme so it reads; the label is set in the app's type, never handwritten. In a narrow board the "Where it stops" side goes and the cassette shrinks.
 - At each step, relationships show their label then, aren't there before they begin and are faded once they end; plot points still to come are faded, and characters are faded until the first scene or plot point they're in (`pov`, `cast` or `involves`).
 - A relationship whose `begins`, `changes` or `ends` names something not on the timeline is outlined while the slider is away from the end, saying what, since it can't be placed in time.
 
 ### Building on it
 
-A toolbar over the cork: **Move**, **String**, **Write**, **Marker** and **Zone**, then **Pin up** and **Show**. A tool stays chosen until another is picked or Escape is pressed.
+A toolbar over the board: **Move**, **String**, **Write**, **Marker** and **Zone**, then **Pin up** and **Show**. A tool stays chosen until another is picked or Escape is pressed.
 
 - **Move:** drag cards to arrange them. Positions are saved in `network.toml`, and new cards are placed automatically, near what they link to.
 - **String:** drag from one card to another to tie them, then type its label on the tape; labels used before are offered as you type. It's a new note in `relationships/`, titled after its two ends ("Mara Venn and Old Teodor"), reading from the first card to the second. Let go anywhere but on a card, or press Escape, and nothing is tied. A card from another project is named `project/Title` in `between`, so the name always finds it again.
-- **Double-click bare cork** to add a plot point: a blank index card appears there for its title. Escape, or leaving it empty, makes nothing.
+- **Double-click the bare board** to add a plot point: a blank index card appears there for its title. Escape, or leaving it empty, makes nothing.
 - **Click a card or a string** to see it in the side panel; **double-click a card** to open its note.
   - A string's panel edits its label, makes it one way or both ways, turns it round, lists how it changes along the way (`begins`, `changes`, `ends`), opens its note, and can move it to the cut bin.
   - A card's panel lists its strings (each opens in the panel) and opens the note. A card pinned up by hand can be taken down there; the note itself stays.
-- **Zone:** drag out a sheet of kraft paper, then name it on its tape. The tape is the sheet's handle: drag it to move the sheet, double-click it to rename. Pressing the paper itself pans the board, so a board covered in zones can still be moved around. A chosen zone has a corner to resize it, and Delete (or Take down) removes it. Cards on it don't move with it.
+- **Zone:** drag out a sheet of paper, then name it on its tape. The tape is the sheet's handle: drag it to move the sheet, double-click it to rename. Pressing the paper itself pans the board, so a board covered in zones can still be moved around. A chosen zone has a corner to resize it, and Delete (or Take down) removes it. Cards on it don't move with it.
 - **Pin up:** a list of notes that aren't on the board: other projects', the world's, and this project's plain notes and sources (pinned up as a plain sheet). Picking one pins it in the middle of the view.
 - **Show:** leave kinds of card off, show only one thread and what's tied or linked to it, and hide automatic links. It's a way of looking, so it isn't saved.
 

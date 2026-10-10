@@ -1583,7 +1583,7 @@ pub fn NetworkBoard(
                         let k = kind.get();
                         let event = notes::kind_label("event", k).to_lowercase();
                         format!(
-                            "Nothing is pinned up yet. Make a character, place, {event} or {}, and it appears here, or double-click the cork to add a {event}.",
+                            "Nothing is pinned up yet. Make a character, place, {event} or {}, and it appears here, or double-click the board to add a {event}.",
                             notes::kind_label("thread", k).to_lowercase(),
                         )
                     }}

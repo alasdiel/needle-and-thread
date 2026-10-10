@@ -55,10 +55,11 @@
   --mark: light-dark(rgb(11 159 176 / 0.16), rgb(116 245 248 / 0.16)); /* search matches */
   --scrim: light-dark(rgb(21 35 45 / 0.25), rgb(5 10 14 / 0.55));
 
-  /* The network board (§7): cork, stained in the dark theme, and the papers pinned to it. */
-  --cork: light-dark(#c69c6d, #3b2b1f);
-  --cork-speck-a: light-dark(rgb(167 123 78 / 0.55), #2a1e15);
-  --cork-speck-b: light-dark(rgb(220 184 138 / 0.6), #4e3a2b);
+  /* The network board (§7): a pinboard covered in the links swatch's aqua cloth, and the papers
+     pinned to it. */
+  --cloth: light-dark(#dcecec, #12222b);
+  --cloth-warp: light-dark(rgb(11 159 176 / 0.09), rgb(116 245 248 / 0.05));
+  --cloth-weft: light-dark(rgb(11 159 176 / 0.07), rgb(116 245 248 / 0.04));
   --paper: light-dark(#fdfaf2, #e8e1d1); /* a card stays pale on a dark board */
   --paper-ink: #2a2420;
   --paper-muted: #6d6458;
@@ -67,25 +68,26 @@
   --manila: light-dark(#e2c68e, #d8bd85);
   --tape: light-dark(rgb(244 234 200 / 0.9), rgb(232 220 180 / 0.88));
   --string: light-dark(#c42b36, #e0505a);
-  --string-shadow: light-dark(rgb(60 30 10 / 0.35), rgb(0 0 0 / 0.45));
-  --twine: light-dark(rgb(255 250 235 / 0.85), rgb(232 222 200 / 0.5));
-  --card-drop: light-dark(rgb(60 30 10 / 0.35), rgb(0 0 0 / 0.5));
-  /* The cassette at the board's foot: a strip across the cork. */
-  --story-bar: light-dark(rgb(44 26 12 / 0.2), rgb(0 0 0 / 0.38));
-  --story-text: light-dark(#2a2017, #f2ece0);
-  --story-muted: light-dark(#42331f, #bcae99);
-  --story-rule: light-dark(rgb(42 32 23 / 0.35), rgb(242 236 224 / 0.3));
-  /* The cassette and pencil are drawn in outline: aqua on the dark cork, and on the pale cork the
-     light theme's pattern-marking navy (its aqua is too faint on cork), the same ink as the marks. */
-  --cassette-line: light-dark(#1c3450, #74f5f8);
+  --string-shadow: light-dark(rgb(21 35 45 / 0.25), rgb(0 0 0 / 0.45));
+  --twine: light-dark(rgb(79 100 112 / 0.5), rgb(200 220 228 / 0.45));
+  --card-drop: light-dark(rgb(21 35 45 / 0.22), rgb(0 0 0 / 0.5));
+  /* The cassette at the board's foot: a strip across the cloth. */
+  --story-bar: light-dark(rgb(21 35 45 / 0.07), rgb(0 0 0 / 0.3));
+  --story-text: var(--text);
+  --story-muted: var(--muted);
+  --story-rule: light-dark(rgb(21 35 45 / 0.18), rgb(143 166 178 / 0.25));
+  /* The cassette and pencil are drawn in outline in the app's aqua; the label's small type is navy
+     on the pale cloth, where thin aqua text would be hard to read. */
+  --cassette-line: var(--thread);
+  --cassette-text: light-dark(#1c3450, #74f5f8);
   --cassette-glow: light-dark(transparent, rgb(116 245 248 / 0.35));
-  /* The writer's own marker: dark ink on pale cork, chalky white on the stained cork. */
+  /* The writer's own marker: dark ink on the pale cloth, chalky white on the dark. */
   --marker: light-dark(#1f2b6e, #f3ecdc);
   /* Cards stay pale in both themes, so anything written on one is in dark ink. */
   --marker-on-paper: #1f2b6e;
-  /* Zones: kraft paper, a shade darker than the cork so a sheet reads on it. */
-  --kraft: light-dark(#a87a48, #5a4330);
-  --kraft-fibre: light-dark(rgb(255 240 210 / 0.1), rgb(0 0 0 / 0.08));
+  /* Zones: sheets of paper laid on the cloth, a shade off it so a sheet reads. */
+  --kraft: light-dark(#f0f8f8, #1a2f3a);
+  --kraft-fibre: light-dark(rgb(11 159 176 / 0.06), rgb(116 245 248 / 0.04));
 
   /* The type scale: small caps in two sizes, the interface font in two, titles in four. */
   --size-label: 14.5px; /* small-caps headings and labels */
@@ -3012,7 +3014,7 @@ del {
 }
 
 /* --- The network board ----------------------------------------------------------------------
-   A cork board of pinned cards, strung with red thread (DESIGN §7). The whole board moves as
+   A cloth pinboard of pinned cards, strung with red thread (DESIGN §7). The whole board moves as
    one layer, so panning and zooming don't redraw it (spike 3). */
 
 .board {
@@ -3022,13 +3024,11 @@ del {
   touch-action: none;
   cursor: grab;
   user-select: none;
-  background-color: var(--cork);
-  /* Cork's speckle: three sizes of fleck so no pattern repeat is obvious. */
+  background-color: var(--cloth);
+  /* The cloth's weave: fine threads one way and the other. */
   background-image:
-    radial-gradient(circle at 30% 40%, var(--cork-speck-a) 0.8px, transparent 1.4px),
-    radial-gradient(circle at 70% 60%, var(--cork-speck-b) 0.9px, transparent 1.6px),
-    radial-gradient(circle at 50% 50%, var(--cork-speck-a) 1.2px, transparent 2px);
-  background-size: 7px 7px, 11px 9px, 23px 19px;
+    repeating-linear-gradient(0deg, var(--cloth-warp) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, var(--cloth-weft) 0 1px, transparent 1px 3px);
 }
 
 .board:active {
@@ -3458,7 +3458,7 @@ input.tape-input {
   white-space: nowrap;
 }
 
-/* --- Zones: kraft paper under a group of cards ---------------------------------------------- */
+/* --- Zones: a sheet of paper under a group of cards ---------------------------------------------- */
 
 .zone {
   position: absolute;
@@ -3848,7 +3848,7 @@ button.panel-row {
 
 .cassette-name,
 .cassette-date {
-  fill: var(--cassette-line);
+  fill: var(--cassette-text);
   font-size: 12.5px;
 }
 
