@@ -25,7 +25,7 @@ Needle and Thread is a structure-first writing app for long fiction and long-for
 | Time | Real dates, relative times, invented calendars and order-only placement, mixed within one project |
 | Shared material | Series sharing a world; self-contained projects too |
 | Network | A map you build: automatic links plus named relationships you draw, changing over story time. One per project, can include notes from the world and other projects (§7) |
-| Network map | Drawn as a bulletin board strung with red thread: cork, each kind of note a different pinned paper (polaroid, postcard, index card, folder), zones you drag out and name, and Write and Marker tools for marks you add yourself. A tool for thinking, not for an audience (§7) |
+| Network map | Drawn as a bulletin board strung with red thread: a pinboard covered in the app's aqua cloth, each kind of note a different pinned paper (polaroid, postcard, index card, folder), zones you drag out and name, and Write and Marker tools for marks you add yourself. A tool for thinking, not for an audience (§7) |
 | Network map drawing | In Rust, Leptos + SVG, not a JavaScript graph library; panned and zoomed as one CSS-transformed layer (spike 3) |
 | Plot points | One note type with events (backstory included); can sit on the timeline |
 | Devices | A Linux desktop and a phone, both first-class: the same writing, notes, reading and restructuring on each (§9). **Windows is a release target now, not "later"** — other people are meant to run the app, which they weren't before |
@@ -291,10 +291,10 @@ All of these timings can be changed in `vault.toml`.
 
 ## 6. Timeline
 
-Each project uses **one calendar**. A project that belongs to a world uses the world's calendar.
+Each project uses **one calendar**: its own `[calendar]` in `project.toml`, else its world's in `world.toml`, else the real one. A world's plot points show on every one of its projects' timelines.
 
-- **Real**: Gregorian dates and times.
-- **Invented**: defined in `world.toml` or `project.toml`, with months and their lengths, eras, and optional leap-year rules and weekday names.
+- **Real**: Gregorian dates and times (proleptic, so `44 BC` works; 1 BC is year 0).
+- **Invented**: months and their lengths, eras, and optional leap years, weekday names and Day 1.
 
 ```toml
 [calendar]
@@ -304,29 +304,46 @@ months = [
   { name = "Bloom", days = 31 },
   # …
 ]
-eras = [{ name = "After the Drowning", short = "AD" }]
+# In order. Each era but the last says how many years it lasts; the first can count down
+# instead, like BC, and the next starts at its year 1.
+eras = [
+  { name = "Before the Drowning", short = "BD", counts_down = true },
+  { name = "After the Drowning", short = "AD" },
+]
+leap = { every = 4, month = "Bloom" }   # also days = 1, except_every = 100, unless_every = 400
+weekdays = ["Firstday", "Midday", "Lastday"]
+first_weekday = "Midday"                 # the weekday of 1 Thaw 1 AD
+day_one = "The wedding"                  # for "Day 4": a date, or a scene or plot point
 ```
 
-Each scene or event gets a place in time through the `when:` field in its header:
+A `[calendar]` with no `months` is the real calendar; it can still set `day_one`. A mistake in it (an unknown leap month, a middle era with no length, a field the app doesn't know) is reported with where it is, rather than ignored.
+
+Each scene or plot point gets a place in time through the `when` field in its header:
 
 | Kind | Example | Meaning |
 |---|---|---|
-| Fixed | `when: 1998-03-14 19:00` or `when: 3 Thaw 412 AD` | A point in the calendar |
-| Relative | `when: { from: The wedding, offset: +3d }` | Measured from another scene or event. "Day 4" counts from a chosen Day 1 |
-| Order only | `when: { after: The harbour }` | Just after, before or between other items |
-| Unplaced | *(no `when`)* | Waits in a tray beside the timeline |
+| Fixed | `when = "1998-03-14 19:00"`, `"14 March 1998"`, `"3 Thaw 412 AD"`, or a TOML date | A point in the calendar. A year with no era is in the last era |
+| Day | `when = "Day 4"`, `"Day 4 08:00"` | Counted from `day_one`. With no `day_one` and no dates anywhere, the timeline is just days |
+| Relative | `when = { from = "The wedding", offset = "+3d" }` | Measured from another scene or plot point. Offsets: `+6h`, `-2d`, `+1y 2mo`, `+2 weeks`; years and months are the calendar's own, so a month after 31 January is the last day of February |
+| Order only | `when = { after = "The harbor" }`, `{ before = … }`, or both | Just after, before or between other items |
+| Unplaced | *(no `when`)* | Waits in the tray at the timeline's foot |
 
-**How the resolver in `core` works:**
+A name in a `when` finds a scene or plot point by title, then a plot point by alias, then a scene by its file name; this project's before its world's. Case, spacing and curly apostrophes don't matter.
+
+**How the resolver in `core` works** (`core::calendar`, `core::timeline`):
 - Every fixed date becomes a single number (minutes since the calendar's start). Sorting and offsets are then plain arithmetic in any calendar.
-- A relative time is worked out by following its chain back to a fixed point.
-- Order-only items are placed between their neighbours.
-- Contradictions ("X is 3 days after Y but also before Y") and cycles are flagged.
+- A relative time is worked out by following its chain back to a fixed point. One measured from an order-only item is placed by order too.
+- Order-only items are placed between their neighbours: a topological sort over "after" and "before", tie-broken by rough time, so every stated order holds.
+- What can't be placed waits in the tray with the reason: a name that finds nothing or more than one thing, a chain that comes back on itself (every item on it is flagged, and what hangs off it "waits for" it), "Day 4" among dates with no `day_one`, or a `when` that can't be read. An item after something later than what it's before is placed by its "after" and flagged.
 
-**The timeline view:**
-- Shows story order, in lanes by POV character, thread or place.
-- Labels each item with its reading-order number, so flashbacks stand out.
-- Shows order-only items between their neighbours with dashed spacing.
-- Times are edited in the side panel. Order-only items can also be dragged.
+**The timeline view** ("Tape 2" on the canvas):
+- Opens from the topbar, in place of the page, like the board.
+- Story order runs **across** the page, a step per item, evenly spaced. A tape measure along the top gives each item's time and the time between ("6 hours", "19 years", "then" when either is placed by order), and stays on top as the lanes scroll under it.
+- Lanes are **rows**, by POV (plot points in their own lane), thread or place. Something with several threads or places goes in its first one's lane. Their names stay at the left as the story scrolls past, and each lane's thread runs under its pieces from the first to the last.
+- A scene is a small pattern piece carrying its piece number, its place in reading order. A number out of step (a later item in the story has a smaller one) is filled violet, which is how a flashback stands out. A plot point is a scrap of the violet note cloth. Order-only items have a dashed edge.
+- Click an item to set its time in a panel beside the timeline: a date, measured from something, between two things, or not yet. One the calendar can't read is refused with the reason, not saved. Double-click to open the scene or plot point.
+- **In a narrow window it becomes a list** ("Phone 2" on the canvas), one row per item in story order, with the lane as a colour down the left rather than a place of its own, and the time between written in the row. Lanes side by side need width that a phone hasn't got, and one lane filling the screen would lose the comparison lanes are for. Nothing scrolls sideways. The same markup does both: a row carries `--band` and `--row` and app.css places it, so there is one component, not two.
+- Not yet: dragging order-only items.
 
 ## 7. Network
 
@@ -339,13 +356,13 @@ It's drawn as a **bulletin board**, the kind strung with red thread. This is a t
 - **Nodes:** characters, places, plot points and threads (sources and arguments in nonfiction). Scenes stay off the map; plot points stand in for them.
 - **Links** (thin, automatic): drawn from `[[links]]` and headers, e.g. a plot point that involves Mara.
 - **Relationships** (labelled): lines you draw, like "mentor of", "betrays" or "causes".
-- **Zones:** sheets of kraft paper pinned under a group of cards, which you drag out and name yourself. They mean nothing to the rest of the app: a zone is only how you've arranged your own thinking. Saved in `network.toml`.
+- **Zones:** sheets of paper pinned under a group of cards, which you drag out and name yourself. They mean nothing to the rest of the app: a zone is only how you've arranged your own thinking. Saved in `network.toml`.
 - **Marks:** handwriting and marker you add yourself (see "Marks you make" below).
 - **Scope:** one network per project. World notes and notes from other projects can be added, and are marked with where they come from.
 
 ### How it's drawn
 
-The board is cork, stained in the dark theme. Each kind of note is a different piece of pinned paper, so kinds are told apart by shape before colour:
+The board is a pinboard covered in aqua cloth, the links swatch's cloth with its weave ("Board 7" on the canvas; it was brown cork until 2026-10-10, when the cork was the one surface outside the app's colours). Each kind of note is a different piece of pinned paper, so kinds are told apart by shape before colour:
 
 | Kind | Pinned up as |
 |---|---|
@@ -438,25 +455,28 @@ She owes him for the berth, and both of them know it.
 
 ### Moving through the story
 
-- A slider along the bottom follows story time (the timeline's order).
-- At each point, relationships show their state then, plot points still to come are dimmed, and characters are dimmed until they first appear.
-- Relationships that point at unplaced items are flagged, since they can't be placed in time.
+- A cassette along the board's foot follows story time ("Reel 1" and "Reel 1b" on the canvas): a step per scene or plot point on the timeline, with the end of the book as its last stop, which is where the board starts. The left reel holds the story still to come and the right what's behind you, so the reels' sizes say how far through the book you are. Its label carries the project's name and the step's date.
+  - Wind either reel with the pointer: clockwise goes on, anticlockwise back, a step per sixth of a turn. A pencil sits in the held reel's hub, pointing at the pointer, with an arrow the way it's going; it's only there while winding, never at rest.
+  - Clicking a reel without winding goes a step towards it. With the cassette focused, the arrow keys step, Page Up and Down go five, Home and End go to the start and the end, and "Wind to the end" beside it returns there.
+  - The cassette and the pencil are drawn in outline in the app's aqua, the label's small type navy in the light theme so it reads; the label is set in the app's type, never handwritten. In a narrow board the "Where it stops" side goes and the cassette shrinks.
+- At each step, relationships show their label then, aren't there before they begin and are faded once they end; plot points still to come are faded, and characters are faded until the first scene or plot point they're in (`pov`, `cast` or `involves`).
+- A relationship whose `begins`, `changes` or `ends` names something not on the timeline is outlined while the slider is away from the end, saying what, since it can't be placed in time.
 
 ### Building on it
 
-A toolbar over the cork: **Move**, **String**, **Write**, **Marker** and **Zone**, then **Pin up** and **Show**. A tool stays chosen until another is picked or Escape is pressed.
+A toolbar over the board: **Move**, **String**, **Write**, **Marker** and **Zone**, then **Pin up** and **Show**. A tool stays chosen until another is picked or Escape is pressed.
 
 - **Move:** drag cards to arrange them. Positions are saved in `network.toml`, and new cards are placed automatically, near what they link to.
 - **String:** drag from one card to another to tie them, then type its label on the tape; labels used before are offered as you type. It's a new note in `relationships/`, titled after its two ends ("Mara Venn and Old Teodor"), reading from the first card to the second. Let go anywhere but on a card, or press Escape, and nothing is tied. A card from another project is named `project/Title` in `between`, so the name always finds it again.
-- **Double-click bare cork** to add a plot point: a blank index card appears there for its title. Escape, or leaving it empty, makes nothing.
+- **Double-click the bare board** to add a plot point: a blank index card appears there for its title. Escape, or leaving it empty, makes nothing.
 - **Click a card or a string** to see it in the side panel; **double-click a card** to open its note.
   - A string's panel edits its label, makes it one way or both ways, turns it round, lists how it changes along the way (`begins`, `changes`, `ends`), opens its note, and can move it to the cut bin.
   - A card's panel lists its strings (each opens in the panel) and opens the note. A card pinned up by hand can be taken down there; the note itself stays.
-- **Zone:** drag out a sheet of kraft paper, then name it on its tape. The tape is the sheet's handle: drag it to move the sheet, double-click it to rename. Pressing the paper itself pans the board, so a board covered in zones can still be moved around. A chosen zone has a corner to resize it, and Delete (or Take down) removes it. Cards on it don't move with it.
+- **Zone:** drag out a sheet of paper, then name it on its tape. The tape is the sheet's handle: drag it to move the sheet, double-click it to rename. Pressing the paper itself pans the board, so a board covered in zones can still be moved around. A chosen zone has a corner to resize it, and Delete (or Take down) removes it. Cards on it don't move with it.
 - **Pin up:** a list of notes that aren't on the board: other projects', the world's, and this project's plain notes and sources (pinned up as a plain sheet). Picking one pins it in the middle of the view.
 - **Show:** leave kinds of card off, show only one thread and what's tied or linked to it, and hide automatic links. It's a way of looking, so it isn't saved.
 
-Until the story-time slider (M6), the board shows each relationship as it stands at the end of the book: its last label, and slack and faded if it `ends`. The side panel has what came before.
+At the end of the book, where the slider starts, the board shows each relationship as it finally stands: its last label, and faded if it `ends`. The side panel has what came before.
 
 ## 8. Desktop app
 

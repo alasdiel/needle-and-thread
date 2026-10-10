@@ -55,10 +55,11 @@
   --mark: light-dark(rgb(11 159 176 / 0.16), rgb(116 245 248 / 0.16)); /* search matches */
   --scrim: light-dark(rgb(21 35 45 / 0.25), rgb(5 10 14 / 0.55));
 
-  /* The network board (§7): cork, stained in the dark theme, and the papers pinned to it. */
-  --cork: light-dark(#c69c6d, #3b2b1f);
-  --cork-speck-a: light-dark(rgb(167 123 78 / 0.55), #2a1e15);
-  --cork-speck-b: light-dark(rgb(220 184 138 / 0.6), #4e3a2b);
+  /* The network board (§7): a pinboard covered in the links swatch's aqua cloth, and the papers
+     pinned to it. */
+  --cloth: light-dark(#dcecec, #12222b);
+  --cloth-warp: light-dark(rgb(11 159 176 / 0.09), rgb(116 245 248 / 0.05));
+  --cloth-weft: light-dark(rgb(11 159 176 / 0.07), rgb(116 245 248 / 0.04));
   --paper: light-dark(#fdfaf2, #e8e1d1); /* a card stays pale on a dark board */
   --paper-ink: #2a2420;
   --paper-muted: #6d6458;
@@ -67,16 +68,26 @@
   --manila: light-dark(#e2c68e, #d8bd85);
   --tape: light-dark(rgb(244 234 200 / 0.9), rgb(232 220 180 / 0.88));
   --string: light-dark(#c42b36, #e0505a);
-  --string-shadow: light-dark(rgb(60 30 10 / 0.35), rgb(0 0 0 / 0.45));
-  --twine: light-dark(rgb(255 250 235 / 0.85), rgb(232 222 200 / 0.5));
-  --card-drop: light-dark(rgb(60 30 10 / 0.35), rgb(0 0 0 / 0.5));
-  /* The writer's own marker: dark ink on pale cork, chalky white on the stained cork. */
+  --string-shadow: light-dark(rgb(21 35 45 / 0.25), rgb(0 0 0 / 0.45));
+  --twine: light-dark(rgb(79 100 112 / 0.5), rgb(200 220 228 / 0.45));
+  --card-drop: light-dark(rgb(21 35 45 / 0.22), rgb(0 0 0 / 0.5));
+  /* The cassette at the board's foot: a strip across the cloth. */
+  --story-bar: light-dark(rgb(21 35 45 / 0.07), rgb(0 0 0 / 0.3));
+  --story-text: var(--text);
+  --story-muted: var(--muted);
+  --story-rule: light-dark(rgb(21 35 45 / 0.18), rgb(143 166 178 / 0.25));
+  /* The cassette and pencil are drawn in outline in the app's aqua; the label's small type is navy
+     on the pale cloth, where thin aqua text would be hard to read. */
+  --cassette-line: var(--thread);
+  --cassette-text: light-dark(#1c3450, #74f5f8);
+  --cassette-glow: light-dark(transparent, rgb(116 245 248 / 0.35));
+  /* The writer's own marker: dark ink on the pale cloth, chalky white on the dark. */
   --marker: light-dark(#1f2b6e, #f3ecdc);
   /* Cards stay pale in both themes, so anything written on one is in dark ink. */
   --marker-on-paper: #1f2b6e;
-  /* Zones: kraft paper, a shade darker than the cork so a sheet reads on it. */
-  --kraft: light-dark(#a87a48, #5a4330);
-  --kraft-fibre: light-dark(rgb(255 240 210 / 0.1), rgb(0 0 0 / 0.08));
+  /* Zones: sheets of paper laid on the cloth, a shade off it so a sheet reads. */
+  --kraft: light-dark(#f0f8f8, #1a2f3a);
+  --kraft-fibre: light-dark(rgb(11 159 176 / 0.06), rgb(116 245 248 / 0.04));
 
   /* The type scale: small caps in two sizes, the interface font in two, titles in four. */
   --size-label: 14.5px; /* small-caps headings and labels */
@@ -3003,7 +3014,7 @@ del {
 }
 
 /* --- The network board ----------------------------------------------------------------------
-   A cork board of pinned cards, strung with red thread (DESIGN §7). The whole board moves as
+   A cloth pinboard of pinned cards, strung with red thread (DESIGN §7). The whole board moves as
    one layer, so panning and zooming don't redraw it (spike 3). */
 
 .board {
@@ -3013,13 +3024,11 @@ del {
   touch-action: none;
   cursor: grab;
   user-select: none;
-  background-color: var(--cork);
-  /* Cork's speckle: three sizes of fleck so no pattern repeat is obvious. */
+  background-color: var(--cloth);
+  /* The cloth's weave: fine threads one way and the other. */
   background-image:
-    radial-gradient(circle at 30% 40%, var(--cork-speck-a) 0.8px, transparent 1.4px),
-    radial-gradient(circle at 70% 60%, var(--cork-speck-b) 0.9px, transparent 1.6px),
-    radial-gradient(circle at 50% 50%, var(--cork-speck-a) 1.2px, transparent 2px);
-  background-size: 7px 7px, 11px 9px, 23px 19px;
+    repeating-linear-gradient(0deg, var(--cloth-warp) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, var(--cloth-weft) 0 1px, transparent 1px 3px);
 }
 
 .board:active {
@@ -3449,7 +3458,7 @@ input.tape-input {
   white-space: nowrap;
 }
 
-/* --- Zones: kraft paper under a group of cards ---------------------------------------------- */
+/* --- Zones: a sheet of paper under a group of cards ---------------------------------------------- */
 
 .zone {
   position: absolute;
@@ -3722,4 +3731,677 @@ button.panel-row {
 
 .pin-picker .panel-list {
   margin-top: 8px;
+}
+
+/* Moving through the story: a cassette at the board's foot, wound with a pencil, both drawn in
+   aqua outline. What hasn't come in yet fades, and a string whose times aren't all on the timeline
+   is outlined in red pencil. */
+.board {
+  --story-foot: 168px;
+}
+
+.board-story {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: var(--story-foot);
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 0 28px;
+  background: var(--story-bar);
+  border-top: 1px solid rgb(0 0 0 / 0.3);
+  color: var(--story-text);
+  cursor: default;
+}
+
+.board-story-side {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.board-story-side.end {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.board-story-caps {
+  font-family: var(--font-label);
+  font-size: var(--size-label-small);
+  letter-spacing: 0.07em;
+  color: var(--story-muted);
+}
+
+.board-story-title {
+  overflow: hidden;
+  margin-top: 2px;
+  font-family: var(--font-title);
+  font-size: 19px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.board-story-when,
+.board-story-stop {
+  margin-top: 2px;
+}
+
+.board-story-step::after {
+  content: " · ";
+  color: var(--story-muted);
+}
+
+.board-story-hint {
+  margin-top: 8px;
+  font-size: var(--size-ui-small);
+  font-style: italic;
+  color: var(--story-muted);
+}
+
+.board-story-return {
+  margin-top: 8px;
+  padding: 3px 10px;
+  font-family: var(--font-label);
+  font-size: var(--size-label-small);
+  letter-spacing: 0.07em;
+  color: var(--story-muted);
+  background: transparent;
+  border: 1px solid var(--story-rule);
+  border-radius: 12px;
+}
+
+.board-story-return:hover {
+  color: var(--story-text);
+}
+
+.cassette {
+  flex: none;
+  overflow: visible;
+}
+
+.cassette:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 4px;
+  border-radius: 10px;
+}
+
+/* Everything in the cassette is an outline in one aqua line. */
+.cassette {
+  filter: drop-shadow(0 0 2px var(--cassette-glow));
+}
+
+.cassette :is(.cassette-shell, .cassette-label, .cassette-window, .cassette-wound, .cassette-hub, .cassette-pencil *) {
+  fill: none;
+  stroke: var(--cassette-line);
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+}
+
+.cassette-label,
+.cassette-window {
+  stroke-width: 1;
+  stroke-opacity: 0.7;
+}
+
+.cassette-name,
+.cassette-date {
+  fill: var(--cassette-text);
+  font-size: 12.5px;
+}
+
+.cassette-name {
+  font-family: var(--font-label);
+  letter-spacing: 1.1px;
+}
+
+.cassette-date {
+  font-family: var(--font-ui);
+  opacity: 0.8;
+}
+
+.cassette-ribbon {
+  stroke: var(--cassette-line);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.cassette-reel {
+  cursor: grab;
+  touch-action: none;
+}
+
+.cassette.winding .cassette-reel {
+  cursor: grabbing;
+}
+
+.cassette-hit {
+  fill: transparent;
+}
+
+.cassette-wound {
+  stroke-width: 2;
+}
+
+.cassette-grip {
+  fill: none;
+  stroke: var(--cassette-line);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.cassette-spokes line {
+  stroke: var(--cassette-line);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+
+.cassette-arrow {
+  fill: none;
+  stroke: var(--cassette-line);
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-dasharray: 3 3;
+}
+
+.cassette-pencil {
+  pointer-events: none;
+}
+
+/* The side panel and the lists stop short of the cassette. */
+.board:has(.board-story) :is(.board-panel, .board-popover) {
+  max-height: calc(100% - 70px - var(--story-foot));
+}
+
+/* In a tiled window the strip tightens up; on a phone the cassette keeps the middle, the step
+   what's left of it, and "Wind to the end" goes (winding or End does the same). */
+@container main (max-width: 760px) {
+  .board-story {
+    gap: 16px;
+    padding: 0 16px;
+  }
+}
+
+@container main (max-width: 520px) {
+  .board-story {
+    gap: 12px;
+    padding: 0 12px;
+  }
+
+  .board-story-side.end {
+    display: none;
+  }
+
+  .cassette {
+    width: 170px;
+    height: auto;
+  }
+}
+
+.card.not-yet,
+.pin.not-yet {
+  opacity: 0.32;
+}
+
+.tape.unplaced {
+  outline: 1.5px dashed var(--string);
+  outline-offset: 2px;
+}
+
+/* --- The timeline (§6) ---------------------------------------------------------------------- */
+
+/* Story order runs across the page, a step per item, with a tape measure along the top. Lanes
+   are rows whose names stay at the left; each scene is a little pattern piece with its piece
+   number (its place in reading order), and a plot point is a scrap of the violet note cloth.
+
+   timeline.rs puts no pixels in the markup: each row carries `--band` and `--row`, the board
+   carries `--lanes` and `--steps`, and everything below works those out. (`--lane` is
+   already the lane's colour, a few rules down, so the index is `--band`.) The container query at
+   the end of this section is what turns the same markup into a plain list at phone width. */
+.timeline {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  container-type: inline-size;
+  container-name: timeline;
+  /* The names column, the tape's depth, one step across, and a lane's depth. */
+  --tl-names: 136px;
+  --tl-tape: 46px;
+  --tl-step: 192px;
+  --tl-lane: 112px;
+}
+
+.timeline-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.timeline-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 26px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.timeline-bar .panel-heading {
+  margin: 0;
+}
+
+.timeline-bar .segmented {
+  width: 240px;
+}
+
+.timeline-bar .segmented button,
+.when-panel .segmented button {
+  padding: 3px 8px;
+  font-size: var(--size-ui-small);
+}
+
+.segmented.four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.timeline-calendar {
+  margin-left: auto;
+  font-family: var(--font-label);
+  font-size: var(--size-label);
+  color: var(--muted);
+}
+
+.timeline-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  /* Scrolling a piece into view has to clear the tape and the names, which sit over it. */
+  scroll-padding: var(--tl-tape) 0 0 var(--tl-names);
+}
+
+.timeline-inner {
+  position: relative;
+  width: calc(var(--tl-names) + var(--steps) * var(--tl-step) + 24px);
+  height: calc(var(--tl-tape) + var(--lanes) * var(--tl-lane) + 24px);
+}
+
+/* Lane names stay at the left while the story scrolls past them. They follow the tape in flow,
+   so they start just below it without being told where. */
+.timeline-lanes {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  width: var(--tl-names);
+  border-right: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--mat) 88%, transparent);
+}
+
+.lane-name {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  height: var(--tl-lane);
+  padding: 0 12px;
+  overflow: hidden;
+  font-family: var(--font-label);
+  font-size: var(--size-label);
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+}
+
+.lane-name i {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--lane);
+}
+
+/* Each lane's thread colour, from the app's palette. */
+.lane-0 { --lane: var(--thread); }
+.lane-1 { --lane: var(--link); }
+.lane-2 { --lane: light-dark(#b0721a, #f0b44c); }
+.lane-3 { --lane: light-dark(#1f7a45, #4cc38a); }
+.lane-4 { --lane: light-dark(#c0362c, #ff8a80); }
+.lane-5 { --lane: var(--steel); }
+
+/* The lane's thread runs under its pieces rather than behind them: at this step a piece all but
+   fills its column, so a thread down the middle would be hidden and the lane would read as
+   loose cards. */
+.lane-thread {
+  position: absolute;
+  top: calc(var(--tl-tape) + var(--band) * var(--tl-lane) + 96px);
+  left: calc(var(--tl-names) + (var(--from) + 0.5) * var(--tl-step));
+  width: calc(var(--span) * var(--tl-step));
+  height: 2px;
+  background: var(--lane);
+  opacity: 0.55;
+}
+
+/* The tape measure: yellow tape with a tick every few pixels, stuck along the top. */
+.tape-measure {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  height: var(--tl-tape);
+  margin-left: var(--tl-names);
+  border-radius: 2px;
+  background-color: light-dark(#f1dc8a, #d9c26c);
+  background-image: repeating-linear-gradient(90deg, transparent 0 7px, rgb(40 30 0 / 0.35) 7px 8px);
+  box-shadow: 0 1px 4px var(--shadow-color);
+}
+
+.tape-tick,
+.tape-gap {
+  position: absolute;
+  top: 0;
+  color: #2a2208;
+  letter-spacing: 0;
+}
+
+/* A time sits at its step; the gap sits in the space before it. */
+.tape-tick {
+  left: calc(var(--row) * var(--tl-step));
+  width: 104px;
+  padding: 3px 5px 3px 7px;
+  border-left: 2px solid #2a2208;
+  background: light-dark(#f1dc8a, #d9c26c);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.15;
+}
+
+/* The time between, written on the tape in pencil. */
+.tape-gap {
+  left: calc(var(--row) * var(--tl-step) - 86px);
+  width: 84px;
+  padding: 1px 4px;
+  background: light-dark(#f1dc8a, #d9c26c);
+  font-size: 11.5px;
+  font-style: italic;
+  line-height: 1.2;
+  text-align: right;
+}
+
+/* A row is only a carrier for where its piece goes: in lanes it adds no box of its own. */
+.time-row {
+  display: contents;
+}
+
+/* The gap's words again, for the list; the tape has them in lanes. */
+.row-gap {
+  display: none;
+}
+
+/* A piece: a scene's pattern piece, or a plot point's scrap of cloth. Its place comes from the
+   row it sits in, through `--lane` and `--row`. */
+.time-piece {
+  position: absolute;
+  top: calc(var(--tl-tape) + var(--band) * var(--tl-lane) + 20px);
+  left: calc(var(--tl-names) + var(--row) * var(--tl-step) + 6px);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  width: 180px;
+  height: 66px;
+  padding: 7px 10px 7px 36px;
+  overflow: hidden;
+  border: 1px solid var(--print-soft);
+  border-radius: 3px;
+  background: var(--piece);
+  box-shadow: 0 2px 6px var(--piece-drop);
+  text-align: left;
+}
+
+/* The notch at the top of a pattern piece. */
+.time-piece::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  width: 9px;
+  height: 6px;
+  background: var(--print-soft);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+.time-piece:hover {
+  border-color: var(--print);
+}
+
+.time-piece.chosen {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+
+.time-piece.event {
+  border-color: var(--swatch-print-soft);
+  background: var(--fabric);
+}
+
+.time-piece.event::after {
+  display: none;
+}
+
+/* Placed by order alone: its neighbours are known, its time isn't. */
+.time-piece.loose {
+  border-style: dashed;
+}
+
+.time-piece.troubled {
+  border-color: var(--error);
+}
+
+.piece-number {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid var(--print);
+  border-radius: 50%;
+  color: var(--print);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 17px;
+  text-align: center;
+  letter-spacing: 0;
+}
+
+.time-piece.event .piece-number {
+  border: 0;
+  color: var(--swatch-print);
+  font-size: 14px;
+}
+
+/* Out of reading order, as a flashback is. */
+.piece-number.flashback {
+  border-color: var(--link);
+  background: var(--link);
+  color: var(--on-blue);
+}
+
+.piece-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-family: var(--font-title);
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.2;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.piece-time,
+.piece-problem {
+  overflow: hidden;
+  font-size: 13px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+}
+
+.piece-problem {
+  color: var(--error);
+}
+
+.timeline-empty {
+  position: absolute;
+  top: 64px;
+  left: 110px;
+  max-width: 340px;
+  color: var(--muted);
+}
+
+/* What isn't placed yet waits along the foot. */
+.timeline-tray {
+  flex: none;
+  max-height: 168px;
+  overflow-y: auto;
+  padding: 4px 18px 12px;
+  border-top: 1px solid var(--rule);
+  background: var(--side);
+}
+
+.tray-pieces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.tray-pieces .time-piece {
+  position: relative;
+  top: auto;
+  left: auto;
+}
+
+/* The panel for setting when: the board's panel, but in a column of its own, so the timeline
+   moves aside for it rather than hiding under it. */
+.when-panel {
+  position: relative;
+  top: auto;
+  right: auto;
+  flex: none;
+  width: 300px;
+  max-height: none;
+  border-width: 0 0 0 1px;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--side);
+}
+
+.when-panel .segmented {
+  margin-bottom: 4px;
+}
+
+.when-panel input[type="text"] {
+  width: 100%;
+  padding: 5px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--piece);
+}
+
+.field-hint {
+  display: block;
+  margin-top: 3px;
+  font-size: var(--size-ui-small);
+  color: var(--muted);
+}
+
+.when-now,
+.when-problem {
+  margin: 0 0 4px;
+  font-size: var(--size-ui-small);
+}
+
+.when-now.muted {
+  color: var(--muted);
+}
+
+.when-problem {
+  color: var(--error);
+}
+
+.when-cast {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.when-cast .chip {
+  padding: 0 9px;
+  font-size: var(--size-ui-small);
+}
+
+/* A narrow window — a phone, or the panel open in a small one — can't hold lanes side by side:
+   one lane would fill the screen and the comparison lanes exist for would be lost. So the same
+   rows become a plain list in story order, and a lane is the colour down the left instead of a
+   place. Nothing scrolls sideways. */
+@container timeline (max-width: 620px) {
+  .timeline-inner {
+    width: auto;
+    height: auto;
+    padding: 6px 0 10px;
+  }
+
+  /* The tape, the names and the threads are all about where things sit, so they go. */
+  .tape-measure,
+  .timeline-lanes,
+  .lane-thread {
+    display: none;
+  }
+
+  .time-row {
+    display: block;
+    padding: 0 14px;
+  }
+
+  .row-gap {
+    display: block;
+    padding: 4px 0 2px 58px;
+    color: var(--faint);
+    font-size: var(--size-count);
+    font-style: italic;
+  }
+
+  .time-row .time-piece {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: 100%;
+    height: auto;
+    min-height: 56px;
+    border-left: 4px solid var(--lane);
+  }
+
+  .time-piece::after {
+    display: none;
+  }
+
+  .timeline-empty {
+    position: relative;
+    top: auto;
+    left: auto;
+    padding: 0 14px;
+  }
+
+  /* The bar has to wrap here, or "Lanes" and the three choices sit on top of each other. */
+  .timeline-bar {
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    padding: 8px 14px;
+  }
+
+  .timeline-tray {
+    padding: 4px 14px 12px;
+  }
 }

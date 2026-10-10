@@ -3,6 +3,7 @@ id = "sc_5k2m8p3qrt"
 title = "The long night"
 status = "draft"
 summary = "About ten thousand words of generated prose, for checking typing speed."
+when = { after = "The night market" }
 +++
 
 The fog had thinned, and the pilot remembered the ledger as if it mattered. Nothing in this town was ever lost; it was only waiting to be sold. Every promise here was written in salt and dried by morning. “Not here,” said Teodor, and turned toward the breakwater. Rain came in off the water, and [[Old Teodor]] ignored the ledger for the second time. At the counting house, [[Mara Venn|Mara]] remembered the harbor bell, and nobody stopped to ask why. The fog had thinned, and the harbormaster counted a coil of tarred rope for the second time.

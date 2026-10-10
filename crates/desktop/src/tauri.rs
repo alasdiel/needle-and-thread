@@ -668,6 +668,118 @@ pub struct PinnedView {
     pub turn: f64,
 }
 
+/// A project's scenes and plot points in story time (DESIGN §6).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct TimelineView {
+    /// The invented calendar's name; `None` for the real one.
+    pub calendar: Option<String>,
+    pub items: Vec<TimelineItemView>,
+    /// Indices into `items`, in story order. The rest wait in the tray.
+    pub order: Vec<usize>,
+    pub days_only: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct TimelineItemView {
+    /// "scene" or "event".
+    pub kind: String,
+    pub owner: String,
+    pub world: bool,
+    pub path: String,
+    pub id: String,
+    pub title: String,
+    pub reading: Option<usize>,
+    pub status: String,
+    pub summary: String,
+    pub pov: Option<String>,
+    pub threads: Vec<String>,
+    pub places: Vec<String>,
+    pub cast: Vec<String>,
+    pub when: WrittenView,
+    pub time: Option<String>,
+    pub minute: Option<i64>,
+    pub loose: bool,
+    pub gap: Option<String>,
+    pub problem: Option<String>,
+}
+
+/// A `when` as written. `kind` is "none", "text", "from" or "order".
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+pub struct WrittenView {
+    pub kind: String,
+    pub text: String,
+    pub from: String,
+    pub offset: String,
+    pub after: String,
+    pub before: String,
+}
+
+impl TimelineItemView {
+    pub fn is_scene(&self) -> bool {
+        self.kind == "scene"
+    }
+
+    pub fn note_key(&self) -> NoteKey {
+        NoteKey { owner: self.owner.clone(), world: self.world, path: self.path.clone() }
+    }
+}
+
+/// A new `when`, as the timeline's panel sets it.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum WhenInput {
+    Clear,
+    Text { text: String },
+    From { from: String, offset: String },
+    Order { after: Option<String>, before: Option<String> },
+}
+
+/// The network board through story time (DESIGN §7): the slider's steps, and where along them
+/// each card and string comes in.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+pub struct StoryView {
+    pub steps: Vec<StepView>,
+    /// (card id, the step it comes in at). Cards not listed are there throughout.
+    pub cards: Vec<(String, usize)>,
+    pub relationships: Vec<StoryRelationshipView>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct StepView {
+    pub title: String,
+    pub time: Option<String>,
+    pub kind: String,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+pub struct StoryRelationshipView {
+    pub id: String,
+    pub begins: Option<usize>,
+    pub ends: Option<usize>,
+    pub changes: Vec<(usize, String)>,
+    pub unplaced: Vec<String>,
+}
+
+pub async fn project_story(project: &str) -> Result<StoryView, String> {
+    call("project_story", Args::default().str("project", project)).await
+}
+
+pub async fn project_timeline(project: &str) -> Result<TimelineView, String> {
+    call("project_timeline", Args::default().str("project", project)).await
+}
+
+pub async fn set_when(project: &str, item: &TimelineItemView, when: &WhenInput) -> Result<TimelineView, String> {
+    let when = serde_wasm_bindgen::to_value(when).map_err(|e| e.to_string())?;
+    let args = Args::default()
+        .str("project", project)
+        .str("kind", &item.kind)
+        .str("itemOwner", &item.owner)
+        .set("world", item.world.into())
+        .str("path", &item.path)
+        .set("when", when);
+    call("set_when", args).await
+}
+
 pub async fn project_board(project: &str) -> Result<BoardView, String> {
     call("project_board", Args::default().str("project", project)).await
 }

@@ -1,11 +1,20 @@
 // What every suite starts from: a browser on `trunk serve` (or NEEDLE_URL) with tauri-mock.js
-// standing in for the backend, and the network board open. `check` reports each step and
+// standing in for the backend (openBoard also opens the network board). `check` reports each step and
 // counts what failed, so one broken piece doesn't hide the rest; `finish` reports any page or
 // console errors and exits non-zero if anything failed.
 import { chromium, webkit } from 'playwright';
 import { readFileSync } from 'node:fs';
 
 export async function openBoard(suite) {
+  const app = await openApp(suite);
+  await app.page.click('[title="Network board"]');
+  await app.page.waitForSelector('.board [data-card]', { timeout: 10000 });
+  await app.page.waitForTimeout(250);
+  return app;
+}
+
+// The app in a browser with the stand-in backend, showing its first project.
+export async function openApp(suite) {
   const engineName = process.argv[2] === 'webkit' ? 'webkit' : 'chromium';
   const engine = engineName === 'webkit' ? webkit : chromium;
   const here = (f) => new URL(f, import.meta.url).pathname;
@@ -27,9 +36,6 @@ export async function openBoard(suite) {
 
   await page.goto(process.env.NEEDLE_URL ?? 'http://127.0.0.1:1420/');
   await page.waitForSelector('[title="Network board"]', { timeout: 60000 });
-  await page.click('[title="Network board"]');
-  await page.waitForSelector('.board [data-card]', { timeout: 10000 });
-  await page.waitForTimeout(250);
 
   return {
     page,

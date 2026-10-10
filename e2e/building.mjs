@@ -113,7 +113,8 @@ await settle();
 check('Escape closes the panel', (await panel.count()) === 0);
 
 // --- Double-click the cork for a plot point -------------------------------------------------
-const cork = { x: boardBox.x + boardBox.width - 160, y: boardBox.y + boardBox.height - 160 };
+// Above the cassette along the foot.
+const cork = { x: boardBox.x + boardBox.width - 160, y: boardBox.y + boardBox.height - 240 };
 await page.mouse.dblclick(cork.x, cork.y);
 await typing('board-pending');
 check('double-clicking the cork starts a plot point', (await page.locator('.pending-card').count()) === 1);

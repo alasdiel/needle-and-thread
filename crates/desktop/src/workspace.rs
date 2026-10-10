@@ -18,6 +18,7 @@ use crate::history::{HistoryPanel, HistoryTarget};
 use crate::icons::{Glyph, Icon};
 use crate::links::{LinkBridge, name_words};
 use crate::network::NetworkBoard;
+use crate::timeline::Timeline;
 use crate::notes::{self, LinksSwatch, NotesList, Pin};
 use crate::outline::{self, LiveWords, OutlineTree};
 use crate::pattern::{Grainline, Notches};
@@ -133,8 +134,10 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let notes_list = RwSignal::new(Vec::<NoteView>::new());
     let world = RwSignal::new(None::<(String, String)>);
     let tab = RwSignal::new(Tab::Outline);
-    // The main area shows either the open scene or note, or the project's network board.
+    // The main area shows either the open scene or note, or the project's network board, or
+    // its timeline; at most one of the two is set.
     let show_board = RwSignal::new(false);
+    let show_timeline = RwSignal::new(false);
     // The open scene's envelope: its header names and hints, fetched again after each save.
     let scene_names = RwSignal::new(None::<SceneNamesView>);
     let names_revision = RwSignal::new(0u32);
@@ -1425,9 +1428,24 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                         title="Network board"
                         aria-label="Network board"
                         class:active=move || show_board.get()
-                        on:click=move |_| show_board.update(|v| *v = !*v)
+                        on:click=move |_| {
+                            show_timeline.set(false);
+                            show_board.update(|v| *v = !*v);
+                        }
                     >
                         <Icon glyph=Glyph::Pin size=17 />
+                    </button>
+                    <button
+                        class="icon-button"
+                        title="Timeline"
+                        aria-label="Timeline"
+                        class:active=move || show_timeline.get()
+                        on:click=move |_| {
+                            show_board.set(false);
+                            show_timeline.update(|v| *v = !*v);
+                        }
+                    >
+                        <Icon glyph=Glyph::Tape size=17 />
                     </button>
                     <Show when=has_scene>
                         <div class="popover-anchor">
@@ -1552,13 +1570,28 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                     <NetworkBoard
                         project=Signal::derive(move || project.get().unwrap_or_default())
                         kind=project_kind
+                        title=Signal::derive(move || project_title().unwrap_or_default())
                         on_open_note=move |key| {
                             show_board.set(false);
                             open_note(key);
                         }
                     />
                 </Show>
-                <div class="page" class:empty=move || !has_doc() hidden=move || show_board.get()>
+                <Show when=move || show_timeline.get()>
+                    <Timeline
+                        project=Signal::derive(move || project.get().unwrap_or_default())
+                        kind=project_kind
+                        on_open_scene=move |slug| {
+                            show_timeline.set(false);
+                            open_scene(slug);
+                        }
+                        on_open_note=move |key| {
+                            show_timeline.set(false);
+                            open_note(key);
+                        }
+                    />
+                </Show>
+                <div class="page" class:empty=move || !has_doc() hidden=move || show_board.get() || show_timeline.get()>
                     // A note's links swatch sits beside it when there's room, else below.
                     <div class="bench">
                         <div class="piece-holder" class:note-holder=has_note>
@@ -1617,7 +1650,8 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                         <p class="empty-note">"No scene open. Pick one in the outline, or add one with the + on a chapter."</p>
                     </Show>
                 </div>
-                <Show when=has_scene>
+                // The board and the timeline hide the page, and its drawer goes with it.
+                <Show when=move || has_scene() && !show_board.get() && !show_timeline.get()>
                     // Clicking anywhere else closes the drawer; the tab and the drawer sit above this.
                     <Show when=move || envelope_open.get()>
                         <div class="backdrop envelope-backdrop" on:click=move |_| envelope_open.set(false)></div>

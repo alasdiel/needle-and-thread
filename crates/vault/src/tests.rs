@@ -395,7 +395,14 @@ fn the_sample_vault_opens_and_every_scene_is_placed() {
     assert_eq!((market.title.as_str(), market.status.as_str()), ("The night market", "draft"));
 
     let notes: Vec<String> = project.notes().list().unwrap().into_iter().map(|n| n.title).collect();
-    assert_eq!(notes, ["Mara Venn", "Old Teodor", "Night Market", "The missing ledger"]);
+    assert_eq!(notes, ["Mara Venn", "Old Teodor", "Night Market", "The missing ledger", "The harbor"]);
+    let timeline = vault.timeline(project).unwrap();
+    let story: Vec<(&str, Option<&str>)> =
+        timeline.order.iter().map(|&i| (timeline.items[i].title.as_str(), timeline.items[i].time_label.as_deref())).collect();
+    assert_eq!(
+        story,
+        [("The harbor", Some("14 March 1998, 19:00")), ("The night market", Some("15 March 1998, 01:00")), ("The long night", None)]
+    );
     let mara = vault.note_links(project, &Owner::Project("tidewater".into()), "characters/mara-venn").unwrap();
     assert_eq!(mara.appears_in.len(), 1);
     assert_eq!(mara.linked_from.len(), 2, "both scenes");
@@ -1066,4 +1073,140 @@ changes = [{ at = "The ledger leaves port", label = "distrusts" }, { at = "The D
             Change { at: "The Drowning".into(), label: String::new() },
         ]
     );
+}
+
+#[test]
+fn the_timeline_places_scenes_and_plot_points_in_the_worlds_calendar() {
+    let (_dir, vault) = linked_vault();
+    let world = vault.world("glass-coast").unwrap();
+    let world_toml = world.root().join("world.toml");
+    fs::write(
+        &world_toml,
+        fs::read_to_string(&world_toml).unwrap()
+            + "\n[calendar]\nname = \"Reckoning\"\nmonths = [{ name = \"Thaw\", days = 30 }, { name = \"Bloom\", days = 30 }]\n\
+               eras = [{ name = \"After the Drowning\", short = \"AD\" }]\n",
+    )
+    .unwrap();
+    world.notes().update_header("events/the-drowning", |h| h.set_str("when", "1 Thaw 1")).unwrap();
+    let tidewater = vault.project("tidewater").unwrap();
+    let notes = tidewater.notes();
+    let ledger = notes.create(NoteKind::Event, "The ledger leaves port").unwrap();
+    notes
+        .update_header(&ledger.path, |h| {
+            h.set_table("when", &[("after", "Next")]);
+            h.set_list("aliases", &["the ledger"]);
+        })
+        .unwrap();
+    tidewater.update_header("untitled-scene", |h| h.set_str("when", "3 Bloom 412 AD 19:00")).unwrap();
+    tidewater.update_header("next", |h| h.set_table("when", &[("from", "untitled scene"), ("offset", "+6h")])).unwrap();
+    let flashback = tidewater.create_scene("Flashback", Placement::After { scene: "next".into() }).unwrap();
+    tidewater.update_header(&flashback.slug, |h| h.set_table("when", &[("before", "the drowning")])).unwrap();
+    let lost = tidewater.create_scene("Lost", Placement::After { scene: "next".into() }).unwrap();
+    tidewater.update_header(&lost.slug, |h| h.set_table("when", &[("from", "The Ledger"), ("offset", "+1d")])).unwrap();
+    tidewater.create_scene("Someday", Placement::After { scene: "next".into() }).unwrap();
+
+    let timeline = vault.timeline(&tidewater).unwrap();
+    assert_eq!(timeline.calendar.as_deref(), Some("Reckoning"));
+    let titles: Vec<&str> = timeline.order.iter().map(|&i| timeline.items[i].title.as_str()).collect();
+    assert_eq!(titles, ["Flashback", "The Drowning", "Untitled scene", "Next", "The ledger leaves port", "Lost"]);
+    let item = |title: &str| timeline.items.iter().find(|i| i.title == title).unwrap();
+    assert_eq!(item("Next").time_label.as_deref(), Some("4 Bloom 412 AD, 01:00"));
+    assert_eq!(item("Next").when.field("offset"), Some("+6h"));
+    assert_eq!(item("Untitled scene").when, Written::Text("3 Bloom 412 AD 19:00".into()));
+    let gaps: Vec<Option<&str>> = timeline.order.iter().map(|&i| timeline.items[i].gap.as_deref()).collect();
+    assert_eq!(gaps, [None, Some("then"), Some("411 years"), Some("6 hours"), Some("then"), Some("then")]);
+    assert_eq!(item("Untitled scene").reading, Some(1));
+    assert_eq!(item("Untitled scene").pov.as_deref(), Some("Mara Venn"));
+    assert_eq!(item("The Drowning").owner, Owner::World("glass-coast".into()));
+    assert_eq!(item("The Drowning").kind, ItemKind::Event);
+    assert!(item("Lost").placed.loose, "measured from an order-only plot point");
+    assert_eq!(item("Someday").placed.position, None);
+
+    // A project's own calendar comes before its world's, and survives saving its settings.
+    let project_toml = tidewater.root().join("project.toml");
+    fs::write(&project_toml, fs::read_to_string(&project_toml).unwrap() + "\n[calendar]\nday_one = \"Untitled scene\"\n").unwrap();
+    let tidewater = vault.update_project("tidewater", |c| c.title = "Tidewater Rising".into()).unwrap();
+    assert!(fs::read_to_string(&project_toml).unwrap().contains("day_one = \"Untitled scene\""));
+    assert!(vault.calendar(&tidewater).unwrap().is_real());
+    assert!(vault.timeline(&tidewater).unwrap().items.iter().any(|i| i.placed.problem.is_some()), "dates no longer read");
+
+    // A broken calendar says where it is.
+    fs::write(&project_toml, "title = \"T\"\n[calendar]\nmonths = []\nname = \"X\"\n").unwrap();
+    let error = vault.timeline(&vault.project("tidewater").unwrap()).unwrap_err().to_string();
+    assert!(error.contains("project.toml") && error.contains("months"), "{error}");
+}
+
+#[test]
+fn a_when_is_set_from_the_timeline_and_a_bad_one_is_refused() {
+    let (_dir, vault) = linked_vault();
+    let tidewater = vault.project("tidewater").unwrap();
+    let here = Owner::Project("tidewater".into());
+    let scene = || fs::read_to_string(tidewater.scene_path("untitled-scene").unwrap()).unwrap();
+    let set = |edit: WhenEdit| vault.set_when(&tidewater, ItemKind::Scene, &here, "untitled-scene", &edit);
+
+    set(WhenEdit::Text("1998-03-14 19:00".into())).unwrap();
+    assert!(scene().contains("when = \"1998-03-14 19:00\"\n"));
+    set(WhenEdit::From { from: "Next".into(), offset: " -2h ".into() }).unwrap();
+    assert!(scene().contains("when = { from = \"Next\", offset = \"-2h\" }\n"));
+    set(WhenEdit::Order { after: Some(" ".into()), before: Some("Next".into()) }).unwrap();
+    assert!(scene().contains("when = { before = \"Next\" }\n"));
+
+    let before = scene();
+    assert!(set(WhenEdit::Text("the fourth of Smarch".into())).is_err());
+    assert!(set(WhenEdit::From { from: "Next".into(), offset: "soonish".into() }).is_err());
+    assert!(set(WhenEdit::Order { after: None, before: None }).is_err());
+    assert_eq!(scene(), before, "nothing written");
+
+    set(WhenEdit::Clear).unwrap();
+    assert!(!scene().contains("when"));
+    assert!(scene().contains("pov = \"Mara Venn\""));
+
+    let world = Owner::World("glass-coast".into());
+    vault.set_when(&tidewater, ItemKind::Event, &world, "events/the-drowning", &WhenEdit::Text("Day 1".into())).unwrap();
+    let drowning = vault.world("glass-coast").unwrap().notes().read("events/the-drowning").unwrap();
+    assert_eq!(drowning.header().unwrap().str("when"), Some("Day 1"));
+    assert!(vault.set_when(&tidewater, ItemKind::Scene, &world, "untitled-scene", &WhenEdit::Clear).is_err());
+}
+
+#[test]
+fn the_story_says_where_each_card_and_string_comes_in() {
+    let (_dir, vault) = linked_vault();
+    let tidewater = vault.project("tidewater").unwrap();
+    let notes = tidewater.notes();
+    let ledger = notes.create(NoteKind::Event, "The ledger leaves port").unwrap();
+    notes.update_header(&ledger.path, |h| h.set_table("when", &[("after", "Untitled scene")])).unwrap();
+    tidewater.update_header("untitled-scene", |h| h.set_str("when", "1998-03-14")).unwrap();
+    tidewater.update_header("next", |h| {
+        h.set_str("when", "1998-03-20");
+        h.set_list("cast", &["Old Teodor"]);
+    })
+    .unwrap();
+    let rel = vault.add_relationship(&tidewater, &notes.list().unwrap().iter().find(|n| n.title == "Mara Venn").unwrap().id,
+        &notes.list().unwrap().iter().find(|n| n.title == "Old Teodor").unwrap().id, "trusts", true).unwrap();
+    notes
+        .update_header(&rel.path, |h| {
+            h.set_str("begins", "Untitled scene");
+            h.set_str("ends", "The Drowning");
+        })
+        .unwrap();
+    let path = notes.file_path(&rel.path).unwrap();
+    let text = fs::read_to_string(&path).unwrap();
+    assert!(text.contains("ends = \"The Drowning\"\n"));
+    fs::write(&path, text.replacen("ends = \"The Drowning\"\n", "ends = \"The Drowning\"\nchanges = [{ at = \"next\", label = \"distrusts\" }]\n", 1)).unwrap();
+
+    let story = vault.story(&tidewater).unwrap();
+    let titles: Vec<&str> = story.steps.iter().map(|s| s.title.as_str()).collect();
+    assert_eq!(titles, ["Untitled scene", "The ledger leaves port", "Next"]);
+    assert_eq!(story.steps[0].time.as_deref(), Some("14 March 1998"));
+    let card = |title: &str| {
+        let id = vault.names(&tidewater).unwrap().items().iter().find(|n| n.note.title == title).unwrap().note.id.clone();
+        story.cards.iter().find(|(c, _)| *c == id).map(|(_, at)| *at)
+    };
+    assert_eq!(card("Mara Venn"), Some(0), "her POV scene");
+    assert_eq!(card("Old Teodor"), Some(0), "in the cast of the first scene");
+    assert_eq!(card("The ledger leaves port"), Some(1));
+    let r = story.relationships.iter().find(|r| r.id == rel.id).unwrap();
+    assert_eq!((r.begins, r.ends), (Some(0), None));
+    assert_eq!(r.changes, [(2, "distrusts".to_owned())]);
+    assert_eq!(r.unplaced, ["The Drowning"], "a world plot point with no when");
 }

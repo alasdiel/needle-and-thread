@@ -10,6 +10,7 @@ mod files;
 mod links;
 mod notes;
 mod project;
+mod timeline;
 mod world;
 
 use std::fs;
@@ -27,6 +28,7 @@ pub use error::{Error, Result};
 pub use links::{Appearance, Backlink, HeaderName, LinkSource, Mention, NAME_FIELDS, NameHint, NoteLinks, Renamed, SceneNames};
 pub use notes::{NoteInfo, Notes};
 pub use project::{Placement, Project, SceneInfo};
+pub use timeline::{ItemKind, ProjectTimeline, Story, StoryRelationship, StoryStep, TimelineItem, WhenEdit, Written};
 pub use world::World;
 
 use files::{checked_name, unique_dir, write_atomically};
