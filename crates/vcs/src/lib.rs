@@ -1,7 +1,8 @@
 //! A vault's history, stored as git commits: automatic snapshots while writing, named
-//! versions on request, per-file history, and pushing to GitHub.
+//! versions on request, per-file history, and syncing with GitHub.
 
 mod schedule;
+mod sync;
 
 use std::collections::HashMap;
 use std::env;
@@ -15,6 +16,7 @@ use needle_core::{scene::SceneFile, words::count_markdown_words};
 
 pub use git2::Error;
 pub use schedule::Scheduler;
+pub use sync::{CONFLICTS, Clash, Incoming, TakenIn};
 
 const BRANCH: &str = "main";
 const NAMED_VERSIONS: &str = "refs/tags/versions/";
@@ -142,35 +144,7 @@ impl Vault {
         let mut rejected = None;
         {
             let mut callbacks = RemoteCallbacks::new();
-            // libgit2 asks again after each failed attempt: offer each way once, then stop.
-            let mut ssh_keys = ssh_key_files().into_iter();
-            let mut tried_agent = false;
-            let mut tried_token = false;
-            callbacks.credentials(move |_url, user, allowed| {
-                let user = user.unwrap_or("git");
-                if allowed.contains(CredentialType::USERNAME) {
-                    return Cred::username(user);
-                }
-                if allowed.contains(CredentialType::SSH_KEY) {
-                    if !std::mem::replace(&mut tried_agent, true)
-                        && let Ok(cred) = Cred::ssh_key_from_agent(user)
-                    {
-                        return Ok(cred);
-                    }
-                    if let Some(private) = ssh_keys.next() {
-                        let public = private.with_extension("pub");
-                        return Cred::ssh_key(user, public.exists().then_some(public.as_path()), &private, None);
-                    }
-                    return Err(Error::from_str(
-                        "none of your SSH keys was accepted: load yours into ssh-agent (ssh-add), or add it to your account",
-                    ));
-                }
-                match token {
-                    Some(token) if !std::mem::replace(&mut tried_token, true) => Cred::userpass_plaintext("x-access-token", token),
-                    Some(_) => Err(Error::from_str("GitHub didn't accept the token")),
-                    None => Err(Error::from_str("this address needs a password; use its SSH address instead")),
-                }
-            });
+            callbacks.credentials(credentials(token));
             callbacks.push_update_reference(|reference, status| {
                 if let Some(status) = status {
                     rejected = Some(format!("{reference} was rejected: {status}"));
@@ -267,6 +241,40 @@ fn blob_at(tree: &Tree, path: &Path) -> Option<Oid> {
 
 #[cfg(test)]
 mod tests;
+
+/// Answers the server's request for credentials. libgit2 asks again after each failed attempt,
+/// so each way is offered once, then it stops: an SSH address uses the keys in ssh-agent, then
+/// the usual key files without a passphrase; an HTTPS address uses `token`.
+fn credentials(token: Option<&str>) -> impl FnMut(&str, Option<&str>, CredentialType) -> Result<Cred, Error> + '_ {
+    let mut ssh_keys = ssh_key_files().into_iter();
+    let mut tried_agent = false;
+    let mut tried_token = false;
+    move |_url, user, allowed| {
+        let user = user.unwrap_or("git");
+        if allowed.contains(CredentialType::USERNAME) {
+            return Cred::username(user);
+        }
+        if allowed.contains(CredentialType::SSH_KEY) {
+            if !std::mem::replace(&mut tried_agent, true)
+                && let Ok(cred) = Cred::ssh_key_from_agent(user)
+            {
+                return Ok(cred);
+            }
+            if let Some(private) = ssh_keys.next() {
+                let public = private.with_extension("pub");
+                return Cred::ssh_key(user, public.exists().then_some(public.as_path()), &private, None);
+            }
+            return Err(Error::from_str(
+                "none of your SSH keys was accepted: load yours into ssh-agent (ssh-add), or add it to your account",
+            ));
+        }
+        match token {
+            Some(token) if !std::mem::replace(&mut tried_token, true) => Cred::userpass_plaintext("x-access-token", token),
+            Some(_) => Err(Error::from_str("GitHub didn't accept the token")),
+            None => Err(Error::from_str("this address needs a password; use its SSH address instead")),
+        }
+    }
+}
 
 /// Why a push failed, in words for the person writing. `url` is where it was going.
 pub fn push_problem(error: &Error, url: &str) -> String {
