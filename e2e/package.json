@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node marks.mjs chromium && node building.mjs chromium && node story.mjs chromium && node timeline.mjs chromium",
-    "test:webkit": "node marks.mjs webkit && node building.mjs webkit && node story.mjs webkit && node timeline.mjs webkit"
+    "test": "node marks.mjs chromium && node building.mjs chromium && node story.mjs chromium && node timeline.mjs chromium && node sync.mjs chromium",
+    "test:webkit": "node marks.mjs webkit && node building.mjs webkit && node story.mjs webkit && node timeline.mjs webkit && node sync.mjs webkit"
   },
   "devDependencies": {
     "playwright": "1.63.0"

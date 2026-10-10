@@ -31,7 +31,7 @@ impl Backup {
     }
 
     /// The status, when there's somewhere to back up to.
-    fn status(&self) -> Option<BackupStatus> {
+    pub fn status(&self) -> Option<BackupStatus> {
         self.view.with(|v| v.as_ref().filter(|v| !v.remote.trim().is_empty()).map(|v| v.status.clone()))
     }
 }
@@ -77,6 +77,7 @@ pub fn BackupSettings(backup: Backup) -> impl IntoView {
             let (icon, text, failed) = match status {
                 BackupStatus::Waiting => (None, "Not backed up yet".to_owned(), false),
                 BackupStatus::Pushing => (None, "Backing up…".to_owned(), false),
+                BackupStatus::Incoming => (None, "Bringing in changes made elsewhere…".to_owned(), false),
                 BackupStatus::Done { at } => (Some(Glyph::Check), format!("Backed up {}", when(at)), false),
                 BackupStatus::Failed { error, .. } => (Some(Glyph::Alert), format!("Couldn't back up: {error}"), true),
             };
@@ -131,6 +132,7 @@ pub fn BackupMark(backup: Backup, on_open: impl Fn() + Copy + Send + Sync + 'sta
         let (text, title, failed) = match backup.status()? {
             BackupStatus::Waiting => return None,
             BackupStatus::Pushing => ("backing up…", "Sending your history to GitHub".to_owned(), false),
+            BackupStatus::Incoming => ("bringing in…", "Bringing in changes made on another device".to_owned(), false),
             BackupStatus::Done { at } => ("backed up", format!("Backed up to GitHub {}", when(at)), false),
             BackupStatus::Failed { error, .. } => ("not backed up", format!("Couldn't back up: {error}"), true),
         };

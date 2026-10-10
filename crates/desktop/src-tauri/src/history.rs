@@ -10,7 +10,7 @@ use std::{
 
 use needle_core::{names::Owner, scene::SceneFile, settings::SnapshotSettings, words::count_markdown_words};
 use needle_vault::Vault;
-use needle_vcs::{Scheduler, Vault as Repo};
+use needle_vcs::{Scheduler, TakenIn, Vault as Repo};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -38,7 +38,11 @@ impl History {
             backup: Backup::new(vault.root().to_owned(), settings.backup.clone()),
         };
         // A snapshot backs up by itself; without one, back up anyway, in case the last try failed.
-        if !history.snapshot(app, None)? && settings.backup.is_on() {
+        // Not backing up after each snapshot, it still looks for snapshots made elsewhere.
+        let taken = history.snapshot(app, None)?;
+        if !settings.backup.is_on() {
+            history.backup.check(app);
+        } else if !taken {
             history.backup.push(app);
         }
         Ok(history)
@@ -71,6 +75,17 @@ impl History {
         Ok(taken)
     }
 
+    /// Snapshots what's here and takes in what the backup's last fetch found, without pushing:
+    /// the caller decides that. `from` names the repository in the merge snapshot's message.
+    pub fn take_in(&self, app: &AppHandle, from: &str) -> Result<TakenIn, String> {
+        let repo = self.repo();
+        repo.snapshot(None).or_string()?;
+        let taken = repo.take_in(from).or_string()?;
+        self.scheduler().taken();
+        let _ = app.emit(SNAPSHOT_EVENT, ());
+        Ok(taken)
+    }
+
     fn repo(&self) -> MutexGuard<'_, Repo> {
         self.repo.lock().expect("a snapshot panicked")
     }
@@ -90,17 +105,28 @@ fn scheduler(settings: SnapshotSettings) -> Scheduler {
     )
 }
 
-/// Checks once a second whether an automatic snapshot is due.
+/// How often to look for snapshots made elsewhere, e.g. on the phone.
+const CHECK_EVERY: Duration = Duration::from_secs(5 * 60);
+
+/// Checks once a second whether an automatic snapshot is due, and every few minutes looks for
+/// snapshots made elsewhere.
 pub fn start_timer(app: AppHandle) {
-    thread::spawn(move || loop {
-        thread::sleep(Duration::from_secs(1));
-        let state = app.state::<AppState>();
-        let open = state.lock();
-        if let Some(open) = open.as_ref()
-            && open.history.is_due()
-            && let Err(e) = open.history.snapshot(&app, None)
-        {
-            eprintln!("automatic snapshot failed: {e}");
+    thread::spawn(move || {
+        let mut last_check = Instant::now();
+        loop {
+            thread::sleep(Duration::from_secs(1));
+            let state = app.state::<AppState>();
+            let open = state.lock();
+            let Some(open) = open.as_ref() else { continue };
+            if open.history.is_due()
+                && let Err(e) = open.history.snapshot(&app, None)
+            {
+                eprintln!("automatic snapshot failed: {e}");
+            }
+            if last_check.elapsed() >= CHECK_EVERY {
+                last_check = Instant::now();
+                open.history.backup().check(&app);
+            }
         }
     });
 }

@@ -27,7 +27,7 @@ use crate::search::{Search, SearchPalette, SearchSidebar};
 use crate::settings::{Prefs, SettingsPanel};
 use crate::spell::SpellBridge;
 use crate::status::{self, StatusMark};
-use crate::tauri::{self, CutView, HitView, NoteKey, NoteView, OutlineView, Passage, ProjectView, SceneNamesView, SceneView, VaultView};
+use crate::tauri::{self, BackupStatus, CutView, HitView, NoteKey, NoteView, OutlineView, Passage, ProjectView, SceneNamesView, SceneView, VaultView};
 use crate::typography::TypographySettings;
 
 #[derive(Clone, PartialEq)]
@@ -577,6 +577,70 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     };
 
     let load_project = move |slug: String| load_project_at(slug, None);
+
+    // Snapshots made elsewhere (DESIGN §5, Sync): once the backup finds some, what's being typed
+    // is saved, they're taken in, and whatever they changed is shown again as it now is.
+    let taking_in = StoredValue::new(false);
+    let brought_in = move |taken: tauri::TakenInView| {
+        let Some(p) = project.get_untracked() else { return };
+        load_notes(p.clone());
+        load_bin(p.clone());
+        let open_note = note.with_untracked(|n| n.as_ref().map(NoteView::key));
+        let open_scene = current();
+        spawn_local(async move {
+            if let Ok(view) = tauri::project_outline(&p).await {
+                set_outline(view);
+            }
+            let now = match (open_scene, open_note) {
+                (Some(s), _) => tauri::open_scene(&p, &s).await.ok().map(|o| o.markdown),
+                (None, Some(key)) => tauri::open_note(&key).await.ok().map(|o| o.markdown),
+                _ => None,
+            };
+            let replaced = now.is_some_and(|md| {
+                editor.with_value(|h| {
+                    h.as_ref().is_some_and(|h| {
+                        if h.markdown() == md {
+                            return false;
+                        }
+                        h.set_content(&md);
+                        words.set(h.word_count() as usize);
+                        markdown.set(h.markdown());
+                        true
+                    })
+                })
+            });
+            match (replaced, taken.clashes.len()) {
+                (_, 1..) => show_notice("Changes came in from another device. Where you'd both changed something, yours was kept", None),
+                (true, _) => show_notice("This changed on another device, so it's shown as it is now", None),
+                _ => {}
+            }
+        });
+    };
+    let take_in = move || {
+        if taking_in.get_value() {
+            return;
+        }
+        taking_in.set_value(true);
+        flush();
+        spawn_local(async move {
+            if let Some(save) = last_save.get_value() {
+                let _ = wasm_bindgen_futures::JsFuture::from(save).await;
+            }
+            // A failure shows on the backup's mark, which the backend sets.
+            let taken = tauri::take_in().await;
+            taking_in.try_set_value(false);
+            if let Ok(taken) = taken
+                && !taken.changed.is_empty()
+            {
+                brought_in(taken);
+            }
+        });
+    };
+    Effect::new(move |_| {
+        if backup.status() == Some(BackupStatus::Incoming) {
+            take_in();
+        }
+    });
 
     // Opens a search result, with its matches highlighted; a scene in another project opens
     // that project first. Something in the cut bin is shown there.
