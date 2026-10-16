@@ -5,8 +5,15 @@ edition.workspace = true
 publish.workspace = true
 
 [dependencies]
+# Sealing shared text and comments (share.rs). No getrandom: callers bring their own random.
+aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"] }
+base64 = "0.22"
 serde = { workspace = true, features = ["derive"] }
+sha2 = "0.10"
 similar = "3.2.0"
 spellbook = "0.4.2"
 toml = "1.1.6"
 toml_edit = "0.25.15"
+
+[dev-dependencies]
+serde_json = "1"

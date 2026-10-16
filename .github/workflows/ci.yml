@@ -78,6 +78,50 @@ jobs:
       - name: Test
         run: cargo test --workspace --exclude needle-desktop-ui
 
+  # The sharing Worker is its own workspace (workers-rs pins its own wasm-bindgen): lint it,
+  # then run it locally with its own KV and D1 and go through every rule.
+  worker:
+    name: Sharing Worker
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: crates/worker
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component clippy --target wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/worker
+          key: worker-ci
+
+      - name: Clippy
+        run: cargo clippy --target wasm32-unknown-unknown -- -D warnings
+
+      - name: Install worker-build
+        run: cargo install worker-build --version 0.8.7 --locked
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: crates/worker/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Test against a local copy
+        run: |
+          pnpm exec wrangler d1 migrations apply DB --local
+          pnpm exec wrangler dev --port 8787 > wrangler.log 2>&1 &
+          for i in $(seq 1 120); do grep -q "Ready on" wrangler.log && break; sleep 2; done
+          node test.mjs
+
   editor:
     name: Editor tests and typecheck
     runs-on: ubuntu-24.04

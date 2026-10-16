@@ -14,6 +14,7 @@ pub mod outline;
 pub mod project;
 pub mod scene;
 pub mod settings;
+pub mod share;
 pub mod spell;
 pub mod timeline;
 pub mod words;

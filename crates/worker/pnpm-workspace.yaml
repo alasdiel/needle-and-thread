@@ -1,0 +1,5 @@
+# wrangler's bundler and Cloudflare's runtime fetch their platform binaries in install scripts,
+# which pnpm 12 refuses unless they're named here (see editor/pnpm-workspace.yaml).
+allowBuilds:
+  esbuild: true
+  workerd: true
