@@ -529,6 +529,8 @@ pub async fn snapshot_now() -> Result<bool, String> {
 pub enum BackupStatus {
     Waiting,
     Pushing,
+    /// The repository has snapshots made elsewhere, to take in before pushing.
+    Incoming,
     /// Seconds since the Unix epoch.
     Done { at: i64 },
     Failed { at: i64, error: String },
@@ -553,6 +555,27 @@ pub async fn set_backup(remote: &str, after_snapshot: bool) -> Result<(), String
 
 pub async fn back_up_now() -> Result<(), String> {
     call("back_up_now", Args::default()).await
+}
+
+/// What came in from elsewhere; see `TakenInView` in src-tauri/src/backup.rs.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+pub struct TakenInView {
+    /// Files that changed, relative to the vault.
+    pub changed: Vec<String>,
+    pub clashes: Vec<ClashView>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct ClashView {
+    /// The file, still holding this computer's version.
+    pub path: String,
+    /// Where the other version was put.
+    pub copy: String,
+}
+
+/// Snapshots, then takes in the snapshots made elsewhere that the backup found.
+pub async fn take_in() -> Result<TakenInView, String> {
+    call("take_in", Args::default()).await
 }
 
 /// Returns the restored text. `label` describes the version in the snapshot message.

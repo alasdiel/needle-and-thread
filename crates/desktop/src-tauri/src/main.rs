@@ -111,6 +111,7 @@ fn main() {
             backup::backup,
             backup::set_backup,
             backup::back_up_now,
+            backup::take_in,
             settings::appearance,
             settings::set_appearance,
             settings::markdown_panel,

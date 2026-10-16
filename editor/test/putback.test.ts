@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { EditorState } from "prosemirror-state";
+import { EditorState, TextSelection } from "prosemirror-state";
 import { parseMarkdown, serializeMarkdown } from "../src/markdown.ts";
 import { changeTo } from "../src/putback.ts";
 
@@ -45,4 +45,15 @@ test("repeated text around the change still lands in the right place", () => {
 test("no change, no edit", () => {
   const state = EditorState.create({ doc: parseMarkdown("Same.\n") });
   assert.equal(changeTo(state, parseMarkdown("Same.\n")), null);
+});
+
+test("text from another device leaves the cursor where it was", () => {
+  const doc = parseMarkdown("Typed here.\n\nYou came, he said.\n");
+  // The cursor sits after "Typed".
+  const state = EditorState.create({ doc, selection: TextSelection.create(doc, 6) });
+  const tr = changeTo(state, parseMarkdown("Typed here.\n\nYou came, he said, on the phone.\n"), false);
+  assert.ok(tr);
+  assert.equal(serializeMarkdown(tr.doc), "Typed here.\n\nYou came, he said, on the phone.\n");
+  assert.equal(tr.selection.from, 6);
+  assert.equal(tr.scrolledIntoView, false);
 });

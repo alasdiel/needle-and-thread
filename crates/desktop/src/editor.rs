@@ -47,6 +47,12 @@ extern "C" {
     #[wasm_bindgen(method, js_name = applyMarkdown)]
     pub fn apply_markdown(this: &EditorHandle, markdown: &str) -> bool;
 
+    /// Changes the text to `markdown`, touching only what differs and leaving the cursor where
+    /// it was; Undo doesn't take it back. For text that changed on another device. Returns
+    /// whether anything changed.
+    #[wasm_bindgen(method, js_name = replaceMarkdown)]
+    pub fn replace_markdown(this: &EditorHandle, markdown: &str) -> bool;
+
     #[wasm_bindgen(method, js_name = getMarkdown)]
     pub fn markdown(this: &EditorHandle) -> String;
 

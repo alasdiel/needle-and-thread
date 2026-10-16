@@ -213,7 +213,17 @@ export class Editor {
     return true;
   }
 
-  getMarkdown(): string {
+  /** Changes the document to `markdown`, touching only what differs and leaving the cursor and
+   * scroll where they were. For text that changed on another device: it isn't the writer's own
+   * edit, so Undo doesn't take it back. Returns whether anything changed. */
+  replaceMarkdown(markdown: string): boolean {
+    const tr = changeTo(this.view.state, parseMarkdown(markdown), false);
+    if (!tr) return false;
+    this.view.dispatch(tr.setMeta("addToHistory", false));
+    return true;
+  }
+
+    getMarkdown(): string {
     return serializeMarkdown(this.view.state.doc);
   }
 

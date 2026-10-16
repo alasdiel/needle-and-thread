@@ -4,7 +4,14 @@
 // test can check what the board wrote. Commands that change notes (tying a string, a new plot
 // point, pinning up) change the board held here, as the real ones change the files, and every
 // call is kept in window.__calls. Anything else fails the way a real failed command does.
+// window.__emit(event) calls the frontend's listeners for it, and window.__backup is what the
+// backup command answers; take_in brings in window.__incoming, the way the real one does.
 (() => {
+  const listeners = {};
+  window.__emit = (event, payload) => (listeners[event] ?? []).forEach((handler) => handler({ event, payload }));
+  window.__backup = { remote: '', after_snapshot: true, status: { state: 'waiting' } };
+  // What the open scene says on disk.
+  let sceneText = 'The market opened at dusk.';
   const project = { slug: 'tidewater', title: 'Tidewater', kind: 'fiction' };
   const scene = (slug, id, title, words) => ({ slug, id, title, status: 'draft', summary: '', words });
   const outline = {
@@ -113,8 +120,17 @@
       board.relationships = board.relationships.filter((r) => r.path !== a.path);
       return null;
     },
-    open_scene: () => ({ scene: outline.chapters[0].scenes[0], markdown: 'The market opened at dusk.' }),
-    backup: () => ({ remote: '', after_snapshot: true, status: { state: 'waiting' } }),
+    open_scene: () => ({ scene: outline.chapters[0].scenes[0], markdown: sceneText }),
+    backup: () => structuredClone(window.__backup),
+    // Takes in what a test put in window.__incoming: { text, clashes }.
+    take_in: () => {
+      const incoming = window.__incoming ?? {};
+      window.__incoming = null;
+      window.__backup.status = { state: 'done', at: Math.floor(Date.now() / 1000) };
+      if (incoming.text == null) return { changed: [], clashes: [] };
+      sceneText = incoming.text;
+      return { changed: ['projects/tidewater/manuscript/night-market.md'], clashes: incoming.clashes ?? [] };
+    },
     bin_items: () => [],
     // A one-word dictionary: enough for spellcheck to start without a banner in the way.
     spell_dictionary: () => ({ aff: 'SET UTF-8\n', dic: '1\nthe\n', personal_words: [] }),
@@ -193,6 +209,11 @@
         }
       },
     },
-    event: { listen: () => Promise.resolve(() => {}) },
+    event: {
+      listen: (event, handler) => {
+        (listeners[event] ??= []).push(handler);
+        return Promise.resolve(() => {});
+      },
+    },
   };
 })();
