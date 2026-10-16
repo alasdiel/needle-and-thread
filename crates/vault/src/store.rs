@@ -42,6 +42,10 @@ pub trait Store: Send + Sync + fmt::Debug {
 
     fn remove_file(&self, path: &Path) -> Result<()>;
 
+    /// Removes a folder if nothing is left in it, and does nothing otherwise. In a snapshot a
+    /// folder only exists while a file does, so there's nothing to do there.
+    fn remove_dir_if_empty(&self, _path: &Path) {}
+
     fn create_dir_all(&self, path: &Path) -> Result<()>;
 
     fn is_file(&self, path: &Path) -> bool;
@@ -344,6 +348,11 @@ mod disk {
 
         fn remove_file(&self, path: &Path) -> Result<()> {
             Ok(fs::remove_file(path)?)
+        }
+
+        fn remove_dir_if_empty(&self, path: &Path) {
+            // Fails when there's something in it, which is the point.
+            let _ = fs::remove_dir(path);
         }
 
         fn create_dir_all(&self, path: &Path) -> Result<()> {
