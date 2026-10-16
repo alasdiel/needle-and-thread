@@ -17,6 +17,7 @@ use crate::envelope::{self, EnvelopeCard};
 use crate::history::{HistoryPanel, HistoryTarget};
 use crate::icons::{Glyph, Icon};
 use crate::links::{LinkBridge, name_words};
+use crate::merge;
 use crate::network::NetworkBoard;
 use crate::timeline::Timeline;
 use crate::notes::{self, LinksSwatch, NotesList, Pin};
@@ -27,7 +28,7 @@ use crate::search::{Search, SearchPalette, SearchSidebar};
 use crate::settings::{Prefs, SettingsPanel};
 use crate::spell::SpellBridge;
 use crate::status::{self, StatusMark};
-use crate::tauri::{self, BackupStatus, CutView, HitView, NoteKey, NoteView, OutlineView, Passage, ProjectView, SceneNamesView, SceneView, VaultView};
+use crate::tauri::{self, BackupStatus, CutView, HitView, MergeView, NoteKey, NoteView, OutlineView, Passage, ProjectView, SceneNamesView, SceneView, VaultView};
 use crate::typography::TypographySettings;
 
 #[derive(Clone, PartialEq)]
@@ -169,6 +170,20 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
     let new_project = RwSignal::new(None::<String>);
     let backup = Backup::load();
     provide_context(backup);
+    // Clashes from another device still to settle, everywhere in the vault.
+    let merges = RwSignal::new(Vec::<MergeView>::new());
+    let load_merges = move || {
+        spawn_local(async move {
+            let Ok(all) = tauri::merges().await else { return };
+            // A file already brought into line by hand has nothing left to settle.
+            let (left, settled): (Vec<_>, Vec<_>) = all.into_iter().partition(|m| merge::count(m) > 0);
+            merges.try_set(left);
+            for m in settled {
+                let _ = tauri::settle_merge(&m.stamp, &m.path, None).await;
+            }
+        });
+    };
+    load_merges();
     let _ = tauri::listen("snapshot-taken", move || {
         revision.try_update(|r| *r += 1);
     });
@@ -608,8 +623,9 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                     })
                 })
             });
+            load_merges();
             match (replaced, taken.clashes.len()) {
-                (_, 1..) => show_notice("Changes came in from another device. Where you'd both changed something, yours was kept", None),
+                (_, 1..) => show_notice("Changes came in from another device, and some need merging", None),
                 (true, _) => show_notice("This changed on another device, so it's shown as it is now", None),
                 _ => {}
             }
@@ -640,6 +656,113 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
             take_in();
         }
     });
+
+    // Clashes waiting to be settled (DESIGN §5, Sync): where a paragraph was changed here and on
+    // another device too, the other version shows under this one, to settle in place.
+    let open_place = Memo::new(move |_| match (project.get(), scene.with(|s| s.as_ref().map(|s| s.slug.clone()))) {
+        (Some(project), Some(scene)) => Some(merge::Place::Scene { project, scene }),
+        _ => note.with(|n| n.as_ref().map(|n| merge::Place::Note(n.key()))),
+    });
+    let shown = Memo::new(move |_| {
+        let Some(place) = open_place.get() else { return Vec::new() };
+        merges.with(|all| markdown.with(|md| merge::shown(all, &place, md)))
+    });
+    Effect::new(move |_| {
+        let boxes = shown.with(|shown| merge::boxes(shown));
+        editor.with_value(|h| {
+            if let Some(h) = h {
+                h.set_merges(&boxes);
+            }
+        });
+    });
+    // Clashes in files that aren't open, as they're saved.
+    let elsewhere = Memo::new(move |_| {
+        let open = open_place.get();
+        merges.with(|all| {
+            all.iter()
+                .filter(|m| merge::Place::of(m) != open)
+                .map(|m| (m.clone(), merge::count(m)))
+                .filter(|(_, n)| *n > 0)
+                .collect::<Vec<_>>()
+        })
+    });
+    let to_merge = Memo::new(move |_| shown.with(Vec::len) + elsewhere.with(|e| e.iter().map(|(_, n)| n).sum::<usize>()));
+    let merging_scenes = Signal::derive(move || {
+        let p = project.get();
+        let mut slugs: Vec<String> = elsewhere.with(|e| {
+            e.iter().filter(|(m, _)| m.project.is_some() && m.project == p).filter_map(|(m, _)| m.scene.clone()).collect()
+        });
+        if !shown.with(Vec::is_empty)
+            && let Some(merge::Place::Scene { scene, .. }) = open_place.get()
+        {
+            slugs.push(scene);
+        }
+        slugs
+    });
+    let next_merge = StoredValue::new(0usize);
+    let reveal_next = move || {
+        let ids: Vec<u32> = shown.with_untracked(|s| s.iter().map(|s| s.id).collect());
+        if ids.is_empty() {
+            return;
+        }
+        let at = next_merge.get_value() % ids.len();
+        next_merge.set_value(at + 1);
+        editor.with_value(|h| {
+            if let Some(h) = h {
+                h.reveal_merge(ids[at]);
+            }
+        });
+    };
+    // "· 2 to merge": the next clash in the open file, else the first file that has one.
+    let go_to_merge = move || {
+        if !shown.with_untracked(Vec::is_empty) {
+            reveal_next();
+            return;
+        }
+        let Some((first, _)) = elsewhere.with_untracked(|e| e.first().cloned()) else { return };
+        if let Some(key) = first.note_key() {
+            open_note(key);
+        } else if let (Some(p), Some(slug)) = (first.project, first.scene) {
+            if project.get_untracked().as_ref() == Some(&p) {
+                open_scene(slug);
+            } else {
+                project.set(Some(p.clone()));
+                load_project_at(p, Some(slug));
+            }
+        }
+    };
+    let on_merge = move |id: u32, name: String| {
+        let Some(choice) = merge::choice(&name) else { return };
+        let Some(chosen) = shown.with_untracked(|s| s.iter().find(|s| s.id == id).cloned()) else { return };
+        let Some(now) = editor.with_value(|h| h.as_ref().map(|h| h.markdown())) else { return };
+        let Some((record, settled)) = merges.with_untracked(|all| merge::settle(all, &chosen, &now, choice)) else { return };
+        let text = editor.with_value(|h| {
+            h.as_ref().map(|h| {
+                if settled.mine != now && h.apply_markdown(&settled.mine) {
+                    words.set(h.word_count() as usize);
+                }
+                h.markdown()
+            })
+        });
+        let text = text.unwrap_or(settled.mine.clone());
+        let done = needle_core::merge::clashes(&settled.base, &text, &settled.theirs).is_empty();
+        merges.update(|all| {
+            all.retain_mut(|m| {
+                if (&m.stamp, &m.path) != (&record.stamp, &record.path) {
+                    return true;
+                }
+                (m.base, m.theirs, m.mine) = (settled.base.clone(), settled.theirs.clone(), text.clone());
+                !done
+            })
+        });
+        markdown.set(text);
+        spawn_local(async move {
+            let texts = (!done).then_some((settled.base.as_str(), settled.theirs.as_str()));
+            if let Err(e) = tauri::settle_merge(&record.stamp, &record.path, texts).await {
+                report(e);
+            }
+        });
+    };
 
     // Opens a search result, with its matches highlighted; a scene in another project opens
     // that project first. Something in the cut bin is shown there.
@@ -1383,6 +1506,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                         current=current_slug
                         cutting=cutting
                         live_words=live_words
+                        merging=merging_scenes
                         on_open=open_scene
                         on_outline=apply
                         on_error=report
@@ -1461,6 +1585,16 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                             }}
                             <BackupMark backup=backup on_open=move || show_settings.set(true) />
                         </span>
+                        <Show when=move || { to_merge.get() > 0 }>
+                            <button
+                                class="merge-count"
+                                title="Paragraphs changed here and on another device, to merge"
+                                on:click=move |_| go_to_merge()
+                            >
+                                <span class="merge-dot" aria-hidden="true"></span>
+                                {move || format!("{} to merge", to_merge.get())}
+                            </button>
+                        </Show>
                         <div class="popover-anchor">
                             <button
                                 class="icon-button typography-button"
@@ -1667,6 +1801,13 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                                 </Show>
                                 {piece_head}
                                 {note_head}
+                                <Show when=move || shown.with(|s| !s.is_empty())>
+                                    <div class="merge-banner" role="status">
+                                        <span class="merge-dot" aria-hidden="true"></span>
+                                        <span class="merge-banner-text">{move || merge::banner(shown.with(Vec::len))}</span>
+                                        <button on:click=move |_| reveal_next()>"Next ↓"</button>
+                                    </div>
+                                </Show>
                                 <Editor
                                     handle=editor
                                     typography=typography
@@ -1675,6 +1816,7 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                                     on_cut_cancel=on_cut_cancel
                                     on_cut_to_bin=cut_to_bin
                                     on_back_from_bin=back_from_bin
+                                    on_merge=on_merge
                                     on_ready=on_ready
                                 />
                             </article>

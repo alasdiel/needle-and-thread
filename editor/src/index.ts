@@ -13,6 +13,7 @@ import { buildKeymaps } from "./keymap.ts";
 import { type HighlightMeta, highlightKey, highlightPlugin } from "./highlight.ts";
 import { type LinkMeta, type LinkResolver, linkSuggestPlugin, linksKey, linksPlugin } from "./links.ts";
 import { countWords, parseMarkdown, serializeMarkdown } from "./markdown.ts";
+import { type Choice, type MergeBox, type MergeMeta, mergeKey, mergePlugin } from "./merge.ts";
 import { openSelectionMenu, openSpellMenu } from "./menu.ts";
 import { changeTo } from "./putback.ts";
 import {
@@ -28,7 +29,7 @@ import {
 } from "./pattern.ts";
 import { type SpellMeta, type Spellchecker, spellcheckKey, spellcheckPlugin } from "./spellcheck.ts";
 
-export type { LinkResolver, Passage, Spellchecker, Typography };
+export type { Choice, LinkResolver, MergeBox, Passage, Spellchecker, Typography };
 export { hasSpot } from "./bin.ts";
 
 export interface EditorOptions {
@@ -44,6 +45,8 @@ export interface MountOptions extends EditorOptions, Partial<CutCallbacks> {
   /** Called when Undo (or Redo) puts a binned passage back in the text, with the id `onCutToBin`
    * had, so the app takes it out of the bin. */
   onBackFromBin?: (move: number) => void;
+  /** Called when the writer settles a clash shown with `setMerges`, with its id. */
+  onMerge?: (id: number, choice: Choice) => void;
   debounceMs?: number;
 }
 
@@ -52,6 +55,7 @@ export class Editor {
   private readonly onChange: (markdown: string, words: number) => void;
   private readonly onCutToBin: (passage: Passage, move: number) => void;
   private readonly onBackFromBin: (move: number) => void;
+  private readonly onMerge: (id: number, choice: Choice) => void;
   // Passages moved to and from the bin in this document, newest last, for Undo and Redo.
   private moves: Move[] = [];
   private lastMove = 0;
@@ -75,6 +79,7 @@ export class Editor {
   private readonly seam = seamPlugin();
   private readonly links = linksPlugin(() => this.linkResolver);
   private readonly highlight = highlightPlugin();
+  private readonly merge = mergePlugin(() => this.onMerge);
   // Before the keymaps, so Enter picks a suggestion instead of splitting the paragraph.
   private readonly linkSuggest = linkSuggestPlugin(() => this.linkResolver);
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -85,6 +90,7 @@ export class Editor {
     this.onChange = options.onChange ?? (() => {});
     this.onCutToBin = options.onCutToBin ?? (() => {});
     this.onBackFromBin = options.onBackFromBin ?? (() => {});
+    this.onMerge = options.onMerge ?? (() => {});
     this.cutCallbacks = {
       onCutConfirm: options.onCutConfirm ?? (() => {}),
       onCutCancel: options.onCutCancel ?? (() => {}),
@@ -165,6 +171,26 @@ export class Editor {
     const { state } = this.view;
     this.view.dispatch(state.tr.setSelection(TextSelection.create(state.doc, first.from)).scrollIntoView());
     this.view.dom.querySelector(".search-match")?.scrollIntoView({ block: "center" });
+  }
+
+  /** Shows where paragraphs were changed here and on another device too, each with the other
+   * device's version under it (empty clears them). */
+  setMerges(boxes: MergeBox[]): void {
+    const meta: MergeMeta = { boxes };
+    this.view.dispatch(this.view.state.tr.setMeta(mergeKey, meta));
+  }
+
+  /** Scrolls the clash with this id into view, and puts the cursor at its start. */
+  revealMerge(id: number): void {
+    const box = this.view.dom.querySelector(`.merge-other[data-merge="${id}"]`);
+    if (!box) return;
+    const mine = box.previousElementSibling?.classList.contains("merge-mine") ? box.previousElementSibling : null;
+    const target = mine ?? box;
+    const pos = this.view.posAtDOM(target, 0);
+    const { state } = this.view;
+    this.view.dispatch(state.tr.setSelection(Selection.near(state.doc.resolve(Math.min(pos, state.doc.content.size)))));
+    this.view.focus();
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
   }
 
   /** Checks every word again, after the spellchecker learned new ones. */
@@ -296,6 +322,7 @@ export class Editor {
       this.links,
       this.highlight,
       this.seam,
+      this.merge,
     ];
   }
 

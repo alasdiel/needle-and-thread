@@ -4405,3 +4405,114 @@ button.panel-row {
     padding: 4px 14px 12px;
   }
 }
+
+/* Merging: where a paragraph was changed here and on another device too (DESIGN §5, Sync).
+   The other device's version waits under this one, in violet, which is otherwise only links
+   and named versions; a dot in the outline and "· 2 to merge" by Saved say where. */
+.merge-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--link);
+}
+
+.scene-title .merge-dot {
+  margin-left: auto;
+}
+
+.merge-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  margin-right: 10px;
+  padding: 0 9px;
+  border: 1px solid var(--link);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--link) 10%, transparent);
+  color: var(--link);
+  font: 500 var(--size-label-small) var(--font-label);
+  letter-spacing: 0.07em;
+  text-transform: lowercase;
+  cursor: pointer;
+}
+
+.merge-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--link) 10%, transparent);
+  font: var(--size-ui) / 1.45 var(--font-ui);
+  letter-spacing: 0.015em;
+}
+
+.merge-banner-text {
+  flex: 1;
+}
+
+.merge-banner button,
+.merge-actions button {
+  padding: 4px 11px;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font: var(--size-ui) / 1.45 var(--font-ui);
+  letter-spacing: 0.015em;
+  cursor: pointer;
+}
+
+.merge-banner button:hover,
+.merge-actions button:hover {
+  border-color: var(--muted);
+}
+
+/* This side's paragraphs, marked down the left like a tacked seam. */
+.needle-prose > .merge-mine {
+  margin-left: -14px;
+  padding-left: 12px;
+  border-left: 2px solid var(--blue);
+}
+
+.merge-other {
+  margin: 8px 0 14px;
+  padding: 10px 12px;
+  border: 1px dashed var(--link);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--link) 8%, transparent);
+  user-select: none;
+}
+
+.merge-when {
+  margin-bottom: 4px;
+  color: var(--link);
+  font: 500 var(--size-label-small) var(--font-label);
+  letter-spacing: 0.07em;
+  text-transform: lowercase;
+}
+
+.merge-text p {
+  margin: 0 0 0.6em;
+}
+
+.merge-text p:last-child {
+  margin-bottom: 0;
+}
+
+.merge-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.merge-actions button.primary {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: var(--on-blue);
+  font-weight: 500;
+}

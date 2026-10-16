@@ -33,7 +33,7 @@ check('the outline is read again', (await calls('project_outline')).length > out
 await shot('1-changed');
 
 await arrive({ text: 'Written on the phone, then here.', clashes: [{ path: 'projects/tidewater/manuscript/night-market.md', copy: '.needle/conflicts/2026-10-10-0941/projects/tidewater/manuscript/night-market.md' }] });
-check('a clash says yours was kept', (await notice()).includes('yours was kept'), await notice());
+check('a clash says some need merging', (await notice()).includes('need merging'), await notice());
 await shot('2-clash');
 
 process.exitCode = (await finish()) === 0 ? 0 : 1;

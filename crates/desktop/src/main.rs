@@ -8,6 +8,7 @@ mod envelope;
 mod history;
 mod icons;
 mod links;
+mod merge;
 mod network_spike;
 mod network;
 mod notes;

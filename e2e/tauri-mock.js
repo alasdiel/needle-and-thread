@@ -6,10 +6,12 @@
 // call is kept in window.__calls. Anything else fails the way a real failed command does.
 // window.__emit(event) calls the frontend's listeners for it, and window.__backup is what the
 // backup command answers; take_in brings in window.__incoming, the way the real one does.
+// window.__merges is the clashes still to settle, which settle_merge changes.
 (() => {
   const listeners = {};
   window.__emit = (event, payload) => (listeners[event] ?? []).forEach((handler) => handler({ event, payload }));
   window.__backup = { remote: '', after_snapshot: true, status: { state: 'waiting' } };
+  window.__merges = [];
   // What the open scene says on disk.
   let sceneText = 'The market opened at dusk.';
   const project = { slug: 'tidewater', title: 'Tidewater', kind: 'fiction' };
@@ -122,14 +124,28 @@
     },
     open_scene: () => ({ scene: outline.chapters[0].scenes[0], markdown: sceneText }),
     backup: () => structuredClone(window.__backup),
-    // Takes in what a test put in window.__incoming: { text, clashes }.
+    // Takes in what a test put in window.__incoming: { text, clashes, merges }.
     take_in: () => {
       const incoming = window.__incoming ?? {};
       window.__incoming = null;
       window.__backup.status = { state: 'done', at: Math.floor(Date.now() / 1000) };
       if (incoming.text == null) return { changed: [], clashes: [] };
       sceneText = incoming.text;
+      if (incoming.merges) window.__merges = incoming.merges;
       return { changed: ['projects/tidewater/manuscript/night-market.md'], clashes: incoming.clashes ?? [] };
+    },
+    save_scene: (a) => {
+      sceneText = a.markdown;
+      for (const m of window.__merges) if (m.scene === a.scene) m.mine = a.markdown;
+      return null;
+    },
+    merges: () => structuredClone(window.__merges),
+    settle_merge: (a) => {
+      const i = window.__merges.findIndex((m) => m.stamp === a.stamp && m.path === a.path);
+      if (i < 0) throw `nothing to merge in ${a.path}`;
+      if (a.base == null) window.__merges.splice(i, 1);
+      else Object.assign(window.__merges[i], { base: a.base, theirs: a.theirs });
+      return null;
     },
     bin_items: () => [],
     // A one-word dictionary: enough for spellcheck to start without a banner in the way.
