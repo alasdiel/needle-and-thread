@@ -518,13 +518,14 @@ mod tests {
             .list(Path::new("projects/tidewater"))
             .unwrap()
             .into_iter()
-            .map(|e| (e.path.to_string_lossy().into_owned(), e.is_dir))
+            .map(|e| (e.path, e.is_dir))
             .collect::<Vec<_>>();
         entries.sort();
+        // Compared as paths, not text: Windows joins them with `\`.
         assert_eq!(entries, [
-            ("projects/tidewater/manuscript".to_owned(), true),
-            ("projects/tidewater/outline.toml".to_owned(), false),
-            ("projects/tidewater/project.toml".to_owned(), false),
+            (PathBuf::from("projects/tidewater/manuscript"), true),
+            (PathBuf::from("projects/tidewater/outline.toml"), false),
+            (PathBuf::from("projects/tidewater/project.toml"), false),
         ]);
         assert!(snap.is_dir(Path::new("projects/tidewater/manuscript")));
         assert!(!snap.is_dir(Path::new("projects/tidewater/project.toml")));
