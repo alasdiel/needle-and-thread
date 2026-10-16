@@ -184,7 +184,8 @@ fn a_clash_still_takes_in_the_other_sides_changes_elsewhere_in_the_file() {
     let taken = here.sync(&url);
 
     assert_eq!(taken.clashes.len(), 1);
-    let mine = here.read(SCENE).unwrap();
+    // Git on Windows may write the file with CRLF endings (core.autocrlf); the text is what counts.
+    let mine = here.read(SCENE).unwrap().replace("\r\n", "\n");
     assert_eq!(mine, "+++\nid = \"sc_1\"\n+++\n\nThe market opened at dawn.\n\nMara counted the coins at the desk.\n\nTeodor watched, silent.\n");
     let theirs = here.read(&taken.clashes[0].copy).unwrap();
     assert!(theirs.contains("at dawn") && theirs.contains("on the phone") && theirs.contains("silent"), "{theirs}");
