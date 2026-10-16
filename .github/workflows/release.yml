@@ -1,13 +1,15 @@
-# Builds the Linux and Windows packages and attaches them to a draft GitHub Release.
+# Builds the Linux and Windows packages and attaches them to a GitHub Release.
 #
-# To cut a release: set the version in Cargo.toml (workspace.package) and
-# crates/desktop/src-tauri/tauri.conf.json, commit, then
-#   git tag v0.1.0 && git push origin v0.1.0
-# The release is left as a DRAFT so you can read the notes and try the packages before
-# anyone can download them. Publish it from the Releases page when you're happy.
+# To release, from the Actions tab: Release › Run workflow, pick the branch (main), tick
+# "Make a release" and run it. The release is named after the version in
+# crates/desktop/src-tauri/tauri.conf.json and Cargo.toml (workspace.package), which have to
+# agree; it's refused if that version has been released before, so bump both first. It's left
+# as a DRAFT to read the notes and try the packages before anyone can download them (publish it
+# from the Releases page), unless "Publish it straight away" is ticked too. The tag is made
+# when the release is published.
 #
-# Run it from the Actions tab (workflow_dispatch) to build the packages without releasing
-# anything; they come back as workflow artifacts.
+# Run it without ticking anything to build the packages without releasing; they come back as
+# workflow artifacts. Pushing a v* tag (git tag v0.1.0 && git push origin v0.1.0) releases too.
 #
 # The Windows installers aren't signed, so Windows warns about them on first run (SmartScreen).
 # See docs/DESIGN.md §13.
@@ -17,6 +19,15 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Make a release, named after the version in tauri.conf.json"
+        type: boolean
+        default: false
+      publish:
+        description: "Publish it straight away, instead of leaving a draft to check first"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -27,25 +38,53 @@ env:
   APPIMAGE_EXTRACT_AND_RUN: 1
 
 jobs:
-  linux:
-    name: Linux packages
+  # What the release is called, checked before anything is built: empty when only building.
+  version:
+    name: Check the version
     runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
     steps:
       - uses: actions/checkout@v5
 
-      # The tag has to agree with the version in the manifests, or the packages come out
+      # The release has to agree with the version in the manifests, or the packages come out
       # labelled with a version nobody asked for.
-      - name: Check the tag matches the version
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Check the version
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ github.event_name == 'push' || inputs.release }}
         run: |
-          tag="${GITHUB_REF_NAME#v}"
           conf=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' crates/desktop/src-tauri/tauri.conf.json | head -1)
           crate=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -1)
-          echo "tag $tag · tauri.conf.json $conf · Cargo.toml $crate"
-          if [ "$tag" != "$conf" ] || [ "$tag" != "$crate" ]; then
-            echo "::error::Tag v$tag doesn't match tauri.conf.json ($conf) and Cargo.toml ($crate)."
+          echo "tauri.conf.json $conf · Cargo.toml $crate"
+          if [ "$RELEASE" != "true" ]; then
+            echo "Only building, not releasing."
+            exit 0
+          fi
+          if [ "$conf" != "$crate" ]; then
+            echo "::error::tauri.conf.json ($conf) and Cargo.toml ($crate) give different versions."
             exit 1
           fi
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            if [ "$GITHUB_REF_NAME" != "v$conf" ]; then
+              echo "::error::Tag $GITHUB_REF_NAME doesn't match the version in the manifests ($conf)."
+              exit 1
+            fi
+          else
+            if gh release view "v$conf" > /dev/null 2>&1 || git ls-remote --exit-code --tags origin "refs/tags/v$conf" > /dev/null; then
+              echo "::error::v$conf has been released already. Bump the version in tauri.conf.json and Cargo.toml first."
+              exit 1
+            fi
+          fi
+          echo "tag=v$conf" >> "$GITHUB_OUTPUT"
+
+  linux:
+    name: Linux packages
+    needs: version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
 
       # Built on 24.04 so the packages run on anything with that glibc or newer. Tauri uses the
       # system WebKitGTK at runtime rather than bundling it, so this is a build dependency only.
@@ -108,21 +147,10 @@ jobs:
 
   windows:
     name: Windows installers
+    needs: version
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-
-      # Git for Windows' bash, so the steps read the same as the Linux job's.
-      - name: Check the tag matches the version
-        if: startsWith(github.ref, 'refs/tags/v')
-        shell: bash
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          conf=$(sed -n 's/.*"version": "\([^"]*\)".*/\1/p' crates/desktop/src-tauri/tauri.conf.json | head -1)
-          if [ "$tag" != "$conf" ]; then
-            echo "::error::Tag v$tag doesn't match tauri.conf.json ($conf)."
-            exit 1
-          fi
 
       # WebView2 comes with Windows 10 and 11, and the installers fetch it where it's missing,
       # so unlike WebKitGTK there's nothing to install for it here.
@@ -157,6 +185,7 @@ jobs:
         run: cargo tauri build --bundles msi,nsis
         working-directory: crates/desktop
 
+      # Git for Windows' bash, so the steps read the same as the Linux job's.
       - name: Collect the packages
         shell: bash
         run: |
@@ -171,11 +200,11 @@ jobs:
           path: packages/*
           if-no-files-found: error
 
-  # Draft, so nothing is public until you say so.
+  # A draft unless asked otherwise, so nothing is public until you say so.
   release:
-    name: Draft the release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [linux, windows]
+    name: Make the release
+    if: needs.version.outputs.tag != ''
+    needs: [version, linux, windows]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -185,11 +214,17 @@ jobs:
           path: packages
           merge-multiple: true
 
-      - name: Draft the release
+      # --target puts a new tag on the commit that was built, once the release is published.
+      - name: Make the release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          PUBLISH: ${{ inputs.publish }}
         run: |
-          gh release create "$GITHUB_REF_NAME" packages/* \
-            --draft \
-            --title "$GITHUB_REF_NAME" \
+          draft=--draft
+          if [ "$PUBLISH" = "true" ]; then draft=; fi
+          gh release create "$TAG" packages/* \
+            $draft \
+            --target "$GITHUB_SHA" \
+            --title "$TAG" \
             --generate-notes
