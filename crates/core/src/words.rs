@@ -4,7 +4,8 @@ pub fn count_markdown_words(markdown: &str) -> usize {
     count_words(&visible_text(markdown))
 }
 
-pub(crate) fn visible_text(markdown: &str) -> String {
+/// `markdown` with links reduced to the text a reader sees: a wikilink's label, a link's text.
+pub fn visible_text(markdown: &str) -> String {
     let mut out = String::with_capacity(markdown.len());
     let mut rest = markdown;
     while let Some(ch) = rest.chars().next() {

@@ -552,6 +552,15 @@ The editor is the same ProseMirror island; it already runs in a webview, and a m
 - **Read and search:** the outline, notes and links. Names and titles come from `.needle/index.json`, a small list the desktop keeps current, so the phone never crawls the repo; full text search needs the file contents and is fetched as needed.
 - **Restructure:** move scenes between chapters, change status, retitle.
 
+### Reading on the phone (built)
+
+The first phase, reading only (`crates/phone`, Nav 1, Read 1, Setup and Link 1 on the canvas's Phone page):
+
+- **Setup:** the vault's repository (`owner/name`) and a fine-grained token with **Contents: read-only** on that one repository. Both stay in the phone's local storage; Settings › Disconnect forgets them and everything cached.
+- **Fetching:** one call to the tree API for `main` lists every file with its blob sha; the scenes, notes and settings (`.md` and `.toml`, leaving out `.needle/conflicts/`, `cut/` and templates) come through GraphQL, a hundred to a call, and are kept in Cache Storage by sha. Opening again fetches the tree and only what changed. The files go into the vault crate's in-memory `Snapshot` store, so the outline, links and notes come from the same code as on the desktop.
+- **Screens:** a tab bar (Outline · Notes · Search). The outline shows parts, numbered chapters, status rings and word counts, with "From GitHub · 3 minutes ago" to read it again. A scene reads as a plain page in Literata (Aa steps through four sizes), with its piece number, chapter, status, summary, and the scenes either side at the foot. A linked name opens its note as a sheet (kind, aliases, summary or first paragraph, the scenes it's in, Open the whole note). Search looks through what's in memory, every word required, titles first, since the desktop's SQLite index doesn't run in a browser.
+- **Published** by `.github/workflows/phone.yml` to GitHub Pages on each push to `main` that touches it. It holds no vault and no token.
+
 ### Offline
 
 The first version needs a connection. After that: a service worker caches what's been opened, writes queue while offline and go up when the connection returns, and pinned notes and scenes are kept for reading.

@@ -1,0 +1,15 @@
+{
+  "name": "Needle and Thread",
+  "short_name": "Needle",
+  "description": "Read your Needle and Thread vault on your phone.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0e1820",
+  "theme_color": "#0a1218",
+  "icons": [
+    { "src": "icons/icon-256.png", "sizes": "256x256", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

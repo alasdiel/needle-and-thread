@@ -19,6 +19,7 @@ It installs from source for now; packaged downloads come later.
 - Backup to GitHub over SSH after each snapshot, with its status beside "Saved"
 - A network board: a cork board of characters, places, plot points and threads, with relationships as red string you tie between them, zones of kraft paper, and your own handwritten notes and marker
 - A sewing-pattern look, light or dark
+- Reading on your phone: the outline, scenes, notes, links and search, straight from the vault's GitHub repository (see below)
 
 ## Install it
 
@@ -32,6 +33,10 @@ scripts/install.sh
 That builds it and puts it under `~/.local`, so it starts from your desktop's menu, or as `needle-and-thread`, with no dev server running. Pull and run it again to update; `scripts/install.sh --uninstall` takes it off and leaves your vault alone.
 
 Pick a vault on first launch, or try the sample.
+
+## On your phone
+
+The phone app reads your vault from the GitHub repository it backs up to; it can't change anything yet. Open it at `https://<you>.github.io/needle-and-thread/` once Pages is on for this repository, and add it to your home screen. It asks for the vault's repository (`you/your-vault`) and a [fine-grained token](https://github.com/settings/personal-access-tokens/new) with access to only that repository and **Contents: read-only**. Both stay on the phone.
 
 ## Work on it
 
@@ -55,15 +60,18 @@ pnpm --dir e2e install && pnpm --dir e2e exec playwright install chromium-headle
 pnpm --dir e2e test
 ```
 
+The phone app has its own suite, against a stand-in for GitHub: `trunk serve` in `crates/phone` (port 1421), then `pnpm --dir e2e test:phone`.
+
 ## Layout
 
 | Path | What |
 |---|---|
 | `crates/core` | Shared model: scene and note files, headers, outline, links and names, diff, spelling |
-| `crates/vault` | Reading and writing vaults on disk: projects, scenes, notes, worlds |
+| `crates/vault` | Reading and writing vaults: projects, scenes, notes, worlds, on disk or held in memory |
 | `crates/vcs` | Snapshots, history and backup pushes (git) |
 | `crates/index` | The search index (SQLite), a cache kept outside the vault |
 | `crates/desktop` | The Tauri app: Leptos frontend, backend in `src-tauri/` |
+| `crates/phone` | The phone app (Leptos, published to GitHub Pages): reads the vault from GitHub |
 | `editor/` | The ProseMirror editor (TypeScript) |
 | `e2e/` | Browser tests of the interface (Playwright), against `trunk serve` |
 | `docs/` | Design document and spike findings |

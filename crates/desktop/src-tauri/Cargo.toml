@@ -10,7 +10,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 needle-core = { workspace = true }
 needle-index = { workspace = true }
-needle-vault = { workspace = true }
+needle-vault = { workspace = true, features = ["fs"] }
 needle-vcs = { workspace = true }
 serde = { workspace = true }
 tauri = { version = "2", features = [] }

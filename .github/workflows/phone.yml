@@ -1,0 +1,70 @@
+# Builds the phone app (crates/phone) and publishes it to GitHub Pages, at
+# https://<owner>.github.io/needle-and-thread/. It holds no vault and no token: those stay on
+# each phone, which reads its own vault's repository straight from GitHub (DESIGN §9).
+#
+# Needs Pages turned on once, with "GitHub Actions" as the source (Settings › Pages).
+name: Phone app
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/phone/**"
+      - "crates/core/**"
+      - "crates/vault/**"
+      - "crates/desktop/assets/fonts/**"
+      - "Cargo.lock"
+      - ".github/workflows/phone.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time, and a newer one doesn't cut an older one off halfway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build the phone app
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --target wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: phone
+
+      - uses: cargo-bins/cargo-binstall@main
+
+      - name: Install trunk
+        run: cargo binstall --no-confirm trunk
+
+      # Trunk.toml's public_url is relative, so the build works under the Pages path.
+      - name: Build
+        run: trunk build --release
+        working-directory: crates/phone
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: crates/phone/dist
+
+  deploy:
+    name: Publish to GitHub Pages
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
