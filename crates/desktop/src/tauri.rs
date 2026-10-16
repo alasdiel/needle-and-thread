@@ -578,6 +578,42 @@ pub async fn take_in() -> Result<TakenInView, String> {
     call("take_in", Args::default()).await
 }
 
+/// One file's clashes from one taking-in; see `MergeView` in src-tauri/src/merges.rs.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct MergeView {
+    pub stamp: String,
+    pub path: String,
+    /// When the other side's snapshot was made, in seconds since the Unix epoch.
+    pub at: i64,
+    pub project: Option<String>,
+    pub scene: Option<String>,
+    pub owner: Option<String>,
+    pub world: bool,
+    pub note: Option<String>,
+    /// The texts of the version both started from, the other side's and the file's own.
+    pub base: String,
+    pub theirs: String,
+    pub mine: String,
+}
+
+impl MergeView {
+    pub fn note_key(&self) -> Option<NoteKey> {
+        Some(NoteKey { owner: self.owner.clone()?, world: self.world, path: self.note.clone()? })
+    }
+}
+
+/// Every scene's and note's clashes still to settle, oldest first.
+pub async fn merges() -> Result<Vec<MergeView>, String> {
+    call("merges", Args::default()).await
+}
+
+/// Keeps what settling a clash left of the base and the other side's version; with `None`,
+/// the file has nothing left to settle and both are removed.
+pub async fn settle_merge(stamp: &str, path: &str, texts: Option<(&str, &str)>) -> Result<(), String> {
+    let args = Args::default().str("stamp", stamp).str("path", path);
+    call("settle_merge", args.opt("base", texts.map(|t| t.0)).opt("theirs", texts.map(|t| t.1))).await
+}
+
 /// Returns the restored text. `label` describes the version in the snapshot message.
 pub async fn restore_version(project: &str, scene: &str, id: &str, label: &str) -> Result<String, String> {
     call("restore_version", scene_args(project, scene).str("id", id).str("label", label)).await

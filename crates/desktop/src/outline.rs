@@ -93,6 +93,9 @@ pub fn OutlineTree(
     #[prop(into)]
     cutting: Signal<bool>,
     #[prop(into)] live_words: Signal<LiveWords>,
+    /// Scenes with paragraphs changed here and on another device too, still to merge.
+    #[prop(into)]
+    merging: Signal<Vec<String>>,
     on_open: impl Fn(String) + Copy + Send + Sync + 'static,
     /// Receives the outline after a change made here.
     on_outline: impl Fn(OutlineView) + Copy + Send + Sync + 'static,
@@ -229,6 +232,12 @@ pub fn OutlineTree(
                                 >
                                     <StatusMark progress=progress />
                                     <span class="scene-label">{title.clone()}</span>
+                                    <Show when={
+                                        let slug = slug.clone();
+                                        move || merging.with(|m| m.contains(&slug))
+                                    }>
+                                        <span class="merge-dot" title="Changed here and on another device too, to merge"></span>
+                                    </Show>
                                 </button>
                             }
                         }

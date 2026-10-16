@@ -544,7 +544,7 @@ fn clock(seconds: i64) -> String {
 }
 
 /// "Today 14:32", or "Oct 2 09:05" for earlier days, in local time.
-fn time_label(seconds: i64) -> String {
+pub(crate) fn time_label(seconds: i64) -> String {
     let date = date(seconds);
     if day_key(&date) == day_key(&js_sys::Date::new_0()) {
         format!("Today {}", clock_of(&date))
