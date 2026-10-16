@@ -4,20 +4,24 @@
 //! merge snapshot with both histories as its parents. Nothing already saved changes, so named
 //! versions and History stay as they were.
 //!
-//! When both sides changed the same lines of a file, this vault's version stays where it is and
-//! the other is kept under `.needle/conflicts/`, to be compared and merged by hand. It isn't put
-//! beside the original: a second copy of a note would give two notes the same title.
+//! When both sides changed the same lines of a file, a scene or note is merged a paragraph at a
+//! time (`core::merge`); where both changed the same paragraph, this vault's version stays where
+//! it is and the other is kept under `.needle/conflicts/`, with the version both started from
+//! under its `.base/`, for the window to show and settle. Other files keep this vault's version
+//! whole. The copy isn't put beside the original: a second copy of a note would give two notes
+//! the same title.
 
 use git2::build::CheckoutBuilder;
 use git2::{AutotagOption, ErrorCode, FetchOptions, IndexEntry, Oid, RemoteCallbacks, Tree};
+use needle_core::merge::{self, BASE};
+use needle_core::scene::SceneFile;
 
 use super::{BRANCH, Error, NAMED_VERSIONS, Vault, credentials};
 
 /// Where the remote's branch is kept after a fetch, and its named versions.
 const FROM_REMOTE: &str = "refs/remotes/backup/main";
 const REMOTE_VERSIONS: &str = "refs/remotes/backup/versions/";
-/// Where the other side's version of a file goes when both sides changed it.
-pub const CONFLICTS: &str = ".needle/conflicts";
+pub use needle_core::merge::CONFLICTS;
 
 /// What a fetch found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,6 +49,8 @@ pub struct Clash {
     pub path: String,
     /// Where the other side's version was put.
     pub copy: String,
+    /// Where the version both started from was put, for a scene or note; other files have none.
+    pub base: Option<String>,
 }
 
 impl Vault {
@@ -128,12 +134,24 @@ impl Vault {
                 index.conflict_remove(std::path::Path::new(&path))?;
                 match (conflict.our, conflict.their) {
                     (Some(our), Some(their)) => {
-                        index.add(&settled(our))?;
                         let copy = format!("{CONFLICTS}/{stamp}/{path}");
+                        if path.ends_with(".md")
+                            && let Some(merged) = self.merge_text(conflict.ancestor.as_ref(), &our, &their)?
+                        {
+                            index.add(&with_blob(&our, &path, &self.repo.blob(merged.text.as_bytes())?))?;
+                            if let Some((theirs, base)) = merged.clash {
+                                let base_path = format!("{CONFLICTS}/{stamp}/{BASE}/{path}");
+                                index.add(&with_blob(&their, &copy, &self.repo.blob(theirs.as_bytes())?))?;
+                                index.add(&with_blob(&their, &base_path, &self.repo.blob(base.as_bytes())?))?;
+                                clashes.push(Clash { path, copy, base: Some(base_path) });
+                            }
+                            continue;
+                        }
+                        index.add(&settled(our))?;
                         let mut theirs = settled(their);
                         theirs.path = copy.clone().into_bytes();
                         index.add(&theirs)?;
-                        clashes.push(Clash { path, copy });
+                        clashes.push(Clash { path, copy, base: None });
                     }
                     // One side changed a file the other deleted: the changed one is kept, since
                     // a deletion can be done again but lost writing can't be got back.
@@ -159,6 +177,33 @@ impl Vault {
         let signature = self.signature()?;
         self.repo.commit(Some("HEAD"), &signature, &signature, &message, &merged, &[&ours, &theirs])?;
         Ok(TakenIn { changed, clashes })
+    }
+
+    /// Merges a scene or note both sides changed, a paragraph at a time. The header is taken
+    /// whole from whichever side changed it, this vault's if both did. None if a version isn't
+    /// text.
+    fn merge_text(&self, base: Option<&IndexEntry>, ours: &IndexEntry, theirs: &IndexEntry) -> Result<Option<TextMerge>, Error> {
+        let read = |entry: &IndexEntry| -> Result<Option<SceneFile>, Error> {
+            let blob = self.repo.find_blob(entry.id)?;
+            Ok(std::str::from_utf8(blob.content()).ok().map(SceneFile::parse))
+        };
+        let base = match base {
+            Some(entry) => read(entry)?,
+            None => Some(SceneFile::parse("")),
+        };
+        let (Some(base), Some(ours), Some(theirs)) = (base, read(ours)?, read(theirs)?) else { return Ok(None) };
+        let merged = merge::merge(&base.markdown(), &ours.markdown(), &theirs.markdown());
+        let header = if ours.front_matter == base.front_matter { &theirs.front_matter } else { &ours.front_matter };
+        let file = |mut file: SceneFile, front_matter: Option<String>, text: &str| {
+            file.front_matter = front_matter;
+            file.set_markdown(text);
+            file.to_string()
+        };
+        let text = file(ours.clone(), header.clone(), &merged.text);
+        let clash = (merged.clashes > 0).then(|| {
+            (file(theirs.clone(), theirs.front_matter.clone(), &merged.theirs), file(base.clone(), base.front_matter.clone(), &merged.base))
+        });
+        Ok(Some(TextMerge { text, clash }))
     }
 
     fn remote_head(&self) -> Result<Option<Oid>, Error> {
@@ -193,6 +238,31 @@ impl Vault {
         self.repo.checkout_tree(to.as_object(), Some(CheckoutBuilder::new().force()))?;
         Ok(changed)
     }
+}
+
+/// A scene or note merged: the file, and if anything clashed, the other side's version and the
+/// version both started from, to keep beside it.
+struct TextMerge {
+    text: String,
+    clash: Option<(String, String)>,
+}
+
+/// `entry`, settled, at `path` with the content `blob`.
+fn with_blob(entry: &IndexEntry, path: &str, blob: &Oid) -> IndexEntry {
+    settled(IndexEntry {
+        ctime: entry.ctime,
+        mtime: entry.mtime,
+        dev: entry.dev,
+        ino: entry.ino,
+        mode: entry.mode,
+        uid: entry.uid,
+        gid: entry.gid,
+        file_size: 0,
+        id: *blob,
+        flags: entry.flags,
+        flags_extended: entry.flags_extended,
+        path: path.as_bytes().to_vec(),
+    })
 }
 
 /// An index entry taken out of a conflict, as an ordinary one.

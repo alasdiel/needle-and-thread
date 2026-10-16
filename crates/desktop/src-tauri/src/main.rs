@@ -5,6 +5,7 @@ mod backup;
 mod bin;
 mod closing;
 mod history;
+mod merges;
 mod network;
 mod notes;
 mod search;
@@ -68,6 +69,8 @@ fn main() {
             workspace::set_chapter_part,
             workspace::move_chapter,
             workspace::remove_chapter,
+            merges::merges,
+            merges::settle_merge,
             bin::bin_items,
             bin::cut_passage,
             bin::remove_from_bin,

@@ -158,6 +158,69 @@ fn a_clash_keeps_this_version_and_puts_the_other_aside() {
     assert!(taken.changed.contains(&clash.copy));
     let message = &here.vault.history(Path::new(&clash.copy)).unwrap()[0].message;
     assert_eq!(message, "Brought in from the repository · 1 file to merge by hand");
+
+    // Beside it, the version both started from, so the clash can be found again.
+    let base = clash.base.as_deref().unwrap();
+    assert!(base.starts_with(".needle/conflicts/") && base.contains("/.base/") && base.ends_with("/night-market.md"), "{base}");
+    let base = here.read(base).unwrap();
+    let theirs = here.read(&clash.copy).unwrap();
+    let mine = here.read(SCENE).unwrap();
+    let body = |file: &str| SceneFile::parse(file).markdown();
+    let found = merge::clashes(&body(&base), &body(&mine), &body(&theirs));
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].mine_text, ["Mara counted the coins at the desk."]);
+    assert_eq!(found[0].theirs_text, ["Mara counted the coins on the phone."]);
+}
+
+#[test]
+fn a_clash_still_takes_in_the_other_sides_changes_elsewhere_in_the_file() {
+    let (_remote, url) = bare_remote();
+    let here = Device::first(&url);
+    let there = Device::clone_of(&url);
+    // Next to each other, so git sees one clash in lines; by paragraph, only the middle clashes.
+    there.change(&url, SCENE, "The market opened at dawn.\n\nMara counted the coins on the phone.\n\nTeodor watched.");
+    here.write(SCENE, "The market opened at dusk.\n\nMara counted the coins at the desk.\n\nTeodor watched, silent.");
+    here.vault.snapshot(None).unwrap();
+    let taken = here.sync(&url);
+
+    assert_eq!(taken.clashes.len(), 1);
+    let mine = here.read(SCENE).unwrap();
+    assert_eq!(mine, "+++\nid = \"sc_1\"\n+++\n\nThe market opened at dawn.\n\nMara counted the coins at the desk.\n\nTeodor watched, silent.\n");
+    let theirs = here.read(&taken.clashes[0].copy).unwrap();
+    assert!(theirs.contains("at dawn") && theirs.contains("on the phone") && theirs.contains("silent"), "{theirs}");
+}
+
+#[test]
+fn neighbouring_paragraphs_changed_on_each_side_merge_without_a_clash() {
+    let (_remote, url) = bare_remote();
+    let here = Device::first(&url);
+    let there = Device::clone_of(&url);
+    there.change(&url, SCENE, "The market opened at dawn.\n\nMara counted the coins.\n\nTeodor watched.");
+    here.write(SCENE, "The market opened at dusk.\n\nMara counted the coins twice.\n\nTeodor watched.");
+    here.vault.snapshot(None).unwrap();
+    let taken = here.sync(&url);
+
+    assert_eq!(taken.clashes, vec![]);
+    let scene = here.read(SCENE).unwrap();
+    assert!(scene.contains("at dawn") && scene.contains("twice"), "{scene}");
+    assert!(!here.dir.path().join(CONFLICTS).exists());
+}
+
+#[test]
+fn a_header_changed_on_one_side_is_taken_with_the_text() {
+    let (_remote, url) = bare_remote();
+    let here = Device::first(&url);
+    let there = Device::clone_of(&url);
+    let file = "+++\nid = \"sc_1\"\nstatus = \"done\"\n+++\n\nThe market opened at dawn.\n\nMara counted the coins.\n\nTeodor watched.\n";
+    fs::write(there.dir.path().join(SCENE), file).unwrap();
+    there.vault.snapshot(None).unwrap();
+    there.sync(&url);
+    here.write(SCENE, "The market opened at dusk.\n\nMara counted the coins twice.\n\nTeodor watched.");
+    here.vault.snapshot(None).unwrap();
+    here.sync(&url);
+
+    let scene = here.read(SCENE).unwrap();
+    assert!(scene.contains("status = \"done\"") && scene.contains("at dawn") && scene.contains("twice"), "{scene}");
 }
 
 #[test]

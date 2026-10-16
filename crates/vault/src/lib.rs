@@ -8,6 +8,7 @@ mod doc;
 mod error;
 mod files;
 mod links;
+mod merges;
 mod notes;
 mod project;
 mod timeline;
@@ -25,6 +26,7 @@ use needle_core::settings::{self, BackupSettings, TypographyRule, VaultSettings}
 pub use bin::{Bin, CutItem, CutKind, Passage};
 pub use board::{Board, Card, Change, Link, Relationship, RelationshipEdit};
 pub use error::{Error, Result};
+pub use merges::{PendingMerge, Place};
 pub use links::{Appearance, Backlink, HeaderName, LinkSource, Mention, NAME_FIELDS, NameHint, NoteLinks, Renamed, SceneNames};
 pub use notes::{NoteInfo, Notes};
 pub use project::{Placement, Project, SceneInfo};
