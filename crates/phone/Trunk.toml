@@ -1,0 +1,12 @@
+[build]
+target = "index.html"
+dist = "dist"
+# Relative, so the same build works at a GitHub Pages path (/needle-and-thread/) and on its own.
+public_url = "./"
+
+[watch]
+watch = ["src", "styles", "assets", "index.html"]
+
+[serve]
+port = 1421
+open = false

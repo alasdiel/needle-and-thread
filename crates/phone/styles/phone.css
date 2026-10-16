@@ -1,0 +1,690 @@
+/* The phone app: the desktop's colours and type (crates/desktop/styles/app.css), laid out for a
+   thumb. Nav 1 (a tab bar at the bottom) and Read 1 (a plain page) on the canvas's Phone page. */
+
+:root {
+  color-scheme: light dark;
+
+  --mat: light-dark(#e6efef, #0e1820);
+  --mat-dot: light-dark(rgb(28 52 80 / 0.16), transparent);
+  --side: light-dark(#dce8e8, #0a1218);
+  --piece: light-dark(#fafcfc, #121f29);
+  --raise: light-dark(#ffffff, #1a2833);
+  --text: light-dark(#15232d, #e4eef0);
+  --muted: light-dark(#4f6470, #8fa6b2);
+  --faint: light-dark(#93a7b0, #4e6573);
+  --rule: light-dark(rgb(21 35 45 / 0.12), rgb(143 166 178 / 0.16));
+  --print: light-dark(#1c3450, #55d7e0);
+  --print-soft: light-dark(rgb(30 95 166 / 0.45), rgb(85 215 224 / 0.38));
+  --thread: light-dark(#0b9fb0, #74f5f8);
+  --blue: light-dark(#0a78bf, #14adf6);
+  --blue-tint: light-dark(rgb(10 120 191 / 0.1), rgb(20 173 246 / 0.13));
+  --on-blue: light-dark(#ffffff, #06121a);
+  --link: light-dark(#5b3fa8, #a797ed);
+  --error: light-dark(#b3261e, #ff8a80);
+  --mark: light-dark(rgb(11 159 176 / 0.16), rgb(116 245 248 / 0.16));
+  --scrim: light-dark(rgb(21 35 45 / 0.38), rgb(2 8 12 / 0.62));
+  --shadow: light-dark(rgb(21 35 45 / 0.18), rgb(0 0 0 / 0.5));
+  --draft: light-dark(#b0721a, #f0b44c);
+  --done: light-dark(#1f7a45, #4cc38a);
+
+  --font-text: Literata, Georgia, serif;
+  --font-title: Fraunces, Georgia, serif;
+  --font-label: "Alegreya SC", Georgia, serif;
+  --font-ui: "Alegreya Sans", system-ui, sans-serif;
+
+  --top: 56px;
+  --bottom: 68px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background-color: var(--mat);
+  background-image: radial-gradient(circle, var(--mat-dot) 1px, transparent 1.4px);
+  background-size: 24px 24px;
+  color: var(--text);
+  font: 16px/1.45 var(--font-ui);
+  letter-spacing: 0.015em;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.sc {
+  font-family: var(--font-label);
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: lowercase;
+}
+
+.title {
+  font-family: var(--font-title);
+  font-weight: 600;
+  font-variation-settings: "SOFT" 100, "WONK" 1;
+  letter-spacing: normal;
+}
+
+.words {
+  color: var(--faint);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.hint a {
+  color: var(--blue);
+}
+
+.problem {
+  color: var(--error);
+}
+
+.padded {
+  padding: 8px 16px;
+}
+
+.centred {
+  text-align: center;
+}
+
+.grow {
+  flex: 1;
+}
+
+/* --- Screens -------------------------------------------------------------------------------- */
+
+.screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  flex: none;
+  height: calc(var(--top) + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 6px 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--side);
+}
+
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 24px;
+}
+
+.icon {
+  appearance: none;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.icon .aa {
+  font-size: 18px;
+}
+
+.project {
+  appearance: none;
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+
+.project .title {
+  font-size: 21px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project .chevron {
+  display: grid;
+  color: var(--muted);
+}
+
+.back {
+  appearance: none;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  color: var(--print);
+}
+
+/* --- The tab bar ---------------------------------------------------------------------------- */
+
+.tabs {
+  flex: none;
+  height: calc(var(--bottom) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid var(--rule);
+  background: var(--side);
+}
+
+.tab {
+  appearance: none;
+  position: relative;
+  border: 0;
+  background: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.tab.on {
+  color: var(--blue);
+}
+
+.tab.on::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 30%;
+  right: 30%;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--blue);
+}
+
+/* --- Lists ---------------------------------------------------------------------------------- */
+
+.fresh {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 4px 16px;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  font-size: 14px;
+  text-align: left;
+}
+
+.fresh span {
+  display: grid;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}
+
+.part {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px 4px;
+  color: var(--print);
+  font-size: 14.5px;
+}
+
+.chapter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px 4px;
+}
+
+.chapter .n {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--print);
+  color: var(--print);
+  display: grid;
+  place-items: center;
+  font: 600 12px var(--font-ui);
+  letter-spacing: 0;
+}
+
+.chapter .t {
+  flex: 1;
+  font-size: 18px;
+}
+
+.row {
+  appearance: none;
+  width: 100%;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px;
+  border: 0;
+  background: none;
+  text-align: left;
+  font-size: 16px;
+}
+
+.row:active,
+.row.current {
+  background: var(--blue-tint);
+}
+
+.row .t {
+  flex: 1;
+  min-width: 0;
+}
+
+.row.scene {
+  padding-left: 48px;
+}
+
+.row.flush {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.status {
+  flex: none;
+  display: grid;
+  color: var(--muted);
+}
+
+/* --- Reading -------------------------------------------------------------------------------- */
+
+.page {
+  padding: 22px 22px 40px;
+}
+
+.label,
+.kind {
+  color: var(--print);
+  font-size: 13.5px;
+}
+
+.kind {
+  color: var(--link);
+}
+
+.heading {
+  margin: 4px 0 10px;
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--print-soft);
+  border-radius: 999px;
+  color: var(--print);
+  font-size: 13px;
+}
+
+.summary {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.prose {
+  font-family: var(--font-text);
+  line-height: 1.7;
+  letter-spacing: normal;
+  overflow-wrap: break-word;
+  margin-bottom: 20px;
+}
+
+.prose p {
+  margin: 0 0 1em;
+}
+
+.prose h1,
+.prose h2,
+.prose h3 {
+  font-family: var(--font-title);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.prose hr {
+  border: 0;
+  text-align: center;
+  margin: 1.6em 0;
+}
+
+.prose hr::before {
+  content: "⁂";
+  color: var(--faint);
+}
+
+.prose blockquote {
+  margin: 0 0 1em;
+  padding-left: 14px;
+  border-left: 2px solid var(--rule);
+  color: var(--muted);
+}
+
+/* A linked name: violet, dotted underline, and a tap opens its note. */
+.wl {
+  appearance: none;
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: inherit;
+  text-decoration: underline dotted 1.5px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.steps {
+  flex: none;
+  height: calc(64px + env(safe-area-inset-bottom));
+  padding: 0 4px env(safe-area-inset-bottom);
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 4px;
+  border-top: 1px solid var(--rule);
+  background: var(--side);
+}
+
+.step {
+  min-width: 0;
+}
+
+.step.next {
+  justify-self: end;
+}
+
+.step-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Sheets --------------------------------------------------------------------------------- */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  z-index: 10;
+}
+
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 11;
+  max-height: 78vh;
+  overflow-y: auto;
+  padding: 6px 22px calc(22px + env(safe-area-inset-bottom));
+  border-radius: 16px 16px 0 0;
+  border-top: 1px solid var(--rule);
+  background: var(--piece);
+  box-shadow: 0 -10px 30px var(--shadow);
+}
+
+.grip {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  margin-bottom: 6px;
+  border: 0;
+  background: none;
+  position: relative;
+}
+
+.grip::before {
+  content: "";
+  position: absolute;
+  top: 12px;
+  left: calc(50% - 20px);
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--faint);
+}
+
+.gist {
+  margin: 12px 0 18px;
+  font-family: var(--font-text);
+  font-size: 16.5px;
+  line-height: 1.6;
+  letter-spacing: normal;
+}
+
+.repo {
+  margin: 4px 0;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+
+/* --- Search --------------------------------------------------------------------------------- */
+
+.searchbox {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 16px 8px;
+  padding: 0 12px;
+  min-height: 48px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--raise);
+  color: var(--muted);
+}
+
+.searchbox span {
+  display: grid;
+}
+
+.searchbox input {
+  flex: 1;
+  min-width: 0;
+  height: 46px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: 16px var(--font-ui);
+  outline: none;
+}
+
+.hit {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+
+.hit-head {
+  display: flex;
+  gap: 10px;
+}
+
+.snippet {
+  color: var(--muted);
+  font-size: 14.5px;
+}
+
+mark {
+  background: var(--mark);
+  color: var(--text);
+  border-radius: 3px;
+}
+
+/* --- Setup ---------------------------------------------------------------------------------- */
+
+.setup {
+  max-width: 440px;
+  margin: 0 auto;
+  padding: calc(56px + env(safe-area-inset-top)) 24px 32px;
+}
+
+.spool {
+  display: block;
+  color: var(--thread);
+  margin-bottom: 10px;
+}
+
+.setup h1 {
+  margin: 0 0 6px;
+  font-size: 30px;
+  line-height: 1.15;
+}
+
+.lead {
+  margin: 0 0 26px;
+  color: var(--muted);
+  font-size: 17px;
+}
+
+.setup form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.setup label {
+  color: var(--print);
+  font-size: 14.5px;
+  margin-top: 10px;
+}
+
+.setup input {
+  height: 48px;
+  padding: 0 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--raise);
+  color: var(--text);
+  font: 16px var(--font-ui);
+}
+
+.primary,
+.secondary {
+  appearance: none;
+  width: 100%;
+  min-height: 50px;
+  margin-top: 12px;
+  border-radius: 10px;
+  font-size: 16px;
+}
+
+.primary {
+  border: 0;
+  background: var(--blue);
+  color: var(--on-blue);
+  font-weight: 600;
+}
+
+.secondary {
+  border: 1px solid var(--rule);
+  background: none;
+}
+
+.secondary.danger {
+  color: var(--error);
+}
+
+.bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--rule);
+  overflow: hidden;
+}
+
+.bar i {
+  display: block;
+  height: 100%;
+  background: var(--thread);
+  transition: width 0.2s ease;
+}
+
+.toast {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: calc(84px + env(safe-area-inset-bottom));
+  z-index: 20;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--raise);
+  box-shadow: 0 6px 24px var(--shadow);
+}

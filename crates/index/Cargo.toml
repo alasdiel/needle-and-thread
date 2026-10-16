@@ -6,7 +6,7 @@ publish.workspace = true
 
 [dependencies]
 needle-core = { workspace = true }
-needle-vault = { workspace = true }
+needle-vault = { workspace = true, features = ["fs"] }
 # Bundled: SQLite with full-text search (FTS5), the same on every computer.
 rusqlite = { version = "0.40", features = ["bundled"] }
 

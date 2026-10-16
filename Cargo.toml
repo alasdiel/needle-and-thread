@@ -1,8 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/vault", "crates/vcs", "crates/index", "crates/desktop", "crates/desktop/src-tauri"]
-# The desktop frontend only builds for wasm32 (via trunk), so plain `cargo build`/`cargo test`
-# at the root skips it.
+members = ["crates/core", "crates/vault", "crates/vcs", "crates/index", "crates/desktop", "crates/desktop/src-tauri", "crates/phone"]
+# The desktop frontend and the phone app only build for wasm32 (via trunk), so plain
+# `cargo build`/`cargo test` at the root skips them.
 default-members = ["crates/core", "crates/vault", "crates/vcs", "crates/index", "crates/desktop/src-tauri"]
 
 [workspace.package]
@@ -28,7 +28,8 @@ opt-level = 3
 
 [workspace.dependencies]
 needle-core = { path = "crates/core" }
-needle-vault = { path = "crates/vault" }
+# Without the "fs" feature, so the phone can build it for wasm; the desktop crates turn it on.
+needle-vault = { path = "crates/vault", default-features = false }
 needle-vcs = { path = "crates/vcs" }
 needle-index = { path = "crates/index" }
 serde = { version = "1", features = ["derive"] }

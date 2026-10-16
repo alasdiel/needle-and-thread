@@ -1,12 +1,13 @@
-use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use needle_core::names::Owner;
 use needle_core::project::WorldConfig;
 
 use crate::bin::Bin;
 use crate::notes::Notes;
+use crate::store::Store;
 use crate::{Error, Result};
 
 /// A world (`worlds/<folder>/`): the characters, places, history and calendar that a series
@@ -18,13 +19,16 @@ pub struct World {
     pub config: WorldConfig,
     root: PathBuf,
     templates: PathBuf,
+    store: Arc<dyn Store>,
 }
 
 impl World {
-    pub(crate) fn open(root: PathBuf, templates: PathBuf) -> Result<Self> {
-        let text = fs::read_to_string(root.join("world.toml")).map_err(|e| match e.kind() {
-            io::ErrorKind::NotFound => Error::NotFound(format!("no world at {}", root.display())),
-            _ => Error::Io(e),
+    pub(crate) fn open(root: PathBuf, templates: PathBuf, store: Arc<dyn Store>) -> Result<Self> {
+        let text = store.read_to_string(&root.join("world.toml")).map_err(|e| match &e {
+            Error::Io(e) if e.kind() == io::ErrorKind::NotFound => {
+                Error::NotFound(format!("no world at {}", root.display()))
+            }
+            _ => e,
         })?;
         let config = WorldConfig::parse(&text).map_err(Error::Invalid)?;
         let slug = root
@@ -36,6 +40,7 @@ impl World {
             config,
             root,
             templates,
+            store,
         })
     }
 
@@ -49,6 +54,12 @@ impl World {
     }
 
     pub fn notes(&self) -> Notes {
-        Notes::new(Owner::World(self.slug.clone()), self.root.clone(), self.root.join("cut"), self.templates.clone())
+        Notes::new(
+            Owner::World(self.slug.clone()),
+            self.root.clone(),
+            self.root.join("cut"),
+            self.templates.clone(),
+            self.store.clone(),
+        )
     }
 }

@@ -4,14 +4,13 @@
 //! `.needle/conflicts/<when>/.base/<path>`. The window compares the three (`core::merge`) to
 //! show each clash, and settling one writes the choice into the kept versions here.
 
-use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use needle_core::merge::{BASE, CONFLICTS};
 use needle_core::names::Owner;
 use needle_core::scene::SceneFile;
 
-use crate::files::write_atomically;
+use crate::store::Store;
 use crate::{Error, Result, Vault};
 
 /// One file's clashes from one taking-in.
@@ -46,28 +45,29 @@ impl Vault {
     pub fn merges(&self) -> Result<Vec<PendingMerge>> {
         let conflicts = self.root.join(CONFLICTS);
         let mut merges = Vec::new();
-        if !conflicts.is_dir() {
+        if !self.store.is_dir(&conflicts) {
             return Ok(merges);
         }
-        let mut stamps: Vec<String> = fs::read_dir(&conflicts)?
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.path().is_dir())
-            .filter_map(|entry| entry.file_name().into_string().ok())
+        let mut stamps: Vec<String> = self
+            .store
+            .list(&conflicts)?
+            .into_iter()
+            .filter(|entry| entry.is_dir)
+            .filter_map(|entry| entry.path.file_name()?.to_str().map(str::to_owned))
             .collect();
         stamps.sort();
         for stamp in stamps {
             let Some(at) = seconds(&stamp) else { continue };
             let folder = conflicts.join(&stamp);
             let mut paths = Vec::new();
-            files_in(&folder, "", &mut paths)?;
+            files_in(self.store.as_ref(), &folder, "", &mut paths)?;
             paths.sort();
             for path in paths {
                 let base = folder.join(BASE).join(&path);
                 // Without the version both started from, it's a file kept whole, not a clash to
                 // settle here.
-                let (Ok(base), Ok(theirs), Ok(mine)) =
-                    (fs::read_to_string(base), fs::read_to_string(folder.join(&path)), fs::read_to_string(self.root.join(&path)))
-                else {
+                let read = |file: &Path| self.store.read_opt(file).ok().flatten();
+                let (Some(base), Some(theirs), Some(mine)) = (read(&base), read(&folder.join(&path)), read(&self.root.join(&path))) else {
                     continue;
                 };
                 merges.push(PendingMerge {
@@ -93,22 +93,22 @@ impl Vault {
         match texts {
             Some((base_text, theirs_text)) => {
                 for (file, text) in [(base, base_text), (theirs, theirs_text)] {
-                    let mut kept = SceneFile::parse(&fs::read_to_string(&file)?);
+                    let mut kept = SceneFile::parse(&self.store.read_to_string(&file)?);
                     kept.set_markdown(text);
-                    write_atomically(&file, kept.to_string().as_bytes())?;
+                    self.store.write(&file, kept.to_string().as_bytes())?;
                 }
             }
             None => {
                 let conflicts = self.root.join(CONFLICTS);
                 for file in [base, theirs] {
-                    match fs::remove_file(&file) {
-                        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
-                        _ => {}
+                    if self.store.is_file(&file) {
+                        self.store.remove_file(&file)?;
                     }
                     // Folders left empty go too, up to the conflicts folder itself.
                     let mut dir = file.parent();
                     while let Some(d) = dir.filter(|d| d.starts_with(&conflicts)) {
-                        if fs::remove_dir(d).is_err() {
+                        self.store.remove_dir_if_empty(d);
+                        if self.store.is_dir(d) {
                             break;
                         }
                         dir = d.parent();
@@ -121,16 +121,15 @@ impl Vault {
 }
 
 /// Every file under `dir`, as paths below it, leaving out the base versions.
-fn files_in(dir: &Path, prefix: &str, found: &mut Vec<String>) -> Result<()> {
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let Ok(name) = entry.file_name().into_string() else { continue };
+fn files_in(store: &dyn Store, dir: &Path, prefix: &str, found: &mut Vec<String>) -> Result<()> {
+    for entry in store.list(dir)? {
+        let Some(name) = entry.path.file_name().and_then(|n| n.to_str()).map(str::to_owned) else { continue };
         let path = if prefix.is_empty() { name.clone() } else { format!("{prefix}/{name}") };
-        if entry.file_type()?.is_dir() {
+        if entry.is_dir {
             if prefix.is_empty() && name == BASE {
                 continue;
             }
-            files_in(&entry.path(), &path, found)?;
+            files_in(store, &entry.path, &path, found)?;
         } else {
             found.push(path);
         }
@@ -186,6 +185,8 @@ fn seconds(stamp: &str) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
 
     #[test]
