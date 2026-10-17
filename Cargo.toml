@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/vault", "crates/vcs", "crates/index", "crates/desktop", "crates/desktop/src-tauri", "crates/phone"]
-# The desktop frontend and the phone app only build for wasm32 (via trunk), so plain
+members = ["crates/core", "crates/vault", "crates/vcs", "crates/index", "crates/desktop", "crates/desktop/src-tauri", "crates/phone", "crates/reader"]
+# The desktop frontend, the phone app and the reader page only build for wasm32 (via trunk), so plain
 # `cargo build`/`cargo test` at the root skips them.
 # The sharing Worker has its own workspace (crates/worker/Cargo.toml says why).
 exclude = ["crates/worker"]

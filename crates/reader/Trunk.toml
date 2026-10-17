@@ -1,0 +1,12 @@
+[build]
+target = "index.html"
+dist = "dist"
+# Relative, so the same build works under the phone app's Pages path (/needle-and-thread/read/).
+public_url = "./"
+
+[watch]
+watch = ["src", "styles", "index.html", "../phone/styles", "../core/src"]
+
+[serve]
+port = 1422
+open = false

@@ -79,6 +79,11 @@ impl Vault {
             .map(Some)
     }
 
+    /// The latest snapshot's id, if there is one.
+    pub fn latest(&self) -> Result<Option<String>, Error> {
+        Ok(self.head()?.map(|commit| commit.id().to_string()))
+    }
+
     /// Snapshots that changed `path` (relative to the vault root), newest first.
     pub fn history(&self, path: &Path) -> Result<Vec<Version>, Error> {
         let Some(head) = self.head()? else {

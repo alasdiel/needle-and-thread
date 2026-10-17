@@ -94,7 +94,8 @@ needle-and-thread/
 │   ├── ui/           Leptos components shared by desktop and phone
 │   ├── desktop/      Leptos frontend for the desktop app (built to wasm by trunk)
 │   │   └── src-tauri/  Tauri 2 backend: commands, file I/O, webview setup
-│   ├── phone/        Leptos PWA for GitHub Pages, including the /read page
+│   ├── phone/        Leptos PWA for GitHub Pages
+│   ├── reader/       the reader page share links open (Leptos, wasm)
 │   └── worker/       Cloudflare Worker (workers-rs)
 ├── editor/           ProseMirror island (TypeScript, bundled to one JS file)
 ├── fixtures/         Markdown round-trip fixtures and a sample vault, shared by JS and Rust tests
@@ -569,53 +570,64 @@ The first version needs a connection. After that: a service worker caches what's
 
 ### How a link works
 
-1. Choose what to share: a scene, chapter, part or the whole manuscript. Only prose is shared, never notes.
-2. The desktop app renders it, encrypts it with a new random key (AES-256-GCM) and uploads the encrypted copy to the Worker.
-3. The link looks like `https://<you>.github.io/needle-and-thread/read#<id>.<key>`. Browsers never send anything after the `#` to a server, so neither GitHub nor Cloudflare can read your text.
-4. **Always latest:** after each snapshot that touches the shared part, the app uploads a new version, at most once a minute. Readers see snapshots, never half-typed sentences.
+1. **Make a link** in the Shared panel (the link button in the top bar; Share 2 on the canvas's Sharing page): pick what readers see (the open scene, its chapter, its part, or the whole book) and give the link a name only you see ("Beta readers"). Only prose is shared, never notes; wikilinks become their labels.
+2. The desktop app puts the text together from the outline (`Project::shared`), seals it with the link's own random key (AES-256-GCM, `core::share::seal`, the share's id bound in so one share's text can't pass as another's) and uploads it to the Worker.
+3. The link is `https://<you>.github.io/needle-and-thread/read/#<id>.<key>`. Browsers never send anything after the `#` to a server, so neither GitHub nor Cloudflare can read the text.
+4. **Always latest:** after each snapshot, and on opening the vault, every link whose text changed is uploaded again, at most once a minute per link. Readers see snapshots, never half-typed sentences. Each upload names its snapshot (`version`).
+5. Links are kept in the vault, in `.needle/shares.toml`: id, key, author key, name, project and what it covers. That's what lets every device of yours moderate them, and why the vault must stay private. When readers last got a new version is only known to the app that sent it, so it isn't written anywhere.
 
-### Comments
+### Reading and commenting (the reader page)
 
-- Readers select text and comment under a name they type once, which their device remembers.
-- Everyone with the same link sees everyone's comments and can reply.
-- Comments, replies and names are encrypted with the link's key before they leave the reader's browser.
-- New comments appear in the desktop app's side panel, highlighted on the words they refer to. You can reply and resolve from there too.
-- Separate groups (beta readers, an editor) can each get their own link. Each link has its own discussion and can be revoked on its own.
+`crates/reader`, published with the phone app under `read/` (Reader 1, 1b and 1c on the canvas). A plain page in the phone app's type, one scene at a time, with the scenes either side a tap away and a contents sheet.
+
+- **Commented words are amber marks.** Tapping them opens their thread in a sheet. Nothing else shows until then.
+- **Select words to comment.** A Comment button appears under them; the sheet quotes them and asks your name once (this device remembers it).
+- Everyone with the same link sees everyone's comments and can reply. Comments, replies and names are sealed with the link's key before they leave the browser.
+- A comment whose words the author has since cut is listed with its quote and "text removed".
+- Separate groups (beta readers, an editor) each get their own link, with their own discussion, revoked on its own.
+
+### In the app
+
+- **Marked words, a card when clicked** (Comments 1, only the clicked one): the open scene's commented words are amber in the editor. Clicking them opens one card beside them with the thread, Reply, Resolve, and Delete on each comment. Escape or clicking away closes it. Nothing takes room until then.
+- **The Shared panel** has two halves. **Comments** lists every thread, the open scene's first, then other scenes by title, then ones whose text was removed, then resolved ones; clicking one opens its scene and its card. New ones (since this computer last looked) have a dot, and so does the top bar's link button. **Links** makes links and lists them, each with what it covers, when readers last got a new version, its comment count, and Copy link, Open as author and Revoke.
+- Comments are fetched when the panel opens and every two minutes.
 
 ### Keeping comments attached as the text changes
 
-Each comment stores:
-- the words it's on, plus a little text either side
+A comment is anchored in a scene's **prose** (`core::anchor`): the text a reader sees, with every run of spaces and line breaks counted as one space. It stores:
+- the words it's on (`quote`), which of that phrase's occurrences it is (`n`), and up to 32 characters either side
 - the scene
 - the snapshot it was made on
 
-When you edit, the desktop app finds the comment's new position in three steps:
-1. Follow the words through the changes between that snapshot and now.
-2. If that fails, search for the quoted words.
+The desktop app finds the comment's place in the text as it is now in three steps (`reanchor`):
+1. Find it in the text of its snapshot, then follow those characters through a character diff to now: from the first of them still there to the last, taking in whatever was written between.
+2. If that fails, search for the quote, picking the occurrence whose surroundings match best.
 3. If the words are gone, keep the comment with its original quote, marked "text removed".
 
-Each upload includes the updated positions, so readers always see comments on the right words.
+Each upload includes where comments have moved to (`moved`, by comment id; none for removed), so readers always see comments on the right words. The editor and the reader page each find the words by the quote and its occurrence, folding spaces the same way (`editor/src/comments.ts`, `crates/reader/src/render.rs`); tests on both sides fold the same scene.
 
 ### Author tools
 
-Every share also has a secret **author key**.
-- The desktop app's **Open as author** opens the link in your browser with the key included.
-- The phone app already has the keys, from the vault.
+Every link also has a secret **author key**.
+- **Open as author** (desktop) opens the reader page in your browser as `#<id>.<key>.<author key>`.
+- The phone app reads the keys from the vault, and its Settings lists your links, each opening the reader page as the author.
 
-The author key adds these tools to the reader page: reply as author, resolve, delete comments, and revoke the link.
+As the author, the reader page offers reply as author, resolve, delete comments, and revoke the link.
 
 ### Worker
 
-Written in Rust (`workers-rs`). It stores share text in KV and comments in D1, all encrypted, along with hashes of each share's author key and comment token.
+Written in Rust (`workers-rs`, `crates/worker`, its own cargo workspace). It stores share text in KV and comments in D1, all sealed, along with hashes of each share's author key and comment token.
 
 | Endpoint | Who can call it |
 |---|---|
-| `PUT /s/{id}` | Author: upload a new version |
+| `PUT /s/{id}` | Author: upload a new version (the first one sets the keys) |
 | `GET /s/{id}` | Anyone with the link |
 | `GET /s/{id}/comments?since=` | Anyone with the link |
-| `POST /s/{id}/comments` | Anyone with the link: requires a token derived from the link key; rate-limited, size-capped |
+| `POST /s/{id}/comments` | Anyone with the link: requires a token derived from the link key; 30 a minute per share, 16 KiB each |
 | `PATCH` / `DELETE /s/{id}/comments/{cid}` | Author: resolve, delete |
 | `DELETE /s/{id}` | Author: revoke (deletes the text and its comments) |
+
+`.github/workflows/worker.yml` deploys it on pushes to `main` that touch it.
 
 ## 11. Export
 
@@ -659,7 +671,7 @@ Requested 2026-10-03; not needed for the first phases.
 | 2 · Exports | Compile settings, PDF, EPUB, .docx, copy for Medium |
 | 3 · Timeline + network | Calendars, resolver, timeline view, plot points, relationships, the network board (zones, marks), story-time slider with the timeline |
 | 4 · Sync + phone | Phone reading first (no sync risk: it only reads), then two-way sync on the desktop, then writing, capture and restructuring from the phone; Pages deploy, inbox filing, QR setup |
-| 5 · Sharing | Worker, encryption, reader page, comments and anchoring, author tools, desktop comments panel |
+| 5 · Sharing | ✓ Worker, encryption, reader page, comments and anchoring, author tools, desktop comments panel (`feat/share`) |
 | Later | Moving a project out of the vault; a chapter as one continuous document; citation machine for nonfiction (§11); notes-to-self inside the prose |
 
 **Windows builds** are a high priority, taken on their own rather than inside a phase, because other people are meant to run the app. In order:

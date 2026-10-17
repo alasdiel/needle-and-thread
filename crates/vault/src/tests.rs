@@ -1210,3 +1210,39 @@ fn the_story_says_where_each_card_and_string_comes_in() {
     assert_eq!(r.changes, [(2, "distrusts".to_owned())]);
     assert_eq!(r.unplaced, ["The Drowning"], "a world plot point with no when");
 }
+
+#[test]
+fn links_are_kept_in_the_vault_and_share_what_they_cover() {
+    use needle_core::share::{Covers, ShareRecord};
+    let (_dir, vault) = vault();
+    let project = vault.create_project("Tidewater", ProjectKind::Fiction).unwrap();
+    let chapter = first_chapter(&project);
+    let one = project.create_scene("The harbor", Placement::End { chapter: chapter.clone() }).unwrap();
+    let two = project.create_scene("The night market", Placement::End { chapter: chapter.clone() }).unwrap();
+    project.save_body(&one.slug, "The tide was out.\n").unwrap();
+    project.save_body(&two.slug, "The market opened at dusk.\n").unwrap();
+    let second = project.add_chapter("The long night", Some(&chapter)).unwrap();
+    let three = project.create_scene("Counting house", Placement::End { chapter: second.id.clone() }).unwrap();
+
+    let whole = project.shared(&Covers::Book, "v1", 10).unwrap();
+    assert_eq!(whole.title, "Tidewater");
+    assert_eq!(whole.version, "v1");
+    let scenes: Vec<_> = whole.parts.iter().map(|p| (p.scene.as_str(), p.chapter.as_deref())).collect();
+    // A new project starts with an untitled scene in an untitled chapter.
+    assert_eq!(scenes[1..], [(one.slug.as_str(), None), (two.slug.as_str(), None), (three.slug.as_str(), Some("The long night"))]);
+    assert_eq!(scenes[0].1, Some("Chapter 1"), "an untitled chapter is numbered");
+    assert_eq!(whole.parts[2].markdown, "The market opened at dusk.\n");
+
+    let just_one = project.shared(&Covers::Scene { scene: two.slug.clone() }, "v1", 10).unwrap();
+    assert_eq!((just_one.title.as_str(), just_one.parts.len(), just_one.parts[0].chapter.as_deref()), ("The night market", 1, None));
+    assert_eq!(project.covered(&Covers::Chapter { chapter: second.id.clone() }).unwrap(), [three.slug]);
+    assert!(project.covered(&Covers::Chapter { chapter: "gone".into() }).unwrap().is_empty());
+
+    assert!(vault.shares().unwrap().shares.is_empty());
+    let record = ShareRecord::new([1; 80], "Beta readers", &project.slug, Covers::Chapter { chapter }, 10);
+    vault.add_share(record.clone()).unwrap();
+    assert_eq!(vault.shares().unwrap().shares, std::slice::from_ref(&record));
+    assert_eq!(vault.remove_share(&record.id).unwrap(), record);
+    assert!(vault.shares().unwrap().shares.is_empty());
+    assert!(vault.remove_share(&record.id).is_err());
+}

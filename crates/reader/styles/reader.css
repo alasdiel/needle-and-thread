@@ -1,0 +1,209 @@
+/* The reader page: the phone app's look (phone.css) plus what commenting needs. Reader 1, 1b and
+   1c on the canvas's Sharing page. Commented words are amber marks, like a highlighter. */
+
+:root {
+  --note: light-dark(#9a5f0e, #f0b44c);
+  --note-tint: light-dark(rgb(240 180 76 / 0.26), rgb(240 180 76 / 0.16));
+  --note-strong: light-dark(rgb(240 180 76 / 0.5), rgb(240 180 76 / 0.36));
+}
+
+/* On a wide screen the page is a column, not the whole width. */
+.page {
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.shared-title {
+  display: block;
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.project .label {
+  display: block;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.author-pill {
+  flex: none;
+}
+
+.icon.count {
+  width: auto;
+  min-width: 44px;
+  padding: 0 8px;
+  display: inline-flex;
+  gap: 4px;
+  font-size: 15px;
+}
+
+.icon.count span {
+  display: grid;
+}
+
+mark.cm {
+  background: var(--note-tint);
+  color: inherit;
+  border-bottom: 1.5px solid var(--note);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+mark.cm.many {
+  background: var(--note-strong);
+}
+
+.end {
+  margin-top: 28px;
+  font-size: 14px;
+}
+
+/* The Comment button under picked words. */
+.pick {
+  appearance: none;
+  position: fixed;
+  z-index: 9;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--text);
+  color: var(--mat);
+  font: 600 15px var(--font-ui);
+  box-shadow: 0 6px 18px var(--shadow);
+}
+
+.pick span {
+  display: grid;
+}
+
+.sheet-title {
+  margin: 0 0 12px;
+  font-size: 22px;
+}
+
+.quote {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font: italic 16px/1.55 var(--font-text);
+  letter-spacing: normal;
+}
+
+.quote > span {
+  background: var(--note-tint);
+  color: var(--text);
+}
+
+.quote .pill {
+  margin-left: 8px;
+  font-style: normal;
+}
+
+.pill.small {
+  height: 20px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.said-by {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.said {
+  margin: 2px 0 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.replies {
+  margin-left: 2px;
+  padding-left: 12px;
+  border-left: 2px solid var(--rule);
+}
+
+.link {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--blue);
+  font: inherit;
+  font-size: 14px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.link.danger {
+  margin-left: auto;
+  color: var(--error);
+}
+
+.field-label {
+  display: block;
+  margin: 14px 0 6px;
+  color: var(--print);
+  font-size: 13.5px;
+}
+
+.field {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--raise);
+  color: var(--text);
+  font: 16px/1.45 var(--font-ui);
+  resize: vertical;
+}
+
+.hint.small {
+  margin: 6px 0 0;
+  font-size: 14px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.row-actions > * {
+  flex: 1;
+}
+
+.primary:disabled {
+  opacity: 0.45;
+}
+
+.row.thread {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.row.thread .quote {
+  margin: 0;
+  font-size: 15px;
+}
+
+.group {
+  margin: 18px 0 6px;
+}
+
+.sheet .row:not(.thread) {
+  padding: 6px 4px;
+  border-radius: 8px;
+}

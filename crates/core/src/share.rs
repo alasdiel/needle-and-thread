@@ -12,6 +12,9 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
+
+use crate::anchor::Anchor;
 
 /// Bytes of random in a share's id: enough that nobody guesses one.
 pub const ID_BYTES: usize = 16;
@@ -36,11 +39,29 @@ impl Link {
         format!("{}.{}", self.id, B64.encode(self.key))
     }
 
+    /// What goes after `#` for the author: `<id>.<key>.<author key>`, which adds the author's
+    /// tools to the reader page.
+    pub fn author_fragment(&self, author: &str) -> String {
+        format!("{}.{author}", self.fragment())
+    }
+
     /// Reads `<id>.<key>`, with or without the `#`.
     pub fn parse(fragment: &str) -> Option<Self> {
-        let (id, key) = fragment.trim_start_matches('#').split_once('.')?;
+        match Self::parse_author(fragment)? {
+            (link, None) => Some(link),
+            _ => None,
+        }
+    }
+
+    /// Reads `<id>.<key>` or the author's `<id>.<key>.<author key>`.
+    pub fn parse_author(fragment: &str) -> Option<(Self, Option<String>)> {
+        let mut parts = fragment.trim_start_matches('#').split('.');
+        let (id, key, author) = (parts.next()?, parts.next()?, parts.next());
+        if parts.next().is_some() || author.is_some_and(|a| B64.decode(a).is_err()) {
+            return None;
+        }
         let key: [u8; KEY_BYTES] = B64.decode(key).ok()?.try_into().ok()?;
-        valid_id(id).then(|| Self { id: id.to_owned(), key })
+        valid_id(id).then(|| (Self { id: id.to_owned(), key }, author.map(str::to_owned)))
     }
 
     /// What lets someone with the link add a comment: derived from the key, so the Worker can
@@ -57,6 +78,15 @@ impl Link {
 /// before using it as a storage key.
 pub fn valid_id(id: &str) -> bool {
     B64.decode(id).is_ok_and(|bytes| bytes.len() == ID_BYTES)
+}
+
+/// Bytes as base64url, the way the Worker keeps sealed comments.
+pub fn encode(bytes: &[u8]) -> String {
+    B64.encode(bytes)
+}
+
+pub fn decode(text: &str) -> Option<Vec<u8>> {
+    B64.decode(text).ok()
 }
 
 /// A secret as the Worker keeps it: its SHA-256, hex.
@@ -111,7 +141,45 @@ pub struct Shared {
     pub parts: Vec<SharedPart>,
     /// When this version was made, in seconds since the Unix epoch.
     pub updated: i64,
+    /// The snapshot it was made from, which comments made on it record.
+    #[serde(default)]
+    pub version: String,
+    /// Where comments are now, by their id, as the author's app last placed them as the text
+    /// changed; None for one whose words are gone. A comment not here is where it was made.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub moved: BTreeMap<u64, Option<On>>,
 }
+
+/// Where a comment is: a scene, and words in it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct On {
+    pub scene: String,
+    #[serde(flatten)]
+    pub anchor: Anchor,
+}
+
+/// A comment as whoever wrote it sealed it. The Worker adds its id, its time, whether the author
+/// posted it, and whether it's resolved or deleted.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Comment {
+    pub v: u32,
+    /// The name its writer gave; empty for the author.
+    #[serde(default)]
+    pub name: String,
+    pub text: String,
+    /// The words it's on; none for a reply.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on: Option<On>,
+    /// The version of the shared text it was made on.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub version: String,
+    /// The comment this answers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_to: Option<u64>,
+}
+
+/// Longest a comment's text may be, in characters: well inside what the Worker takes once sealed.
+pub const MAX_COMMENT_CHARS: usize = 4000;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SharedPart {
@@ -125,6 +193,68 @@ pub struct SharedPart {
 }
 
 pub const FORMAT: u32 = 1;
+
+/// What a link shares: one scene, a chapter, a part (a run of chapters with the same part
+/// label) or the whole book.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "covers", rename_all = "lowercase")]
+pub enum Covers {
+    Scene { scene: String },
+    Chapter { chapter: String },
+    Part { part: String },
+    Book,
+}
+
+/// A link the author has made, as the vault keeps it in `.needle/shares.toml`. The keys are
+/// here so every device of the author's can upload, moderate and revoke; the vault is private.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShareRecord {
+    pub id: String,
+    /// The link's key, base64url.
+    pub key: String,
+    /// The author key.
+    pub author: String,
+    /// What the author calls it: "Beta readers".
+    pub name: String,
+    /// The project's folder name.
+    pub project: String,
+    #[serde(flatten)]
+    pub covers: Covers,
+    /// When it was made, in seconds since the Unix epoch.
+    pub created: i64,
+}
+
+impl ShareRecord {
+    /// A new link, from fresh random bytes for its id, its key and its author key.
+    pub fn new(random: [u8; ID_BYTES + KEY_BYTES + 32], name: &str, project: &str, covers: Covers, created: i64) -> Self {
+        let id: [u8; ID_BYTES] = random[..ID_BYTES].try_into().expect("ID_BYTES long");
+        let key: [u8; KEY_BYTES] = random[ID_BYTES..ID_BYTES + KEY_BYTES].try_into().expect("KEY_BYTES long");
+        let author: [u8; 32] = random[ID_BYTES + KEY_BYTES..].try_into().expect("32 long");
+        let link = Link::new(id, key);
+        Self { id: link.id, key: B64.encode(key), author: secret(author), name: name.trim().to_owned(), project: project.to_owned(), covers, created }
+    }
+
+    pub fn link(&self) -> Option<Link> {
+        Link::parse(&format!("{}.{}", self.id, self.key))
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShareList {
+    #[serde(default, rename = "share")]
+    pub shares: Vec<ShareRecord>,
+}
+
+impl ShareList {
+    pub fn parse(text: &str) -> Result<Self, String> {
+        toml::from_str(text).map_err(|e| format!("shares.toml: {e}"))
+    }
+
+    pub fn to_toml(&self) -> String {
+        let body = toml::to_string(self).expect("shares serialise");
+        format!("# Links made with Share. Each key here can read or moderate what it shares: keep this vault private.\n\n{body}")
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -172,8 +302,48 @@ mod tests {
             title: "Arrival".into(),
             parts: vec![SharedPart { chapter: Some("Arrival".into()), scene: "night-market".into(), title: "The night market".into(), markdown: "Text.\n".into() }],
             updated: 1_791_627_360,
+            version: "abc123".into(),
+            moved: BTreeMap::from([(4, None), (7, Some(On { scene: "night-market".into(), anchor: Anchor { quote: "Text".into(), n: 0, before: String::new(), after: ".".into() } }))]),
         };
         let json = serde_json::to_string(&shared).unwrap();
         assert_eq!(serde_json::from_str::<Shared>(&json).unwrap(), shared);
+    }
+
+    #[test]
+    fn the_author_link_carries_the_author_key() {
+        let link = Link::new([1; ID_BYTES], KEY);
+        let author = secret([9; 32]);
+        let fragment = link.author_fragment(&author);
+        assert_eq!(Link::parse_author(&fragment), Some((link.clone(), Some(author))));
+        assert_eq!(Link::parse_author(&link.fragment()), Some((link.clone(), None)));
+        assert_eq!(Link::parse(&fragment), None, "a reader's link has no author key");
+        assert_eq!(Link::parse_author(&format!("{fragment}.more")), None);
+    }
+
+    #[test]
+    fn the_vaults_list_of_links_round_trips() {
+        let record = ShareRecord::new([5; ID_BYTES + KEY_BYTES + 32], " Beta readers ", "tidewater", Covers::Chapter { chapter: "arrival".into() }, 1_791_627_360);
+        assert_eq!(record.name, "Beta readers");
+        assert!(record.link().is_some());
+        let list = ShareList { shares: vec![record, ShareRecord::new([6; ID_BYTES + KEY_BYTES + 32], "Editor", "tidewater", Covers::Book, 1)] };
+        let text = list.to_toml();
+        assert!(text.contains("covers = \"chapter\"") && text.contains("chapter = \"arrival\"") && text.contains("covers = \"book\""), "{text}");
+        assert_eq!(ShareList::parse(&text).unwrap(), list);
+        assert_eq!(ShareList::parse("").unwrap(), ShareList::default());
+    }
+
+    #[test]
+    fn a_comment_round_trips_as_json() {
+        let comment = Comment {
+            v: FORMAT,
+            name: "Ines".into(),
+            text: "Why before?".into(),
+            on: Some(On { scene: "night-market".into(), anchor: Anchor { quote: "lit before the bells".into(), n: 0, before: "were ".into(), after: ".".into() } }),
+            version: "abc123".into(),
+            reply_to: None,
+        };
+        let json = serde_json::to_string(&comment).unwrap();
+        assert!(json.contains(r#""scene":"night-market","quote":"lit before the bells""#), "{json}");
+        assert_eq!(serde_json::from_str::<Comment>(&json).unwrap(), comment);
     }
 }

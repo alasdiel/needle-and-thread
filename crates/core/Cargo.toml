@@ -8,6 +8,8 @@ publish.workspace = true
 # Sealing shared text and comments (share.rs). No getrandom: callers bring their own random.
 aes-gcm = { version = "0.10", default-features = false, features = ["aes", "alloc"] }
 base64 = "0.22"
+# The prose a reader sees, which comments are anchored in (anchor.rs).
+pulldown-cmark = { version = "0.13", default-features = false }
 serde = { workspace = true, features = ["derive"] }
 sha2 = "0.10"
 similar = "3.2.0"

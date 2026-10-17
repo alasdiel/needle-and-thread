@@ -26,7 +26,7 @@ pub struct Project {
     root: PathBuf,
     /// The vault's note templates.
     templates: PathBuf,
-    store: Arc<dyn Store>,
+    pub(crate) store: Arc<dyn Store>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

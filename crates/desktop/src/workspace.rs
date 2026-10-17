@@ -26,9 +26,10 @@ use crate::pattern::{Grainline, Notches};
 use crate::project::ProjectPanel;
 use crate::search::{Search, SearchPalette, SearchSidebar};
 use crate::settings::{Prefs, SettingsPanel};
+use crate::share::{self, Choice, CommentCard, SharedPanel, SharedTab, Thread};
 use crate::spell::SpellBridge;
 use crate::status::{self, StatusMark};
-use crate::tauri::{self, BackupStatus, CutView, HitView, MergeView, NoteKey, NoteView, OutlineView, Passage, ProjectView, SceneNamesView, SceneView, VaultView};
+use crate::tauri::{self, BackupStatus, CommentView, Covers, CutView, HitView, MergeView, NoteKey, NoteView, OutlineView, Passage, ProjectView, SceneNamesView, SceneView, ShareView, VaultView};
 use crate::typography::TypographySettings;
 
 #[derive(Clone, PartialEq)]
@@ -43,6 +44,7 @@ enum Panel {
     Markdown,
     History,
     Bin,
+    Shared,
 }
 
 /// A note at the foot of the page: something just went into the cut bin, with Undo, or came
@@ -792,6 +794,223 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
             open_note(NoteKey { owner, world, path: hit.key });
         }
     };
+
+    // --- Sharing (DESIGN §10) --------------------------------------------------------------
+
+    let shares = RwSignal::new(Vec::<ShareView>::new());
+    let comments = RwSignal::new(Vec::<CommentView>::new());
+    let shared_tab = RwSignal::new(SharedTab::Comments);
+    let share_problem = RwSignal::new(None::<String>);
+    let share_busy = RwSignal::new(false);
+    // The link just made, which shows its address.
+    let made = RwSignal::new(None::<String>);
+    // The comment whose card is open, and where its words are from the top of the piece.
+    let open_comment = RwSignal::new(None::<(u64, f64)>);
+    let load_shares = move || {
+        let Some(p) = project.get_untracked() else { return };
+        spawn_local(async move {
+            if let Ok(list) = tauri::shares(&p).await {
+                shares.try_set(list);
+            }
+        });
+    };
+    let load_comments = move || {
+        let Some(p) = project.get_untracked() else { return };
+        spawn_local(async move {
+            match tauri::share_comments(&p).await {
+                Ok(list) => {
+                    comments.try_set(list);
+                    share_problem.try_set(None);
+                }
+                Err(e) => {
+                    share_problem.try_set(Some(format!("Couldn't fetch comments: {e}")));
+                }
+            }
+            if let Ok(list) = tauri::shares(&p).await {
+                shares.try_set(list);
+            }
+        });
+    };
+    Effect::new(move |_| {
+        if project.get().is_some() {
+            comments.set(Vec::new());
+            shares.set(Vec::new());
+            open_comment.set(None);
+            load_comments();
+        }
+    });
+    let _ = tauri::listen("shares-changed", load_shares);
+    // Readers comment whenever they like; look every couple of minutes.
+    if let Ok(timer) = set_interval_with_handle(load_comments, Duration::from_secs(120)) {
+        on_cleanup(move || timer.clear());
+    }
+    // The open scene's commented words, marked in the editor.
+    Effect::new(move |_| {
+        let slug = scene.with(|s| s.as_ref().map(|s| s.slug.clone()));
+        let marks = comments.with(|c| match &slug {
+            Some(slug) => share::marks(c, slug),
+            None => js_sys::Array::new().into(),
+        });
+        editor.with_value(|h| {
+            if let Some(h) = h {
+                h.set_comments(&marks);
+            }
+        });
+    });
+    let mark_seen = move |id: u64| {
+        let Some(thread) = comments.with_untracked(|c| share::threads(c).into_iter().find(|t| t.head.id == id)) else { return };
+        if !thread.fresh() {
+            return;
+        }
+        let ids: Vec<u64> = thread.replies.iter().map(|r| r.id).chain([thread.head.id]).collect();
+        comments.update(|c| c.iter_mut().filter(|c| ids.contains(&c.id)).for_each(|c| c.fresh = false));
+        let (share, last) = (thread.head.share.clone(), thread.last_id());
+        spawn_local(async move {
+            let _ = tauri::seen_comments(&share, last).await;
+            load_shares();
+        });
+    };
+    let piece_top = move || {
+        document()
+            .query_selector(".piece-holder")
+            .ok()
+            .flatten()
+            .map_or(0.0, |el| el.get_bounding_client_rect().top())
+    };
+    let on_comment = move |id: u32, top: f64, _bottom: f64| {
+        let id = u64::from(id);
+        open_comment.set(Some((id, top - piece_top())));
+        editor.with_value(|h| {
+            if let Some(h) = h {
+                h.set_active_comment(&(id as f64).into());
+            }
+        });
+        mark_seen(id);
+    };
+    let close_comment = move || {
+        open_comment.set(None);
+        editor.with_value(|h| {
+            if let Some(h) = h {
+                h.set_active_comment(&wasm_bindgen::JsValue::NULL);
+            }
+        });
+    };
+    let open_thread = Signal::derive(move || {
+        let (id, _) = open_comment.get()?;
+        comments.with(|c| share::threads(c).into_iter().find(|t| t.head.id == id))
+    });
+    // A call about a comment, then the comments again.
+    let comment_call = move |call: tauri::LocalFuture<Result<(), String>>| {
+        share_busy.set(true);
+        spawn_local(async move {
+            if let Err(e) = call.await {
+                share_problem.try_set(Some(e));
+            }
+            share_busy.try_set(false);
+            load_comments();
+        });
+    };
+    let reply = move |text: String| {
+        let Some(t) = open_thread.get_untracked() else { return };
+        let (share, to) = (t.head.share.clone(), t.head.id);
+        comment_call(Box::pin(async move { tauri::reply_comment(&share, to, &text).await }));
+    };
+    let resolve = move |resolved: bool| {
+        let Some(t) = open_thread.get_untracked() else { return };
+        let (share, id) = (t.head.share.clone(), t.head.id);
+        if resolved {
+            close_comment();
+        }
+        comment_call(Box::pin(async move { tauri::resolve_comment(&share, id, resolved).await }));
+    };
+    let delete = move |id: u64| {
+        let Some(t) = open_thread.get_untracked() else { return };
+        let share = t.head.share.clone();
+        if id == t.head.id {
+            close_comment();
+        }
+        comment_call(Box::pin(async move { tauri::delete_comment(&share, id).await }));
+    };
+    // From the Shared panel: go to the comment's words and open its card there.
+    let open_from_panel = move |t: Thread| {
+        let id = t.head.id;
+        let reveal = move || {
+            let at = editor.with_value(|h| h.as_ref().and_then(|h| h.reveal_comment(id as u32)));
+            if let Some((top, bottom)) = at {
+                on_comment(id as u32, top, bottom);
+            }
+            at.is_some()
+        };
+        match (&t.head.scene, &t.head.anchor) {
+            (Some(slug), Some(_)) => {
+                if current().as_deref() != Some(slug.as_str()) {
+                    open_scene(slug.clone());
+                }
+                share::retry(10, reveal);
+            }
+            // Its words are gone: the card opens at the top of whatever's open.
+            _ => {
+                open_comment.set(Some((id, 90.0)));
+                mark_seen(id);
+            }
+        }
+    };
+    let share_choices = Signal::derive(move || {
+        let mut choices = Vec::new();
+        outline.with(|o| {
+            let Some(o) = o else { return };
+            if let Some(s) = scene.get() {
+                choices.push(Choice { covers: Covers::Scene { scene: s.slug.clone() }, label: format!("This scene: {}", s.title) });
+                if let Some((i, chapter)) = o.chapters.iter().enumerate().find(|(_, c)| c.scenes.iter().any(|x| x.slug == s.slug)) {
+                    choices.push(Choice { covers: Covers::Chapter { chapter: chapter.id.clone() }, label: format!("This chapter: {}", outline::chapter_title(chapter, i)) });
+                    if let Some(part) = &chapter.part {
+                        choices.push(Choice { covers: Covers::Part { part: part.clone() }, label: format!("This part: {part}") });
+                    }
+                }
+            }
+            choices.push(Choice { covers: Covers::Book, label: "The whole book".to_owned() });
+        });
+        choices
+    });
+    let make_share = move |covers: Covers, name: String| {
+        let Some(p) = project.get_untracked() else { return };
+        share_busy.set(true);
+        spawn_local(async move {
+            match tauri::make_share(&p, &covers, &name).await {
+                Ok(view) => {
+                    made.try_set(Some(view.id.clone()));
+                    share_problem.try_set(None);
+                }
+                Err(e) => {
+                    share_problem.try_set(Some(format!("Couldn't make the link: {e}")));
+                }
+            }
+            share_busy.try_set(false);
+            load_shares();
+        });
+    };
+    let revoke_share = move |id: String| {
+        spawn_local(async move {
+            if let Err(e) = tauri::revoke_share(&id).await {
+                share_problem.try_set(Some(format!("Couldn't revoke it: {e}")));
+            }
+            load_comments();
+        });
+    };
+    let open_as_author = move |id: String| {
+        spawn_local(async move {
+            if let Err(e) = tauri::open_as_author(&id).await {
+                share_problem.try_set(Some(e));
+            }
+        });
+    };
+    let fresh_comments = move || comments.with(|c| c.iter().filter(|c| c.fresh).count());
+    let escape = window_event_listener(leptos::ev::keydown, move |ev| {
+        if ev.key() == "Escape" && open_comment.get_untracked().is_some() {
+            close_comment();
+        }
+    });
+    on_cleanup(move || escape.remove());
 
     // Ctrl+K (Cmd+K on a Mac) opens the search box from anywhere.
     let shortcut = window_event_listener(leptos::ev::keydown, move |ev| {
@@ -1621,6 +1840,23 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                         </button>
                     </Show>
                     <button
+                        class="icon-button shared-button"
+                        title="Shared"
+                        aria-label="Shared"
+                        class:active=move || panel.get() == Some(Panel::Shared)
+                        on:click=move |_| {
+                            toggle(Panel::Shared);
+                            if panel.get_untracked() == Some(Panel::Shared) {
+                                load_comments();
+                            }
+                        }
+                    >
+                        <Icon glyph=Glyph::Link size=17 />
+                        <Show when=move || { fresh_comments() > 0 }>
+                            <span class="note-dot" title="New comments"></span>
+                        </Show>
+                    </button>
+                    <button
                         class="icon-button"
                         title="Network board"
                         aria-label="Network board"
@@ -1817,9 +2053,14 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                                     on_cut_to_bin=cut_to_bin
                                     on_back_from_bin=back_from_bin
                                     on_merge=on_merge
+                                    on_comment=on_comment
                                     on_ready=on_ready
                                 />
                             </article>
+                            {move || open_comment.get().map(|(_, top)| view! {
+                                <div class="comment-backdrop" on:click=move |_| close_comment()></div>
+                                <CommentCard thread=open_thread top=top busy=share_busy on_reply=reply on_resolve=resolve on_delete=delete on_close=close_comment />
+                            })}
                             <Show when=has_note>
                                 <Pin />
                             </Show>
@@ -1946,6 +2187,24 @@ pub fn Workspace(vault: VaultView, on_open_vault: impl Fn(VaultView) + Copy + Se
                         kind=project_kind
                         scene_title=move |slug: &str| outline.with(|o| o.as_ref().and_then(|o| find(o, slug)).map(|s| s.title))
                         on_restore=restore_from_bin
+                        on_close=move || panel.set(None)
+                    />
+                }.into_any()),
+                Some(Panel::Shared) => Some(view! {
+                    <SharedPanel
+                        tab=shared_tab
+                        shares=shares
+                        comments=comments
+                        choices=share_choices
+                        scene=Signal::derive(move || scene.with(|s| s.as_ref().map(|s| s.slug.clone())))
+                        scene_title=move |slug: &str| outline.with(|o| o.as_ref().and_then(|o| find(o, slug)).map(|s| s.title))
+                        problem=share_problem
+                        busy=share_busy
+                        made=made
+                        on_make=make_share
+                        on_revoke=revoke_share
+                        on_author=open_as_author
+                        on_open=open_from_panel
                         on_close=move || panel.set(None)
                     />
                 }.into_any()),

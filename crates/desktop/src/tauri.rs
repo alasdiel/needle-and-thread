@@ -964,3 +964,85 @@ pub async fn close_listening() -> Result<(), String> {
 pub async fn finish_close(error: Option<&str>) -> Result<(), String> {
     call("finish_close", Args::default().opt("error", error)).await
 }
+
+// --- Sharing (DESIGN §10) --------------------------------------------------------------------
+
+pub use needle_core::anchor::Anchor;
+pub use needle_core::share::Covers;
+
+/// A link, as the Shared panel shows it.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct ShareView {
+    pub id: String,
+    pub name: String,
+    pub covers: Covers,
+    /// What it covers, in words.
+    pub title: String,
+    /// The link readers get.
+    pub link: String,
+    pub created: i64,
+    /// When readers last got a new version, this session; seconds since the Unix epoch.
+    pub sent: Option<i64>,
+    pub error: Option<String>,
+    pub comments: usize,
+    pub fresh: usize,
+}
+
+/// A reader's comment (or the author's reply), placed on the text as it is now.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct CommentView {
+    pub share: String,
+    pub share_name: String,
+    pub id: u64,
+    /// Empty for the author.
+    pub name: String,
+    pub text: String,
+    pub author: bool,
+    pub resolved: bool,
+    /// Seconds since the Unix epoch.
+    pub created: f64,
+    pub reply_to: Option<u64>,
+    pub scene: Option<String>,
+    /// Where its words are now; none if they're gone, or for a reply.
+    pub anchor: Option<Anchor>,
+    /// The words it was made on.
+    pub quote: String,
+    pub fresh: bool,
+}
+
+pub async fn shares(project: &str) -> Result<Vec<ShareView>, String> {
+    call("shares", Args::default().str("project", project)).await
+}
+
+pub async fn make_share(project: &str, covers: &Covers, name: &str) -> Result<ShareView, String> {
+    let covers = serde_wasm_bindgen::to_value(covers).map_err(|e| e.to_string())?;
+    call("make_share", Args::default().str("project", project).set("covers", covers).str("name", name)).await
+}
+
+pub async fn revoke_share(id: &str) -> Result<(), String> {
+    call("revoke_share", Args::default().str("id", id)).await
+}
+
+pub async fn open_as_author(id: &str) -> Result<(), String> {
+    call("open_as_author", Args::default().str("id", id)).await
+}
+
+pub async fn share_comments(project: &str) -> Result<Vec<CommentView>, String> {
+    call("share_comments", Args::default().str("project", project)).await
+}
+
+pub async fn seen_comments(share: &str, id: u64) -> Result<(), String> {
+    call("seen_comments", Args::default().str("share", share).set("id", (id as f64).into())).await
+}
+
+pub async fn reply_comment(share: &str, to: u64, text: &str) -> Result<(), String> {
+    call("reply_comment", Args::default().str("share", share).set("to", (to as f64).into()).str("text", text)).await
+}
+
+pub async fn resolve_comment(share: &str, id: u64, resolved: bool) -> Result<(), String> {
+    call("resolve_comment", Args::default().str("share", share).set("id", (id as f64).into()).set("resolved", resolved.into())).await
+}
+
+pub async fn delete_comment(share: &str, id: u64) -> Result<(), String> {
+    call("delete_comment", Args::default().str("share", share).set("id", (id as f64).into())).await
+}

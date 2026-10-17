@@ -4516,3 +4516,312 @@ button.panel-row {
   color: var(--on-blue);
   font-weight: 500;
 }
+
+/* --- Sharing (DESIGN §10) --------------------------------------------------------------------
+   The Shared panel (Share 2 on the canvas's Sharing page) and a comment's card beside its words
+   (Comments 1, only the clicked one). Readers' comments are amber, like a highlighter: the
+   reader page uses the same colours (crates/reader/styles/reader.css). */
+
+:root {
+  --note: light-dark(#9a5f0e, #f0b44c);
+  --note-tint: light-dark(rgb(240 180 76 / 0.26), rgb(240 180 76 / 0.16));
+  --note-strong: light-dark(rgb(240 180 76 / 0.5), rgb(240 180 76 / 0.36));
+}
+
+.shared-button {
+  position: relative;
+}
+
+.note-dot {
+  flex: none;
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--note);
+}
+
+.shared-button .note-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+}
+
+.shared-panel {
+  overflow-y: auto;
+  padding-bottom: 24px;
+}
+
+.shared-tabs {
+  margin: 0 18px 10px;
+}
+
+.shared-problem {
+  margin: 4px 18px 10px;
+  color: var(--error);
+  font-size: var(--size-ui-small);
+}
+
+.shared-empty {
+  margin: 8px 18px;
+  color: var(--muted);
+}
+
+.shared-group {
+  margin: 16px 18px 6px;
+  color: var(--print);
+  font: 500 var(--size-label-small) var(--font-label);
+  letter-spacing: 0.07em;
+  text-transform: lowercase;
+}
+
+.shared-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: calc(100% - 20px);
+  margin: 0 10px 4px;
+  padding: 8px 8px;
+  border: 0;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.shared-quote {
+  font: italic var(--size-ui-small) / 1.45 var(--font-text);
+  color: var(--muted);
+}
+
+.shared-quote span {
+  background: var(--note-tint);
+  color: var(--text);
+}
+
+.shared-said {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shared-said .note-dot {
+  align-self: center;
+}
+
+.shared-said b {
+  font-weight: 600;
+}
+
+.shared-meta {
+  color: var(--faint);
+  font-size: var(--size-ui-small);
+}
+
+.shared-meta.error {
+  color: var(--error);
+}
+
+.shared-new,
+.shared-link {
+  margin: 0 14px 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  background: var(--raise);
+}
+
+.shared-new {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.shared-new label {
+  color: var(--print);
+  font: 500 var(--size-label-small) var(--font-label);
+  letter-spacing: 0.07em;
+  text-transform: lowercase;
+}
+
+.shared-new label + * {
+  margin-bottom: 4px;
+}
+
+.shared-new select,
+.shared-new input {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: var(--mat);
+  color: var(--text);
+  font: inherit;
+}
+
+.shared-new-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.shared-new-foot .hint {
+  flex: 1;
+  color: var(--muted);
+  font-size: var(--size-ui-small);
+}
+
+.shared-link.made {
+  border-color: var(--blue);
+}
+
+.shared-link-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shared-address {
+  margin: 8px 0 2px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  background: var(--blue-tint);
+  overflow-x: auto;
+}
+
+.shared-address code {
+  font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+}
+
+.shared-actions {
+  display: flex;
+  align-items: center;
+  margin: 6px -8px -4px;
+}
+
+.shared-actions .grow,
+.comment-actions .grow {
+  flex: 1;
+}
+
+button.quiet.danger {
+  color: var(--error);
+}
+
+/* A reader's comment in the text, and the card beside it. */
+.needle-prose .comment-mark {
+  background: var(--note-tint);
+  border-bottom: 1.5px solid var(--note);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.needle-prose .comment-mark.active {
+  background: var(--note-strong);
+}
+
+.comment-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+}
+
+.comment-card {
+  position: absolute;
+  z-index: 5;
+  left: calc(100% + 14px);
+  width: 290px;
+  padding: 12px 14px;
+  border: 1px solid var(--note);
+  border-radius: 10px;
+  background: var(--raise);
+  box-shadow: 0 12px 30px var(--shadow-color);
+  font-size: var(--size-ui);
+}
+
+/* Without room beside the page (the envelope is a drawer then), over its right edge. */
+@container main (max-width: 919px) {
+  .comment-card {
+    left: auto;
+    right: 12px;
+  }
+}
+
+.comment-who {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.comment-who b {
+  font-weight: 600;
+}
+
+.comment-badge {
+  padding: 0 7px;
+  border: 1px solid var(--print-soft);
+  border-radius: 999px;
+  color: var(--print);
+  font: 500 11.5px var(--font-label);
+  letter-spacing: 0.07em;
+}
+
+.comment-when {
+  color: var(--faint);
+  font-size: var(--size-ui-small);
+  font-variant-numeric: tabular-nums;
+}
+
+button.comment-delete {
+  margin-left: auto;
+  align-self: center;
+  padding: 2px;
+  border: 0;
+  color: var(--faint);
+}
+
+button.comment-delete:hover {
+  color: var(--error);
+}
+
+.comment-text {
+  margin: 2px 0 10px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comment-replies {
+  margin-left: 2px;
+  padding-left: 10px;
+  border-left: 2px solid var(--rule);
+}
+
+.comment-removed {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: var(--size-ui-small);
+}
+
+.comment-reply {
+  width: 100%;
+  min-height: 52px;
+  padding: 7px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: var(--mat);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.comment-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+}

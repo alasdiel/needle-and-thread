@@ -13,6 +13,7 @@ import { buildKeymaps } from "./keymap.ts";
 import { type HighlightMeta, highlightKey, highlightPlugin } from "./highlight.ts";
 import { type LinkMeta, type LinkResolver, linkSuggestPlugin, linksKey, linksPlugin } from "./links.ts";
 import { countWords, parseMarkdown, serializeMarkdown } from "./markdown.ts";
+import { type CommentMark, type CommentsMeta, type OnComment, commentsKey, commentsPlugin } from "./comments.ts";
 import { type Choice, type MergeBox, type MergeMeta, mergeKey, mergePlugin } from "./merge.ts";
 import { openSelectionMenu, openSpellMenu } from "./menu.ts";
 import { changeTo } from "./putback.ts";
@@ -29,7 +30,7 @@ import {
 } from "./pattern.ts";
 import { type SpellMeta, type Spellchecker, spellcheckKey, spellcheckPlugin } from "./spellcheck.ts";
 
-export type { Choice, LinkResolver, MergeBox, Passage, Spellchecker, Typography };
+export type { Choice, CommentMark, LinkResolver, MergeBox, Passage, Spellchecker, Typography };
 export { hasSpot } from "./bin.ts";
 
 export interface EditorOptions {
@@ -47,6 +48,9 @@ export interface MountOptions extends EditorOptions, Partial<CutCallbacks> {
   onBackFromBin?: (move: number) => void;
   /** Called when the writer settles a clash shown with `setMerges`, with its id. */
   onMerge?: (id: number, choice: Choice) => void;
+  /** Called when the writer clicks words a reader commented on, with the comment's id and the
+   * top and bottom of the words in the window. */
+  onComment?: OnComment;
   debounceMs?: number;
 }
 
@@ -56,6 +60,7 @@ export class Editor {
   private readonly onCutToBin: (passage: Passage, move: number) => void;
   private readonly onBackFromBin: (move: number) => void;
   private readonly onMerge: (id: number, choice: Choice) => void;
+  private readonly onComment: OnComment;
   // Passages moved to and from the bin in this document, newest last, for Undo and Redo.
   private moves: Move[] = [];
   private lastMove = 0;
@@ -80,6 +85,7 @@ export class Editor {
   private readonly links = linksPlugin(() => this.linkResolver);
   private readonly highlight = highlightPlugin();
   private readonly merge = mergePlugin(() => this.onMerge);
+  private readonly comments = commentsPlugin(() => this.onComment);
   // Before the keymaps, so Enter picks a suggestion instead of splitting the paragraph.
   private readonly linkSuggest = linkSuggestPlugin(() => this.linkResolver);
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -91,6 +97,7 @@ export class Editor {
     this.onCutToBin = options.onCutToBin ?? (() => {});
     this.onBackFromBin = options.onBackFromBin ?? (() => {});
     this.onMerge = options.onMerge ?? (() => {});
+    this.onComment = options.onComment ?? (() => {});
     this.cutCallbacks = {
       onCutConfirm: options.onCutConfirm ?? (() => {}),
       onCutCancel: options.onCutCancel ?? (() => {}),
@@ -178,6 +185,29 @@ export class Editor {
   setMerges(boxes: MergeBox[]): void {
     const meta: MergeMeta = { boxes };
     this.view.dispatch(this.view.state.tr.setMeta(mergeKey, meta));
+  }
+
+  /** Marks the words readers commented on (an empty list clears them). Rust says where they
+   * are; see comments.ts. */
+  setComments(marks: CommentMark[]): void {
+    const meta: CommentsMeta = { marks };
+    this.view.dispatch(this.view.state.tr.setMeta(commentsKey, meta));
+  }
+
+  /** Draws one comment's words stronger, while its card is open (null for none). */
+  setActiveComment(id: number | null): void {
+    const meta: CommentsMeta = { active: id };
+    this.view.dispatch(this.view.state.tr.setMeta(commentsKey, meta));
+  }
+
+  /** Scrolls a comment's words into view, and returns their top and bottom in the window, or
+   * null if they aren't marked. */
+  revealComment(id: number): { top: number; bottom: number } | null {
+    const marks = Array.from(this.view.dom.querySelectorAll(`.comment-mark[data-comment="${id}"]`));
+    if (marks.length === 0) return null;
+    marks[0].scrollIntoView({ block: "center" });
+    const rects = marks.map((el) => el.getBoundingClientRect());
+    return { top: Math.min(...rects.map((r) => r.top)), bottom: Math.max(...rects.map((r) => r.bottom)) };
   }
 
   /** Scrolls the clash with this id into view, and puts the cursor at its start. */
@@ -323,6 +353,7 @@ export class Editor {
       this.highlight,
       this.seam,
       this.merge,
+      this.comments,
     ];
   }
 

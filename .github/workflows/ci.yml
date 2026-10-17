@@ -56,6 +56,9 @@ jobs:
       - name: Clippy (wasm phone app)
         run: cargo clippy -p needle-phone --target wasm32-unknown-unknown -- -D warnings
 
+      - name: Clippy (wasm reader page)
+        run: cargo clippy -p needle-reader --target wasm32-unknown-unknown -- -D warnings
+
   # The same tests on Windows, which other people are meant to run the app on: paths, line
   # endings and home folders all differ there. The wasm frontend is the same on both, so it's
   # only checked on Linux.

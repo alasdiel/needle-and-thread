@@ -1,0 +1,21 @@
+[package]
+name = "needle-reader"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+# The reader page (DESIGN §10): what a share link opens, at <Pages>/read/. It unseals the shared
+# text in the browser and lets readers comment. It only builds for wasm32, through trunk.
+
+[dependencies]
+console_error_panic_hook = "0.1"
+gloo-net = { version = "0.6", default-features = false, features = ["http", "json"] }
+js-sys = "0.3"
+leptos = { version = "0.8", features = ["csr"] }
+needle-core = { workspace = true }
+pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
+serde = { workspace = true }
+serde_json = "1"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Crypto", "Document", "DomRect", "Element", "HtmlElement", "HtmlTextAreaElement", "Location", "Node", "NodeList", "Range", "Selection", "Storage", "Text", "Window"] }

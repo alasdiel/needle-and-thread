@@ -1,6 +1,7 @@
 /target
 /crates/desktop/dist
 /crates/phone/dist
+/crates/reader/dist
 /crates/desktop/src-tauri/gen/schemas
 /editor/node_modules
 /editor/dist

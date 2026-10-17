@@ -11,6 +11,7 @@ mod links;
 mod merges;
 mod notes;
 mod project;
+mod shares;
 mod timeline;
 pub mod store;
 mod world;

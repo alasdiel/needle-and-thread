@@ -750,9 +750,45 @@ fn SettingsSheet() -> impl IntoView {
             >
                 "Read it again now"
             </button>
+            <SharedLinks />
             <button type="button" class="secondary danger" on:click=disconnect>"Disconnect this phone"</button>
             <p class="hint">"Forgets the token and everything read from the vault, on this phone only."</p>
         </section>
+    }
+}
+
+/// The links made with Share in the desktop app (DESIGN §10). The vault holds their keys, so each
+/// opens the reader page (next to this app, under read/) as the author: reply, resolve, revoke.
+#[component]
+fn SharedLinks() -> impl IntoView {
+    let ctx = expect_context::<Ctx>();
+    let links = move || {
+        ctx.vault.with(|v| {
+            let Some(v) = v else { return Vec::new() };
+            let list = v.shares().map(|l| l.shares).unwrap_or_default();
+            list.into_iter()
+                .rev()
+                .filter_map(|s| {
+                    let link = s.link()?;
+                    let what = v.project(&s.project).and_then(|p| p.covers_title(&s.covers)).unwrap_or_default();
+                    Some((s.name.clone(), what, format!("read/#{}", link.author_fragment(&s.author))))
+                })
+                .collect::<Vec<_>>()
+        })
+    };
+    view! {
+        {move || {
+            let links = links();
+            (!links.is_empty()).then(|| view! {
+                <div class="sc label shared-label">"Links you’ve shared"</div>
+                {links.into_iter().map(|(name, what, href)| view! {
+                    <a class="row shared-link" href=href target="_blank" rel="noopener noreferrer">
+                        <span class="t"><b>{name}</b>" · " {what}</span>
+                        <span class="words">"Open as author"</span>
+                    </a>
+                }).collect_view()}
+            })
+        }}
     }
 }
 

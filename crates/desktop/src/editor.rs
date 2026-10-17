@@ -47,6 +47,17 @@ extern "C" {
     #[wasm_bindgen(method, js_name = revealMerge)]
     pub fn reveal_merge(this: &EditorHandle, id: u32);
 
+    /// Marks the words readers commented on; expects `[{id, quote, n}]` (empty clears them).
+    #[wasm_bindgen(method, js_name = setComments)]
+    pub fn set_comments(this: &EditorHandle, marks: &JsValue);
+
+    /// Draws one comment's words stronger while its card is open; null for none.
+    #[wasm_bindgen(method, js_name = setActiveComment)]
+    pub fn set_active_comment(this: &EditorHandle, id: &JsValue);
+
+    #[wasm_bindgen(method, js_name = revealComment)]
+    fn reveal_comment_js(this: &EditorHandle, id: u32) -> JsValue;
+
     /// Checks every word again, after the spellchecker learned new ones.
     #[wasm_bindgen(method, js_name = recheckSpelling)]
     pub fn recheck_spelling(this: &EditorHandle);
@@ -121,6 +132,14 @@ impl EditorHandle {
         self.restore_passage_js(&passage_value(passage))
     }
 
+    /// Scrolls a comment's words into view; returns their top and bottom in the window, if
+    /// they're marked.
+    pub fn reveal_comment(&self, id: u32) -> Option<(f64, f64)> {
+        let at = self.reveal_comment_js(id);
+        let get = |key: &str| Reflect::get(&at, &key.into()).ok().and_then(|v| v.as_f64());
+        Some((get("top")?, get("bottom")?))
+    }
+
     /// The text before and after the cursor, as Markdown.
     pub fn split_parts(&self) -> (String, String) {
         let parts = self.split_parts_js();
@@ -154,7 +173,8 @@ pub(crate) fn set(target: &Object, key: &str, value: &JsValue) {
 /// passage just taken out of the text, to store in the bin, with the editor's id for that move;
 /// `on_back_from_bin` receives the id of a move Undo (or Redo) has put back in the text, so it
 /// leaves the bin; `on_merge` receives a clash's id and how the writer settled it ("theirs",
-/// "both" or "mine").
+/// "both" or "mine"); `on_comment` receives the id of a comment whose words were clicked, and
+/// their top and bottom in the window.
 #[component]
 pub fn Editor(
     handle: StoredValue<Option<EditorHandle>, LocalStorage>,
@@ -165,6 +185,7 @@ pub fn Editor(
     on_cut_to_bin: impl Fn(Passage, u32) + 'static,
     on_back_from_bin: impl Fn(u32) + 'static,
     on_merge: impl Fn(u32, String) + 'static,
+    on_comment: impl Fn(u32, f64, f64) + 'static,
     on_ready: impl Fn() + 'static,
 ) -> impl IntoView {
     let node_ref = NodeRef::<html::Div>::new();
@@ -179,6 +200,7 @@ pub fn Editor(
     }));
     let on_back_from_bin = StoredValue::new_local(Closure::<dyn FnMut(u32)>::new(on_back_from_bin));
     let on_merge = StoredValue::new_local(Closure::<dyn FnMut(u32, String)>::new(on_merge));
+    let on_comment = StoredValue::new_local(Closure::<dyn FnMut(u32, f64, f64)>::new(on_comment));
 
     Effect::new(move |_| {
         let Some(el) = node_ref.get() else { return };
@@ -192,6 +214,7 @@ pub fn Editor(
         on_cut_to_bin.with_value(|f| set(&options, "onCutToBin", f.as_ref()));
         on_back_from_bin.with_value(|f| set(&options, "onBackFromBin", f.as_ref()));
         on_merge.with_value(|f| set(&options, "onMerge", f.as_ref()));
+        on_comment.with_value(|f| set(&options, "onComment", f.as_ref()));
         handle.set_value(Some(mount(&el, "", &options)));
         on_ready();
     });
@@ -218,6 +241,7 @@ pub fn Editor(
         on_cut_to_bin.dispose();
         on_back_from_bin.dispose();
         on_merge.dispose();
+        on_comment.dispose();
     });
 
     view! { <div class="editor-host" node_ref=node_ref></div> }
