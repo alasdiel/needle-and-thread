@@ -50,8 +50,9 @@ const SUGGESTIONS = 8;
 const LOOSE_TITLE = "No note yet. Click to make one.";
 const AMBIGUOUS_TITLE = "More than one note has this name. Click to choose.";
 
-/** Marks links to notes that don't exist yet (basted, not sewn) or that two notes share. */
-export function linksPlugin(currentResolver: () => LinkResolver | null): Plugin<LinkPluginState> {
+/** Marks links to notes that don't exist yet (basted, not sewn) or that two notes share. With
+ * `touch`, tapping one only puts the cursor after it: on a phone, a menu would cover the text. */
+export function linksPlugin(currentResolver: () => LinkResolver | null, touch: () => boolean = () => false): Plugin<LinkPluginState> {
   return new Plugin<LinkPluginState>({
     key: linksKey,
     state: {
@@ -79,6 +80,7 @@ export function linksPlugin(currentResolver: () => LinkResolver | null): Plugin<
         // replace it.
         const after = TextSelection.create(view.state.doc, nodePos + node.nodeSize);
         view.dispatch(view.state.tr.setSelection(after));
+        if (touch()) return true;
         const dom = view.nodeDOM(nodePos);
         const rect = dom instanceof HTMLElement ? dom.getBoundingClientRect() : null;
         showMenu(view, rect?.left ?? event.clientX, (rect?.bottom ?? event.clientY) + 4, linkMenu(resolver, target, found));
@@ -148,6 +150,10 @@ export function insertLink(state: EditorState, from: number, title: string, show
   return state.tr.replaceWith(from, state.selection.from, link).scrollIntoView();
 }
 
+/** Shows suggestions somewhere other than under the cursor (the phone shows them in its
+ * formatting bar), or hides them with null. `pickSuggestion` takes one. */
+export type ShowSuggestions = (choices: { label: string; detail: string }[] | null) => void;
+
 interface Choice {
   title: string;
   shown: string | null;
@@ -160,15 +166,19 @@ interface Choice {
 class Suggestions {
   private readonly view: EditorView;
   private readonly resolver: () => LinkResolver | null;
+  private readonly present: () => ShowSuggestions | null;
   private readonly el: HTMLDivElement;
+  // Whether `present` is showing some.
+  private presented = false;
   private choices: Choice[] = [];
   private selected = 0;
   private from = -1;
   private dismissedAt = -1;
 
-  constructor(view: EditorView, resolver: () => LinkResolver | null) {
+  constructor(view: EditorView, resolver: () => LinkResolver | null, present: () => ShowSuggestions | null) {
     this.view = view;
     this.resolver = resolver;
+    this.present = present;
     this.el = document.createElement("div");
     this.el.className = "needle-menu needle-suggest";
     this.el.setAttribute("role", "listbox");
@@ -177,7 +187,7 @@ class Suggestions {
   }
 
   get open(): boolean {
-    return !this.el.hidden;
+    return !this.el.hidden || this.presented;
   }
 
   update(): void {
@@ -235,7 +245,7 @@ class Suggestions {
     this.el.remove();
   }
 
-  private pick(index: number): void {
+  pick(index: number): void {
     const choice = this.choices[index];
     if (!choice) return;
     this.hide();
@@ -246,9 +256,19 @@ class Suggestions {
   private hide(): void {
     this.el.hidden = true;
     this.choices = [];
+    if (this.presented) {
+      this.presented = false;
+      this.present()?.(null);
+    }
   }
 
   private render(): void {
+    const present = this.present();
+    if (present) {
+      this.presented = true;
+      present(this.choices.map(({ label, detail }) => ({ label, detail })));
+      return;
+    }
     this.el.replaceChildren(
       ...this.choices.map((choice, i) => {
         const item = document.createElement("button");
@@ -281,11 +301,17 @@ class Suggestions {
 
 const suggestionsByView = new WeakMap<EditorView, Suggestions>();
 
-/** Suggests notes after `[[`. Goes before the keymaps, so Enter picks rather than splitting. */
-export function linkSuggestPlugin(currentResolver: () => LinkResolver | null): Plugin {
+/** Takes the `index`th suggestion `ShowSuggestions` was given. */
+export function pickSuggestion(view: EditorView, index: number): void {
+  suggestionsByView.get(view)?.pick(index);
+}
+
+/** Suggests notes after `[[`, under the cursor or through `present` if it gives a function.
+ * Goes before the keymaps, so Enter picks rather than splitting. */
+export function linkSuggestPlugin(currentResolver: () => LinkResolver | null, present: () => ShowSuggestions | null = () => null): Plugin {
   return new Plugin({
     view(view) {
-      const suggestions = new Suggestions(view, currentResolver);
+      const suggestions = new Suggestions(view, currentResolver, present);
       suggestionsByView.set(view, suggestions);
       return {
         update: () => suggestions.update(),

@@ -18,27 +18,29 @@ fn wanted(path: &str) -> bool {
     text && !skipped
 }
 
-/// The vault as it is on GitHub. `progress` hears how many of how many files are in hand.
-pub async fn open(creds: &Creds, progress: impl Fn(usize, usize)) -> Result<Vault, String> {
+/// The vault as it is on GitHub, and the snapshot it reads and writes through. `progress` hears
+/// how many of how many files are in hand.
+pub async fn open(creds: &Creds, progress: impl Fn(usize, usize)) -> Result<(Vault, Arc<Snapshot>), String> {
     let files = github::files(creds).await?;
     let wanted: Vec<_> = files.iter().filter(|b| wanted(&b.path)).cloned().collect();
     let total = wanted.len();
     progress(0, total);
     let contents = github::contents(creds, &wanted, |done| progress(done, total)).await?;
 
-    let snapshot = Snapshot::new(now());
+    let snapshot = Arc::new(Snapshot::new(now()));
     for blob in &files {
         snapshot.add_path(&blob.path, &blob.sha);
     }
     for (blob, text) in contents {
         snapshot.add_contents(&blob.path, text.into_bytes());
     }
-    Vault::open_on(Arc::new(snapshot), Path::new("")).map_err(|e| match e {
+    let vault = Vault::open_on(snapshot.clone(), Path::new("")).map_err(|e| match e {
         needle_vault::Error::NotFound(_) | needle_vault::Error::Io(_) => {
             "This repository isn't a Needle and Thread vault: it has no .needle/vault.toml.".to_owned()
         }
         e => e.to_string(),
-    })
+    })?;
+    Ok((vault, snapshot))
 }
 
 /// wasm has no clock of its own, so the time comes from JavaScript.

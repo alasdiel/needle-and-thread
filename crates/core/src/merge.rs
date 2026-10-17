@@ -12,6 +12,8 @@ use std::ops::Range;
 
 use similar::{Algorithm, DiffOp, capture_diff_slices};
 
+use crate::scene::SceneFile;
+
 /// Where the other side's version of a clashing file goes, under a folder named for when it was
 /// made: `.needle/conflicts/2026-10-10-1016/<path>`.
 pub const CONFLICTS: &str = ".needle/conflicts";
@@ -90,6 +92,51 @@ pub fn merge(base: &str, mine: &str, theirs: &str) -> Merged {
     merged.base = join(&kept_base);
     merged.theirs = join(&kept_theirs);
     merged
+}
+
+/// A scene or note file merged: the file, and if anything clashed, the other side's version
+/// and the version both started from, to keep under [`CONFLICTS`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileMerge {
+    pub text: String,
+    /// The other side's file and the base file, when anything clashed.
+    pub clash: Option<(String, String)>,
+}
+
+/// Merges two versions of a scene or note file a paragraph at a time. The header is taken whole
+/// from whichever side changed it, this side's if both did.
+pub fn merge_file(base: &str, mine: &str, theirs: &str) -> FileMerge {
+    let (base, mine, theirs) = (SceneFile::parse(base), SceneFile::parse(mine), SceneFile::parse(theirs));
+    let merged = merge(&base.markdown(), &mine.markdown(), &theirs.markdown());
+    let header = if mine.front_matter == base.front_matter { &theirs.front_matter } else { &mine.front_matter };
+    let file = |mut file: SceneFile, front_matter: Option<String>, text: &str| {
+        file.front_matter = front_matter;
+        file.set_markdown(text);
+        file.to_string()
+    };
+    let text = file(mine.clone(), header.clone(), &merged.text);
+    let clash = (merged.clashes > 0).then(|| {
+        (file(theirs.clone(), theirs.front_matter.clone(), &merged.theirs), file(base.clone(), base.front_matter.clone(), &merged.base))
+    });
+    FileMerge { text, clash }
+}
+
+/// A folder name under [`CONFLICTS`] for one taking-in's clashes, from when the other side's
+/// version was made: `2026-10-10-0941` (UTC).
+pub fn stamp(seconds: i64) -> String {
+    let days = seconds.div_euclid(86_400);
+    let minutes = seconds.rem_euclid(86_400) / 60;
+    // Howard Hinnant's days-to-civil.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!("{year:04}-{month:02}-{day:02}-{:02}{:02}", minutes / 60, minutes % 60)
 }
 
 /// A place where both sides changed the same paragraphs differently. The ranges count
@@ -253,6 +300,13 @@ fn matches(base: &[String], other: &[String]) -> Vec<Option<usize>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+#[test]
+fn stamps_are_dates_in_utc() {
+    assert_eq!(stamp(0), "1970-01-01-0000");
+    assert_eq!(stamp(1_791_625_680), "2026-10-10-0948");
+    assert_eq!(stamp(951_782_400), "2000-02-29-0000");
+}
 
     const BASE: &str = "One.\n\nTwo.\n\nThree.\n\nFour.\n";
 

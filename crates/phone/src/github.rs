@@ -1,6 +1,9 @@
-//! Reading the vault's repository on GitHub (DESIGN §9). The file list is one call to the tree
+//! The vault's repository on GitHub (DESIGN §9). Reading: the file list is one call to the tree
 //! API; contents come through GraphQL, up to a hundred files a call, and are kept in the
 //! browser's Cache Storage by blob sha, so opening the app again fetches only what changed.
+//! Writing: one GraphQL query for where the branch is and what the changed files hold there
+//! now, then one commit of every change at once, which GitHub refuses if the branch moved in
+//! between.
 
 use gloo_net::http::{Request, Response};
 use serde::Deserialize;
@@ -148,6 +151,137 @@ async fn fetch_one(creds: &Creds, blob: &Blob) -> Result<String, String> {
     String::from_utf8(bytes).map_err(|_| format!("{} isn't text", blob.path))
 }
 
+// --- Writing ---------------------------------------------------------------------------------
+
+/// Why a write didn't happen.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WriteError {
+    /// GitHub couldn't be reached.
+    Offline,
+    /// The branch moved on since `current` looked: look again.
+    Moved,
+    /// The token can read but not write.
+    ReadOnly,
+    Other(String),
+}
+
+/// The backup branch as it is now, and what `paths` hold on it: blob sha and text, or None
+/// where a path isn't there.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Current {
+    pub head: String,
+    pub files: Vec<(String, Option<(String, String)>)>,
+}
+
+/// Where the branch is, and the files at `paths` there, in one call.
+pub async fn current(creds: &Creds, paths: &[String]) -> Result<Current, WriteError> {
+    let (owner, name) = creds.owner_and_name().ok_or_else(|| WriteError::Other("The repository should look like owner/name.".to_owned()))?;
+    let fields: String = paths
+        .iter()
+        .enumerate()
+        .map(|(i, path)| format!("f{i}: object(expression: {}) {{ ... on Blob {{ oid text isTruncated }} }} ", json(&format!("{BRANCH}:{path}"))))
+        .collect();
+    let query = format!(
+        "query {{ repository(owner: {}, name: {}) {{ ref(qualifiedName: {}) {{ target {{ oid }} }} {fields}}} }}",
+        json(owner),
+        json(name),
+        json(&format!("refs/heads/{BRANCH}"))
+    );
+    let body = graphql(creds, serde_json::json!({ "query": query })).await?;
+    let repository = &body["data"]["repository"];
+    let head = repository["ref"]["target"]["oid"]
+        .as_str()
+        .ok_or_else(|| WriteError::Other(format!("The repository has no {BRANCH} branch: back up from the desktop app first.")))?
+        .to_owned();
+    let mut files = Vec::with_capacity(paths.len());
+    for (i, path) in paths.iter().enumerate() {
+        let object = &repository[format!("f{i}")];
+        let found = match (object["oid"].as_str(), object["text"].as_str(), object["isTruncated"].as_bool()) {
+            (Some(sha), Some(text), Some(false) | None) => Some((sha.to_owned(), text.to_owned())),
+            (Some(sha), _, _) => {
+                let blob = Blob { path: path.clone(), sha: sha.to_owned() };
+                Some((sha.to_owned(), fetch_one(creds, &blob).await.map_err(WriteError::Other)?))
+            }
+            _ => None,
+        };
+        files.push((path.clone(), found));
+    }
+    Ok(Current { head, files })
+}
+
+/// Commits `writes` (path and new contents) and `removes` on top of `head`, as one commit with
+/// `message`. Returns the new blob sha of each file written.
+pub async fn commit(creds: &Creds, head: &str, message: &str, writes: &[(String, Vec<u8>)], removes: &[String]) -> Result<Vec<(String, String)>, WriteError> {
+    let fields: String = writes
+        .iter()
+        .enumerate()
+        .map(|(i, (path, _))| format!("f{i}: file(path: {}) {{ oid }} ", json(path)))
+        .collect();
+    let query = format!("mutation($input: CreateCommitOnBranchInput!) {{ createCommitOnBranch(input: $input) {{ commit {{ oid {fields}}} }} }}");
+    let input = serde_json::json!({
+        "branch": { "repositoryNameWithOwner": creds.repo.trim(), "branchName": BRANCH },
+        "message": { "headline": message },
+        "expectedHeadOid": head,
+        "fileChanges": {
+            "additions": writes.iter().map(|(path, bytes)| serde_json::json!({ "path": path, "contents": base64(bytes) })).collect::<Vec<_>>(),
+            "deletions": removes.iter().map(|path| serde_json::json!({ "path": path })).collect::<Vec<_>>(),
+        },
+    });
+    let body = graphql(creds, serde_json::json!({ "query": query, "variables": { "input": input } })).await?;
+    let commit = &body["data"]["createCommitOnBranch"]["commit"];
+    writes
+        .iter()
+        .enumerate()
+        .map(|(i, (path, _))| match commit[format!("f{i}")]["oid"].as_str() {
+            Some(sha) => Ok((path.clone(), sha.to_owned())),
+            None => Err(WriteError::Other(format!("GitHub didn't say where {path} went."))),
+        })
+        .collect()
+}
+
+/// One GraphQL call, with GitHub's errors put into words.
+async fn graphql(creds: &Creds, body: serde_json::Value) -> Result<serde_json::Value, WriteError> {
+    let response = Request::post("https://api.github.com/graphql")
+        .header("Authorization", &format!("Bearer {}", creds.token.trim()))
+        .json(&body)
+        .map_err(|e| WriteError::Other(e.to_string()))?
+        .send()
+        .await
+        .map_err(|_| WriteError::Offline)?;
+    if response.status() == 403 {
+        return Err(WriteError::ReadOnly);
+    }
+    let response = checked(response).await.map_err(WriteError::Other)?;
+    let body: serde_json::Value = response.json().await.map_err(|e| WriteError::Other(e.to_string()))?;
+    match body["errors"].get(0) {
+        None => Ok(body),
+        Some(error) => Err(graphql_error(error["type"].as_str().unwrap_or_default(), error["message"].as_str().unwrap_or_default())),
+    }
+}
+
+fn graphql_error(kind: &str, message: &str) -> WriteError {
+    if message.contains("Expected branch to point to") || kind == "STALE_DATA" {
+        WriteError::Moved
+    } else if kind == "FORBIDDEN" || message.contains("not accessible by") {
+        WriteError::ReadOnly
+    } else {
+        WriteError::Other(format!("GitHub said: {message}"))
+    }
+}
+
+/// Standard base64, which GitHub wants a commit's file contents in.
+fn base64(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = chunk.iter().enumerate().fold(0u32, |n, (i, &b)| n | (u32::from(b) << (16 - 8 * i)));
+        for i in 0..4 {
+            out.push(if i <= chunk.len() { DIGITS[(n >> (18 - 6 * i) & 63) as usize] as char } else { '=' });
+        }
+    }
+    out
+}
+
 async fn get(creds: &Creds, url: &str) -> Result<Response, String> {
     let response = Request::get(url)
         .header("Authorization", &format!("Bearer {}", creds.token.trim()))
@@ -205,4 +339,25 @@ pub async fn clear_cache() {
     let Some(window) = web_sys::window() else { return };
     let Ok(caches) = window.caches() else { return };
     let _: Result<JsValue, JsValue> = JsFuture::from(caches.delete(CACHE)).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn base64_is_the_standard_kind() {
+        assert_eq!(base64(b""), "");
+        assert_eq!(base64(b"f"), "Zg==");
+        assert_eq!(base64(b"fo"), "Zm8=");
+        assert_eq!(base64(b"foo"), "Zm9v");
+        assert_eq!(base64("Mara’s".as_bytes()), "TWFyYeKAmXM=");
+    }
+
+    #[test]
+    fn github_errors_say_what_to_do() {
+        assert_eq!(graphql_error("", "Expected branch to point to \"abc\" but it did not. Pull and try again."), WriteError::Moved);
+        assert_eq!(graphql_error("FORBIDDEN", "Resource not accessible by personal access token"), WriteError::ReadOnly);
+        assert_eq!(graphql_error("", "Something else"), WriteError::Other("GitHub said: Something else".to_owned()));
+    }
 }

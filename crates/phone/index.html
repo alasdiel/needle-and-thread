@@ -15,9 +15,14 @@
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="icons/icon-256.png" />
+    <!-- The editor island, built by Trunk.toml's pre_build hook (editor/build.mjs). -->
+    <link data-trunk rel="copy-file" href="../../editor/dist/needle-editor.js" />
+    <link data-trunk rel="css" href="../../editor/dist/needle-editor.css" />
     <link data-trunk rel="css" href="styles/fonts.css" />
     <link data-trunk rel="css" href="styles/phone.css" />
     <link data-trunk rel="rust" data-wasm-opt="z" />
+    <!-- A classic script, so NeedleEditor exists before trunk's (deferred) wasm loader runs. -->
+    <script src="needle-editor.js"></script>
   </head>
   <body></body>
 </html>
