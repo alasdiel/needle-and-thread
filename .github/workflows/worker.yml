@@ -5,7 +5,8 @@ name: Sharing Worker
 
 on:
   push:
-    branches: [main]
+    # feat/share: temporary, to find the Worker's address before merging.
+    branches: [main, feat/share]
     paths:
       - "crates/worker/**"
       - "crates/core/src/share.rs"
