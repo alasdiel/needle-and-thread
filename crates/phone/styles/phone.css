@@ -704,3 +704,329 @@ a.row.shared-link {
 a.row.shared-link .words {
   color: var(--blue);
 }
+
+/* --- Writing (DESIGN §9; the canvas's Phone writing page) ---------------------------------- */
+
+.write {
+  appearance: none;
+  flex: none;
+  height: 36px;
+  margin: 0 2px;
+  padding: 0 12px 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--print-soft);
+  border-radius: 999px;
+  background: none;
+  color: var(--print);
+  font-size: 15px;
+}
+
+.write span {
+  display: grid;
+}
+
+/* The page above the keyboard: write.rs sets its top and height from the visual viewport. */
+.writing {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 100%;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--mat);
+}
+
+.saved {
+  min-width: 0;
+  padding: 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--faint);
+  font-size: 13.5px;
+}
+
+.saved.warn {
+  color: var(--draft);
+}
+
+.done {
+  appearance: none;
+  flex: none;
+  height: 36px;
+  margin: 0 2px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--blue-tint);
+  color: var(--blue);
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.strip {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px 10px 16px;
+  border-bottom: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--draft) 13%, transparent);
+  font-size: 14.5px;
+  line-height: 1.4;
+}
+
+.strip > span:first-child {
+  display: grid;
+  margin-top: 1px;
+  color: var(--draft);
+}
+
+.writer {
+  padding-bottom: 32px;
+}
+
+/* The editor brings the desktop's page; here it's the reading page's column and size. */
+.writer .needle-prose {
+  max-width: none;
+  margin: 0;
+  padding: 0 0 25vh;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.writer .needle-prose p {
+  margin: 0 0 1em;
+}
+
+/* The editor draws its own scene break: three stitches. */
+.writer .prose hr::before {
+  content: none;
+}
+
+/* The bar of formats above the keyboard (Format 1), or notes to link (Format 1b). */
+.fmt {
+  flex: none;
+  height: calc(48px + env(safe-area-inset-bottom));
+  padding: 0 4px env(safe-area-inset-bottom);
+  display: flex;
+  align-items: center;
+  border-top: 1px solid var(--rule);
+  background: var(--side);
+  overflow: hidden;
+}
+
+.wb {
+  appearance: none;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+}
+
+.wb.on {
+  background: var(--blue-tint);
+  color: var(--blue);
+}
+
+.wb.muted {
+  color: var(--muted);
+}
+
+.wb svg {
+  display: block;
+}
+
+.g {
+  font-size: 19px;
+  line-height: 1;
+}
+
+.g.bold {
+  font-weight: 700;
+}
+
+.g.italic {
+  font-family: var(--font-text);
+  font-style: italic;
+}
+
+.g.title {
+  font-size: 20px;
+}
+
+.g.quote {
+  font-size: 28px;
+  line-height: 0.6;
+  margin-top: 10px;
+}
+
+.g.brackets {
+  font-size: 16px;
+  letter-spacing: -0.05em;
+  color: var(--link);
+}
+
+.sep {
+  flex: none;
+  width: 1px;
+  height: 24px;
+  margin: 0 4px;
+  background: var(--rule);
+}
+
+.chips {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chip {
+  appearance: none;
+  flex: none;
+  height: 36px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--link) 13%, transparent);
+  color: var(--link);
+  font-size: 15px;
+  white-space: nowrap;
+}
+
+.chip.first {
+  outline: 1.5px solid var(--link);
+}
+
+.chip.loose {
+  border: 1px dashed var(--print-soft);
+  background: none;
+  color: var(--print);
+}
+
+.chip .detail {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* A note's title and other names, to change while writing it. */
+.hidden-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.titlefield {
+  display: block;
+  width: 100%;
+  margin: 4px 0 8px;
+  padding: 2px 0 6px;
+  border: 0;
+  border-bottom: 1.5px solid var(--rule);
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+.titlefield:focus {
+  outline: none;
+  border-bottom-color: var(--blue);
+}
+
+.aliases {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.aliases .hint {
+  margin-right: 2px;
+}
+
+.alias {
+  appearance: none;
+  min-height: 32px;
+  padding: 0 4px 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--raise);
+  color: var(--text);
+  font: 15px var(--font-ui);
+}
+
+.alias.add {
+  padding: 0 12px;
+  border-style: dashed;
+  background: none;
+  color: var(--print);
+}
+
+input.alias.new {
+  width: 11em;
+  padding: 0 12px;
+  font-size: 16px;
+}
+
+.unalias {
+  appearance: none;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* A clash with another device, until it's closed: above everything, like the toast. */
+.notice {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  top: calc(var(--top) + env(safe-area-inset-top) + 8px);
+  z-index: 21;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 6px 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--draft) 45%, transparent);
+  border-radius: 10px;
+  background: var(--raise);
+  box-shadow: 0 6px 24px var(--shadow);
+  font-size: 14.5px;
+  line-height: 1.4;
+}
+
+.notice > span:first-child {
+  display: grid;
+  margin-top: 1px;
+  color: var(--draft);
+}

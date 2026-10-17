@@ -2,6 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use git2::{Repository, RepositoryInitOptions};
+use needle_core::scene::SceneFile;
 use tempfile::TempDir;
 
 use super::super::{BRANCH, Vault};
@@ -271,11 +272,4 @@ fn a_repository_with_another_history_is_refused() {
     let refused = stranger.take_in("x").unwrap_err();
     assert!(refused.message().contains("nothing was taken in or sent"));
     assert!(dir.path().join("mine.md").exists());
-}
-
-#[test]
-fn stamps_are_dates_in_utc() {
-    assert_eq!(stamp(0), "1970-01-01-0000");
-    assert_eq!(stamp(1_791_625_680), "2026-10-10-0948");
-    assert_eq!(stamp(951_782_400), "2000-02-29-0000");
 }

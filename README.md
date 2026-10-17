@@ -19,7 +19,7 @@ It installs from source for now; packaged downloads come later.
 - Backup to GitHub over SSH after each snapshot, with its status beside "Saved"
 - A network board: a cork board of characters, places, plot points and threads, with relationships as red string you tie between them, zones of kraft paper, and your own handwritten notes and marker
 - A sewing-pattern look, light or dark
-- Reading on your phone: the outline, scenes, notes, links and search, straight from the vault's GitHub repository (see below)
+- Reading and writing on your phone: the outline, scenes, notes, links and search, straight from the vault's GitHub repository (see below)
 - Sharing: a link to a scene, chapter, part or the whole book that readers open in a browser and comment on, always showing the latest snapshot. The text and comments are encrypted with a key that's only in the link. Comments show on their words in the editor, and follow them as you rewrite
 
 ## Install it
@@ -37,7 +37,9 @@ Pick a vault on first launch, or try the sample.
 
 ## On your phone
 
-The phone app reads your vault from the GitHub repository it backs up to; it can't change anything yet. Open it at `https://<you>.github.io/needle-and-thread/` once Pages is on for this repository, and add it to your home screen. It asks for the vault's repository (`you/your-vault`) and a [fine-grained token](https://github.com/settings/personal-access-tokens/new) with access to only that repository and **Contents: read-only**. Both stay on the phone.
+The phone app reads and writes your vault in the GitHub repository it backs up to. Open it at `https://<you>.github.io/needle-and-thread/` once Pages is on for this repository, and add it to your home screen. It asks for the vault's repository (`you/your-vault`) and a [fine-grained token](https://github.com/settings/personal-access-tokens/new) with access to only that repository and **Contents: read and write** (a read-only token reads fine, but can't save). Both stay on the phone.
+
+A scene or note opens to read; **Write** turns it into the desktop's editor, with a bar of formats above the keyboard. What you write is kept on the phone as you pause and goes to GitHub as one commit after a little longer, or when you tap Done. If the desktop changed the same file meanwhile, the two are merged a paragraph at a time; where both changed the same paragraph, the phone's version stays and the desktop's is kept for you to settle there, as with sync.
 
 ## Sharing
 
@@ -78,7 +80,7 @@ The reader page's suite runs against a real Worker on your machine: `pnpm --dir 
 | `crates/vcs` | Snapshots, history and backup pushes (git) |
 | `crates/index` | The search index (SQLite), a cache kept outside the vault |
 | `crates/desktop` | The Tauri app: Leptos frontend, backend in `src-tauri/` |
-| `crates/phone` | The phone app (Leptos, published to GitHub Pages): reads the vault from GitHub |
+| `crates/phone` | The phone app (Leptos, published to GitHub Pages): reads and writes the vault on GitHub |
 | `crates/reader` | The reader page share links open (Leptos, published with the phone app under `read/`) |
 | `crates/worker` | The sharing Worker (Cloudflare, workers-rs): sealed text and comments |
 | `editor/` | The ProseMirror editor (TypeScript) |

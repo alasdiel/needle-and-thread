@@ -14,7 +14,6 @@
 use git2::build::CheckoutBuilder;
 use git2::{AutotagOption, ErrorCode, FetchOptions, IndexEntry, Oid, RemoteCallbacks, Tree};
 use needle_core::merge::{self, BASE};
-use needle_core::scene::SceneFile;
 
 use super::{BRANCH, Error, NAMED_VERSIONS, Vault, credentials};
 
@@ -121,7 +120,7 @@ impl Vault {
         let mut clashes = Vec::new();
         if index.has_conflicts() {
             let conflicts = index.conflicts()?.collect::<Result<Vec<_>, _>>()?;
-            let stamp = stamp(theirs.time().seconds());
+            let stamp = merge::stamp(theirs.time().seconds());
             for conflict in conflicts {
                 let Some(path) = [&conflict.our, &conflict.their, &conflict.ancestor]
                     .into_iter()
@@ -179,31 +178,19 @@ impl Vault {
         Ok(TakenIn { changed, clashes })
     }
 
-    /// Merges a scene or note both sides changed, a paragraph at a time. The header is taken
-    /// whole from whichever side changed it, this vault's if both did. None if a version isn't
-    /// text.
-    fn merge_text(&self, base: Option<&IndexEntry>, ours: &IndexEntry, theirs: &IndexEntry) -> Result<Option<TextMerge>, Error> {
-        let read = |entry: &IndexEntry| -> Result<Option<SceneFile>, Error> {
+    /// Merges a scene or note both sides changed, a paragraph at a time (`core::merge`). None
+    /// if a version isn't text.
+    fn merge_text(&self, base: Option<&IndexEntry>, ours: &IndexEntry, theirs: &IndexEntry) -> Result<Option<merge::FileMerge>, Error> {
+        let read = |entry: &IndexEntry| -> Result<Option<String>, Error> {
             let blob = self.repo.find_blob(entry.id)?;
-            Ok(std::str::from_utf8(blob.content()).ok().map(SceneFile::parse))
+            Ok(std::str::from_utf8(blob.content()).ok().map(str::to_owned))
         };
         let base = match base {
             Some(entry) => read(entry)?,
-            None => Some(SceneFile::parse("")),
+            None => Some(String::new()),
         };
         let (Some(base), Some(ours), Some(theirs)) = (base, read(ours)?, read(theirs)?) else { return Ok(None) };
-        let merged = merge::merge(&base.markdown(), &ours.markdown(), &theirs.markdown());
-        let header = if ours.front_matter == base.front_matter { &theirs.front_matter } else { &ours.front_matter };
-        let file = |mut file: SceneFile, front_matter: Option<String>, text: &str| {
-            file.front_matter = front_matter;
-            file.set_markdown(text);
-            file.to_string()
-        };
-        let text = file(ours.clone(), header.clone(), &merged.text);
-        let clash = (merged.clashes > 0).then(|| {
-            (file(theirs.clone(), theirs.front_matter.clone(), &merged.theirs), file(base.clone(), base.front_matter.clone(), &merged.base))
-        });
-        Ok(Some(TextMerge { text, clash }))
+        Ok(Some(merge::merge_file(&base, &ours, &theirs)))
     }
 
     fn remote_head(&self) -> Result<Option<Oid>, Error> {
@@ -240,13 +227,6 @@ impl Vault {
     }
 }
 
-/// A scene or note merged: the file, and if anything clashed, the other side's version and the
-/// version both started from, to keep beside it.
-struct TextMerge {
-    text: String,
-    clash: Option<(String, String)>,
-}
-
 /// `entry`, settled, at `path` with the content `blob`.
 fn with_blob(entry: &IndexEntry, path: &str, blob: &Oid) -> IndexEntry {
     settled(IndexEntry {
@@ -270,24 +250,6 @@ fn settled(mut entry: IndexEntry) -> IndexEntry {
     const STAGE: u16 = 0x3000;
     entry.flags &= !STAGE;
     entry
-}
-
-/// A folder name for one taking-in's conflicts, from when the other side's snapshot was made:
-/// `2026-10-10-0941` (UTC).
-fn stamp(seconds: i64) -> String {
-    let days = seconds.div_euclid(86_400);
-    let minutes = seconds.rem_euclid(86_400) / 60;
-    // Howard Hinnant's days-to-civil.
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let day = doy - (153 * mp + 2) / 5 + 1;
-    let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    let year = yoe + era * 400 + i64::from(month <= 2);
-    format!("{year:04}-{month:02}-{day:02}-{:02}{:02}", minutes / 60, minutes % 60)
 }
 
 #[cfg(test)]

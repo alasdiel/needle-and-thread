@@ -2,11 +2,14 @@
 //! added to the home screen.
 
 mod app;
+mod editor;
 mod github;
 mod load;
 mod model;
 mod render;
+mod save;
 mod search;
+mod write;
 
 fn main() {
     console_error_panic_hook::set_once();

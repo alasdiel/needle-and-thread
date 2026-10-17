@@ -535,8 +535,8 @@ The vault is already a private GitHub repo (§5), so the phone talks to GitHub d
 
 - **Setup:** paste the vault repo name and a fine-grained GitHub token, or scan a QR code from the desktop app. The token has Contents read & write on the vault repo only, and nothing else. If you lose the phone, revoke the token on GitHub.
 - **Reading** a file is one API call. The file list comes from the repo's tree, so opening the app costs one call, not one per file.
-- **Writing** a file sends back the SHA it was read at. GitHub refuses a stale SHA, so a file changed elsewhere can never be silently overwritten: the app re-reads it, merges, and asks only when it can't.
-- **Several files at once** (moving a scene between chapters touches `outline.toml` and nothing else; a rename touches every file that links to it) go as one commit through the Git Data API, so the vault is never left half-changed.
+- **Writing** compares each changed file's blob SHA on GitHub with the one it was read at, so a file changed elsewhere is never silently overwritten: the app merges it, and keeps both where it can't.
+- **Several files at once** (moving a scene between chapters touches `outline.toml` and nothing else; a rename touches every file that links to it) go as one commit through GraphQL's `createCommitOnBranch`, which GitHub refuses if the branch moved meanwhile, so the vault is never left half-changed.
 
 ### Sharing code with the desktop
 
@@ -548,7 +548,7 @@ The editor is the same ProseMirror island; it already runs in a webview, and a m
 
 ### What it does
 
-- **Write:** open a scene or note and write, in the same editor, saving as you pause. Snapshots are the commits it makes.
+- **Write:** open a scene or note and write, in the same editor, saving as you pause. Snapshots are the commits it makes (built: see below).
 - **Capture:** one big text box for an idea, filed into `inbox/`. Queued on the phone when offline and sent when the connection returns.
 - **Read and search:** the outline, notes and links. Names and titles come from `.needle/index.json`, a small list the desktop keeps current, so the phone never crawls the repo; full text search needs the file contents and is fetched as needed.
 - **Restructure:** move scenes between chapters, change status, retitle.
@@ -561,6 +561,16 @@ The first phase, reading only (`crates/phone`, Nav 1, Read 1, Setup and Link 1 o
 - **Fetching:** one call to the tree API for `main` lists every file with its blob sha; the scenes, notes and settings (`.md` and `.toml`, leaving out `.needle/conflicts/`, `cut/` and templates) come through GraphQL, a hundred to a call, and are kept in Cache Storage by sha. Opening again fetches the tree and only what changed. The files go into the vault crate's in-memory `Snapshot` store, so the outline, links and notes come from the same code as on the desktop.
 - **Screens:** a tab bar (Outline · Notes · Search). The outline shows parts, numbered chapters, status rings and word counts, with "From GitHub · 3 minutes ago" to read it again. A scene reads as a plain page in Literata (Aa steps through four sizes), with its piece number, chapter, status, summary, and the scenes either side at the foot. A linked name opens its note as a sheet (kind, aliases, summary or first paragraph, the scenes it's in, Open the whole note). Search looks through what's in memory, every word required, titles first, since the desktop's SQLite index doesn't run in a browser.
 - **Published** by `.github/workflows/phone.yml` to GitHub Pages on each push to `main` that touches it. It holds no vault and no token.
+
+### Writing on the phone (built)
+
+The second phase: scenes and notes (Enter 2, Format 1 and 1b, Save 1 and 3, and Notes on the canvas's Phone writing page).
+
+- **Write:** a scene or note opens to read as before; **Write** in its top bar turns the page into the desktop's ProseMirror island, mounted with `touch`: the keyboard's own spellcheck and autocorrect instead of the app's, a tap on a link only moves the cursor, and the cursor is kept clear of the edges. **Done** goes back to reading; Back leaves altogether. A note's title can be changed (every link to it follows, as on the desktop) and its other names added or taken away.
+- **The bar** sits above the keyboard, which the page follows through the visual viewport: bold, italic, heading, quote, list, link, scene break, and a button to put the keyboard away. Buttons act on `mousedown` with the default prevented, so the text keeps the cursor. Typing `[[` (or tapping the link button) turns the bar into the notes it could be, as chips; tapping one links it.
+- **Saving:** each pause in typing goes into the vault's in-memory snapshot and is kept in the phone's storage as drafts (`save.rs`), so closing the page loses nothing. It's sent to GitHub 20 seconds after the last change, at least every two minutes while typing goes on, and at once on Done, Back, the page being put away, or the connection coming back. The top bar says "Saved on this phone", "Sending…" or "On GitHub · just now"; a strip under it says why something isn't sent (no connection, a read-only token, GitHub's own words).
+- **Sending** is one GraphQL query for where `main` is and what the changed files hold there, then one `createCommitOnBranch` with `expectedHeadOid`, so GitHub refuses it if the branch moved in between; the phone then looks again (three tries). A file GitHub's copy of changed elsewhere is merged with `core::merge::merge_file`, the same as the desktop's sync: a clash keeps the phone's paragraphs and puts the other side's and the base under `.needle/conflicts/<when>/`, where the desktop shows them to settle, and the phone says so until it's closed. Commit messages follow the desktop's snapshots: "Edited night-market on the phone (+12 words)".
+- **The token** now needs Contents: read and write. One that can only read still reads; its first save says so and stays on the phone, and Settings › Use a different token keeps the repository and the drafts.
 
 ### Offline
 

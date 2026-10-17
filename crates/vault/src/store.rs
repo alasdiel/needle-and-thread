@@ -217,6 +217,48 @@ mod snapshot {
             }
         }
 
+        /// What a file held when it was last read from GitHub or sent there, before any change
+        /// since: the version a buffered change is based on. None for a file new since.
+        pub fn original(&self, path: &Path) -> Option<Vec<u8>> {
+            self.lock().known.get(path).cloned().flatten()
+        }
+
+        /// Settles one file once `sent` is safely on GitHub, as blob `sha` (None for a removal).
+        /// A change made to it since it left stays buffered, to go next time.
+        pub fn sent(&self, path: &Path, sha: Option<&str>, sent: &Change) {
+            let mut inner = self.lock();
+            match (sent, sha) {
+                (Change::Write(bytes), Some(sha)) => {
+                    inner.known.insert(path.to_owned(), Some(bytes.clone()));
+                    inner.shas.insert(path.to_owned(), sha.to_owned());
+                }
+                _ => {
+                    inner.known.remove(path);
+                    inner.shas.remove(path);
+                }
+            }
+            if inner.changed.get(path) == Some(sent) {
+                inner.changed.remove(path);
+            }
+        }
+
+        /// Takes another version as the one a file's buffered change is based on: what GitHub
+        /// has now, as blob `sha`, or that it has nothing there (None). The change stays
+        /// buffered, for the caller to merge into or send as it is.
+        pub fn based_on(&self, path: &Path, sha: Option<&str>, contents: Option<Vec<u8>>) {
+            let mut inner = self.lock();
+            match sha {
+                Some(sha) => {
+                    inner.known.insert(path.to_owned(), contents);
+                    inner.shas.insert(path.to_owned(), sha.to_owned());
+                }
+                None => {
+                    inner.known.remove(path);
+                    inner.shas.remove(path);
+                }
+            }
+        }
+
         fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
             self.inner.lock().unwrap_or_else(|e| e.into_inner())
         }
@@ -506,6 +548,41 @@ mod tests {
         assert!(snap.read(path).is_err());
         assert_eq!(snap.changes(), vec![(path.to_owned(), Change::Remove)]);
         assert!(snap.list(Path::new("projects/tidewater/manuscript")).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_sent_file_settles_but_typing_since_stays_buffered() {
+        let snap = filled();
+        let path = Path::new("projects/tidewater/manuscript/night-market.md");
+        let first = Change::Write(b"First.\n".to_vec());
+        snap.write(path, b"First.\n").unwrap();
+        snap.sent(path, Some("sha-1"), &first);
+        assert!(snap.changes().is_empty());
+        assert_eq!(snap.original(path).as_deref(), Some(&b"First.\n"[..]));
+        assert_eq!(snap.sha(path).as_deref(), Some("sha-1"));
+
+        // Typed on while the next send was on its way: that much is settled, the rest waits.
+        snap.write(path, b"Second.\n").unwrap();
+        let second = Change::Write(b"Second.\n".to_vec());
+        snap.write(path, b"Second, and more.\n").unwrap();
+        snap.sent(path, Some("sha-2"), &second);
+        assert_eq!(snap.changes(), vec![(path.to_owned(), Change::Write(b"Second, and more.\n".to_vec()))]);
+        assert_eq!(snap.original(path).as_deref(), Some(&b"Second.\n"[..]));
+        assert_eq!(snap.sha(path).as_deref(), Some("sha-2"));
+    }
+
+    #[test]
+    fn a_change_can_be_rebased_on_what_github_has_now() {
+        let snap = filled();
+        let path = Path::new("projects/tidewater/manuscript/night-market.md");
+        snap.write(path, b"Mine.\n").unwrap();
+        snap.based_on(path, Some("sha-theirs"), Some(b"Theirs.\n".to_vec()));
+        assert_eq!(snap.original(path).as_deref(), Some(&b"Theirs.\n"[..]));
+        assert_eq!(snap.sha(path).as_deref(), Some("sha-theirs"));
+        assert_eq!(snap.read_to_string(path).unwrap(), "Mine.\n", "the change is still there to merge");
+
+        snap.based_on(path, None, None);
+        assert_eq!((snap.original(path), snap.sha(path)), (None, None), "gone on GitHub: the change makes it again");
     }
 
     #[test]

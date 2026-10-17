@@ -1,16 +1,22 @@
 //! The phone's screens (DESIGN §9; Nav 1, Read 1, Setup and Link 1 on the canvas's Phone page):
 //! a tab bar for the outline, notes and search; a plain page for reading a scene; a sheet for a
-//! linked note. Reading only, for now: nothing here writes to the vault.
+//! linked note. Write turns a scene or note into the editor (`write.rs`).
+
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use leptos::{ev, prelude::*, task::spawn_local};
 use needle_core::names::Owner;
+use needle_vault::store::Snapshot;
 use needle_vault::{Project, Vault};
-use wasm_bindgen::JsCast;
+use wasm_bindgen::{JsCast, prelude::Closure};
 
+use crate::editor::EditorHandle;
 use crate::github::{self, Creds};
 use crate::load;
 use crate::model::{self, Found, Row};
 use crate::search;
+use crate::write::{Doc, Notice, Saving, Writer, write_button};
 
 // --- What the phone remembers -----------------------------------------------------------------
 
@@ -19,23 +25,23 @@ const TOKEN: &str = "needle-phone-token";
 const PROJECT: &str = "needle-phone-project";
 const SIZE: &str = "needle-phone-size";
 /// Reading sizes, in px, that Aa steps through.
-const SIZES: [u32; 4] = [16, 18, 20, 22];
+pub(crate) const SIZES: [u32; 4] = [16, 18, 20, 22];
 
 fn storage() -> Option<web_sys::Storage> {
     web_sys::window()?.local_storage().ok()?
 }
 
-fn remembered(key: &str) -> Option<String> {
+pub(crate) fn remembered(key: &str) -> Option<String> {
     storage()?.get_item(key).ok()?.filter(|v| !v.is_empty())
 }
 
-fn remember(key: &str, value: &str) {
+pub(crate) fn remember(key: &str, value: &str) {
     if let Some(s) = storage() {
         let _ = s.set_item(key, value);
     }
 }
 
-fn forget(key: &str) {
+pub(crate) fn forget(key: &str) {
     if let Some(s) = storage() {
         let _ = s.remove_item(key);
     }
@@ -71,9 +77,11 @@ enum Load {
 }
 
 #[derive(Clone, Copy)]
-struct Ctx {
-    creds: RwSignal<Option<Creds>>,
-    vault: RwSignal<Option<Vault>>,
+pub(crate) struct Ctx {
+    pub(crate) creds: RwSignal<Option<Creds>>,
+    pub(crate) vault: RwSignal<Option<Vault>>,
+    /// What the vault reads and writes through: the files from GitHub, and changes not yet sent.
+    pub(crate) snapshot: StoredValue<Option<Arc<Snapshot>>>,
     load: RwSignal<Load>,
     /// When the vault was last read from GitHub, in ms since the epoch.
     read_at: RwSignal<f64>,
@@ -86,8 +94,21 @@ struct Ctx {
     picker: RwSignal<bool>,
     settings: RwSignal<bool>,
     toast: RwSignal<Option<String>>,
-    size: RwSignal<usize>,
+    pub(crate) size: RwSignal<usize>,
     query: RwSignal<String>,
+    // Writing (write.rs).
+    pub(crate) saving: RwSignal<Saving>,
+    /// A change merged with one made elsewhere, to say so until it's closed.
+    pub(crate) notice: RwSignal<Option<String>>,
+    /// The editor while one is open, and the file it's writing.
+    pub(crate) editor: StoredValue<Option<EditorHandle>, LocalStorage>,
+    pub(crate) editing_path: StoredValue<Option<PathBuf>>,
+    pub(crate) timer: StoredValue<Option<TimeoutHandle>, LocalStorage>,
+    /// When the oldest change not yet sent was made.
+    pub(crate) kept_since: StoredValue<Option<f64>>,
+    pub(crate) sending: StoredValue<bool>,
+    /// A send was asked for while one was going.
+    pub(crate) again: StoredValue<bool>,
 }
 
 impl Ctx {
@@ -118,7 +139,22 @@ impl Ctx {
         })
     }
 
-    fn say(&self, text: String) {
+    /// Like `with`, without tracking: for writing, which mustn't redraw what it writes in.
+    pub(crate) fn with_untracked<T>(&self, f: impl FnOnce(&Vault, &Project) -> T) -> Option<T> {
+        let slug = self.project.get_untracked()?;
+        self.vault.with_untracked(|v| {
+            let v = v.as_ref()?;
+            let project = v.project(&slug).ok()?;
+            Some(f(v, &project))
+        })
+    }
+
+    /// Lets the screens know the vault changed, after writing.
+    pub(crate) fn touched(&self) {
+        self.vault.update(|_| {});
+    }
+
+    pub(crate) fn say(&self, text: String) {
         let toast = self.toast;
         toast.set(Some(text.clone()));
         set_timeout(
@@ -159,7 +195,10 @@ impl Ctx {
             .await;
             ctx.refreshing.try_set(false);
             match opened {
-                Ok(vault) => {
+                Ok((vault, snapshot)) => {
+                    // Changes kept on the phone go back on top of what was just read.
+                    ctx.snapshot.set_value(Some(snapshot.clone()));
+                    ctx.restore(&snapshot);
                     let projects: Vec<String> = vault.projects().unwrap_or_default().into_iter().map(|p| p.slug).collect();
                     let keep = ctx.project.get_untracked().filter(|p| projects.contains(p));
                     let project = keep.or_else(|| remembered(PROJECT).filter(|p| projects.contains(p))).or_else(|| projects.first().cloned());
@@ -194,11 +233,21 @@ pub fn App() -> impl IntoView {
         toast: RwSignal::new(None),
         size: RwSignal::new(remembered(SIZE).and_then(|s| s.parse().ok()).filter(|&i: &usize| i < SIZES.len()).unwrap_or(1)),
         query: RwSignal::new(String::new()),
+        snapshot: StoredValue::new(None),
+        saving: RwSignal::new(Saving::Clean),
+        notice: RwSignal::new(None),
+        editor: StoredValue::new_local(None),
+        editing_path: StoredValue::new(None),
+        timer: StoredValue::new_local(None),
+        kept_since: StoredValue::new(None),
+        sending: StoredValue::new(false),
+        again: StoredValue::new(false),
     };
     provide_context(ctx);
     if ctx.creds.get_untracked().is_some() {
         ctx.read();
     }
+    send_when_put_away(ctx);
 
     view! {
         {move || match (ctx.creds.get().is_some(), ctx.load.get()) {
@@ -208,6 +257,7 @@ pub fn App() -> impl IntoView {
             (true, Load::Failed(error)) => view! { <Failed error /> }.into_any(),
         }}
         {move || ctx.toast.get().map(|text| view! { <div class="toast" role="status">{text}</div> })}
+        <Notice />
     }
 }
 
@@ -225,7 +275,7 @@ fn Setup() -> impl IntoView {
             return;
         }
         if t.is_empty() {
-            problem.set(Some("Paste a token to read the repository with."));
+            problem.set(Some("Paste a token for the repository."));
             return;
         }
         remember(REPO, &r);
@@ -237,7 +287,7 @@ fn Setup() -> impl IntoView {
         <main class="setup">
             <span class="spool" inner_html=SPOOL></span>
             <h1 class="title">"Needle and Thread"</h1>
-            <p class="lead">"Read your vault on this phone, straight from its GitHub repository."</p>
+            <p class="lead">"Read and write your vault on this phone, straight from its GitHub repository."</p>
             <form on:submit=connect>
                 <label class="sc" for="repo">"Vault repository"</label>
                 <input
@@ -259,9 +309,9 @@ fn Setup() -> impl IntoView {
                     on:input=move |ev| token.set(event_target_value(&ev))
                 />
                 <p class="hint">
-                    "A fine-grained token that can only read this one repository’s contents. If you lose the phone, revoke it on GitHub. "
+                    "A fine-grained token that reaches only this one repository’s contents. If you lose the phone, revoke it on GitHub. "
                     <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">"Make one"</a>
-                    " — Repository access: only this repository; Permissions: Contents, read-only."
+                    " — Repository access: only this repository; Permissions: Contents, read and write."
                 </p>
                 {move || problem.get().map(|p| view! { <p class="problem">{p}</p> })}
                 <button type="submit" class="primary">"Connect"</button>
@@ -380,11 +430,9 @@ fn Tabs() -> impl IntoView {
     }
 }
 
-/// "From GitHub · 3 minutes ago", with a button to read it again.
-#[component]
-fn Freshness() -> impl IntoView {
-    let ctx = expect_context::<Ctx>();
-    // Ticks once a minute so "minutes ago" keeps up.
+/// The time now, ticking once a minute so "minutes ago" keeps up, for as long as the component
+/// it's made in lasts.
+pub(crate) fn ticker() -> RwSignal<f64> {
     let now = RwSignal::new(js_sys::Date::now());
     let handle = set_interval_with_handle(move || now.set(js_sys::Date::now()), std::time::Duration::from_secs(60)).ok();
     on_cleanup(move || {
@@ -392,22 +440,71 @@ fn Freshness() -> impl IntoView {
             h.clear();
         }
     });
-    let ago = move || {
-        let minutes = ((now.get() - ctx.read_at.get()) / 60_000.0).max(0.0) as u64;
-        match minutes {
-            0 => "just now".to_owned(),
-            1 => "a minute ago".to_owned(),
-            m if m < 60 => format!("{m} minutes ago"),
-            m if m < 120 => "an hour ago".to_owned(),
-            m => format!("{} hours ago", m / 60),
-        }
-    };
+    now
+}
+
+/// "just now", "3 minutes ago", for `ms` milliseconds ago.
+pub(crate) fn ago(ms: f64) -> String {
+    match (ms / 60_000.0).max(0.0) as u64 {
+        0 => "just now".to_owned(),
+        1 => "a minute ago".to_owned(),
+        m if m < 60 => format!("{m} minutes ago"),
+        m if m < 120 => "an hour ago".to_owned(),
+        m => format!("{} hours ago", m / 60),
+    }
+}
+
+/// "From GitHub · 3 minutes ago", with a button to read it again.
+#[component]
+fn Freshness() -> impl IntoView {
+    let ctx = expect_context::<Ctx>();
+    let now = ticker();
     view! {
         <button type="button" class="fresh" on:click=move |_| ctx.read() disabled=move || ctx.refreshing.get()>
             <span class:spin=move || ctx.refreshing.get() inner_html=REFRESH></span>
-            {move || if ctx.refreshing.get() { "Reading from GitHub…".to_owned() } else { format!("From GitHub · {}", ago()) }}
+            {move || if ctx.refreshing.get() { "Reading from GitHub…".to_owned() } else { format!("From GitHub · {}", ago(now.get() - ctx.read_at.get())) }}
         </button>
     }
+}
+
+/// Aa: the next reading size.
+pub(crate) fn step_size(ctx: Ctx) {
+    let next = (ctx.size.get_untracked() + 1) % SIZES.len();
+    ctx.size.set(next);
+    remember(SIZE, &next.to_string());
+}
+
+/// Where a page is scrolled to, to carry over into writing.
+fn scrolled() -> i32 {
+    web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.query_selector("main.scroll").ok().flatten())
+        .map(|el| el.scroll_top())
+        .unwrap_or(0)
+}
+
+/// Sends what's been written when the phone puts the page away (another app, the screen
+/// locking) or the connection comes back.
+fn send_when_put_away(ctx: Ctx) {
+    let Some(window) = web_sys::window() else { return };
+    let hidden = Closure::<dyn Fn()>::new(move || {
+        let away = web_sys::window().and_then(|w| w.document()).is_some_and(|d| d.visibility_state() == web_sys::VisibilityState::Hidden);
+        if away {
+            ctx.send_now();
+        }
+    });
+    let online = Closure::<dyn Fn()>::new(move || {
+        if ctx.has_pending() {
+            ctx.send_now();
+        }
+    });
+    if let Some(document) = window.document() {
+        let _ = document.add_event_listener_with_callback("visibilitychange", hidden.as_ref().unchecked_ref());
+    }
+    let _ = window.add_event_listener_with_callback("online", online.as_ref().unchecked_ref());
+    // The app lasts as long as the page.
+    hidden.forget();
+    online.forget();
 }
 
 #[component]
@@ -449,16 +546,32 @@ fn OutlineList() -> impl IntoView {
 #[component]
 fn Reader(slug: String) -> impl IntoView {
     let ctx = expect_context::<Ctx>();
+    // Where the page was when Write was tapped; None while reading.
+    let writing = RwSignal::new(None::<i32>);
+    let done = move || {
+        writing.set(None);
+        ctx.touched();
+    };
+    let back = move || {
+        done();
+        ctx.back();
+    };
+    view! {
+        {move || match writing.get() {
+            Some(scroll) => view! { <Writer doc=Doc::Scene(slug.clone()) scroll back="Outline" on_done=done on_back=back /> }.into_any(),
+            None => view! { <Reading slug=slug.clone() on_write=move || writing.set(Some(scrolled())) /> }.into_any(),
+        }}
+    }
+}
+
+#[component]
+fn Reading(slug: String, on_write: impl Fn() + 'static) -> impl IntoView {
+    let ctx = expect_context::<Ctx>();
     let reading = {
         let slug = slug.clone();
         move || ctx.with(|v, p| model::reading(v, p, &slug))
     };
     let size = move || format!("font-size: {}px", SIZES[ctx.size.get()]);
-    let step_size = move |_| {
-        let next = (ctx.size.get_untracked() + 1) % SIZES.len();
-        ctx.size.set(next);
-        remember(SIZE, &next.to_string());
-    };
     view! {
         <header class="topbar">
             <button type="button" class="back" on:click=move |_| ctx.back()>
@@ -466,7 +579,8 @@ fn Reader(slug: String) -> impl IntoView {
                 "Outline"
             </button>
             <span class="grow"></span>
-            <button type="button" class="icon" aria-label="Text size" on:click=step_size>
+            {write_button(on_write)}
+            <button type="button" class="icon" aria-label="Text size" on:click=move |_| step_size(ctx)>
                 <span class="title aa">"Aa"</span>
             </button>
         </header>
@@ -581,6 +695,26 @@ fn scene_list(ctx: Ctx, scenes: Vec<(model::Scene, String)>) -> impl IntoView {
 #[component]
 fn NotePage(owner: Owner, path: String) -> impl IntoView {
     let ctx = expect_context::<Ctx>();
+    let writing = RwSignal::new(None::<i32>);
+    let done = move || {
+        writing.set(None);
+        ctx.touched();
+    };
+    let back = move || {
+        done();
+        ctx.back();
+    };
+    view! {
+        {move || match writing.get() {
+            Some(scroll) => view! { <Writer doc=Doc::Note(owner.clone(), path.clone()) scroll back="Back" on_done=done on_back=back /> }.into_any(),
+            None => view! { <NoteReading owner=owner.clone() path=path.clone() on_write=move || writing.set(Some(scrolled())) /> }.into_any(),
+        }}
+    }
+}
+
+#[component]
+fn NoteReading(owner: Owner, path: String, on_write: impl Fn() + 'static) -> impl IntoView {
+    let ctx = expect_context::<Ctx>();
     let card = move || ctx.with(|v, p| model::note(v, p, &owner, &path));
     let size = move || format!("font-size: {}px", SIZES[ctx.size.get()]);
     view! {
@@ -588,6 +722,11 @@ fn NotePage(owner: Owner, path: String) -> impl IntoView {
             <button type="button" class="back" on:click=move |_| ctx.back()>
                 <span inner_html=CHEVRON_LEFT></span>
                 "Back"
+            </button>
+            <span class="grow"></span>
+            {write_button(on_write)}
+            <button type="button" class="icon" aria-label="Text size" on:click=move |_| step_size(ctx)>
+                <span class="title aa">"Aa"</span>
             </button>
         </header>
         <main class="scroll page">
@@ -724,7 +863,9 @@ fn ProjectPicker() -> impl IntoView {
 fn SettingsSheet() -> impl IntoView {
     let ctx = expect_context::<Ctx>();
     let repo = move || ctx.creds.get().map(|c| c.repo).unwrap_or_default();
+    let unsent = ctx.kept_drafts().len();
     let disconnect = move |_| {
+        ctx.forget_drafts();
         forget(TOKEN);
         forget(PROJECT);
         ctx.settings.set(false);
@@ -737,9 +878,9 @@ fn SettingsSheet() -> impl IntoView {
         <div class="scrim" on:click=move |_| ctx.settings.set(false)></div>
         <section class="sheet" role="dialog" aria-modal="true" aria-label="Settings">
             <button type="button" class="grip" aria-label="Close" on:click=move |_| ctx.settings.set(false)></button>
-            <div class="sc label">"Reading from"</div>
+            <div class="sc label">"Your vault"</div>
             <p class="repo">{repo}</p>
-            <p class="hint">"Read only: nothing on this phone changes the vault."</p>
+            <p class="hint">"What you write here goes to GitHub as you pause."</p>
             <button
                 type="button"
                 class="secondary"
@@ -750,9 +891,26 @@ fn SettingsSheet() -> impl IntoView {
             >
                 "Read it again now"
             </button>
+            <button
+                type="button"
+                class="secondary"
+                on:click=move |_| {
+                    ctx.settings.set(false);
+                    forget(TOKEN);
+                    ctx.creds.set(None);
+                }
+            >
+                "Use a different token"
+            </button>
             <SharedLinks />
             <button type="button" class="secondary danger" on:click=disconnect>"Disconnect this phone"</button>
-            <p class="hint">"Forgets the token and everything read from the vault, on this phone only."</p>
+            <p class="hint">
+                "Forgets the token and everything read from the vault, on this phone only."
+                {(unsent > 0).then(|| match unsent {
+                    1 => " One change isn’t on GitHub yet and would be lost.".to_owned(),
+                    n => format!(" {n} changes aren’t on GitHub yet and would be lost."),
+                })}
+            </p>
         </section>
     }
 }
@@ -795,7 +953,7 @@ fn SharedLinks() -> impl IntoView {
 // --- Small pieces ----------------------------------------------------------------------------
 
 /// "1,412".
-fn count(n: usize) -> String {
+pub(crate) fn count(n: usize) -> String {
     let digits = n.to_string();
     let mut out = String::new();
     for (i, c) in digits.chars().enumerate() {
@@ -828,7 +986,7 @@ const LIST: &str = r#"<svg width="22" height="22" viewBox="0 0 24 24" fill="none
 const NOTE: &str = r#"<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/></svg>"#;
 const SEARCH: &str = r#"<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>"#;
 const GEAR: &str = r#"<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/></svg>"#;
-const CHEVRON_LEFT: &str = r#"<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>"#;
+pub(crate) const CHEVRON_LEFT: &str = r#"<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>"#;
 const CHEVRON_RIGHT: &str = r#"<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>"#;
 const CHEVRON_DOWN: &str = r#"<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>"#;
 const REFRESH: &str = r#"<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>"#;

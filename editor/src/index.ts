@@ -11,7 +11,7 @@ import { type Move, type Passage, cutPassage, followHistory, restorePassage } fr
 import { type Typography, buildInputRules, defaultTypography } from "./inputrules.ts";
 import { buildKeymaps } from "./keymap.ts";
 import { type HighlightMeta, highlightKey, highlightPlugin } from "./highlight.ts";
-import { type LinkMeta, type LinkResolver, linkSuggestPlugin, linksKey, linksPlugin } from "./links.ts";
+import { type LinkMeta, type LinkResolver, type ShowSuggestions, linkSuggestPlugin, linksKey, linksPlugin, pickSuggestion } from "./links.ts";
 import { countWords, parseMarkdown, serializeMarkdown } from "./markdown.ts";
 import { type CommentMark, type CommentsMeta, type OnComment, commentsKey, commentsPlugin } from "./comments.ts";
 import { type Choice, type MergeBox, type MergeMeta, mergeKey, mergePlugin } from "./merge.ts";
@@ -29,8 +29,9 @@ import {
   seamPosition,
 } from "./pattern.ts";
 import { type SpellMeta, type Spellchecker, spellcheckKey, spellcheckPlugin } from "./spellcheck.ts";
+import { type Format, activeFormats, formatCommands } from "./touch.ts";
 
-export type { Choice, CommentMark, LinkResolver, MergeBox, Passage, Spellchecker, Typography };
+export type { Choice, CommentMark, Format, LinkResolver, MergeBox, Passage, ShowSuggestions, Spellchecker, Typography };
 export { hasSpot } from "./bin.ts";
 
 export interface EditorOptions {
@@ -52,6 +53,13 @@ export interface MountOptions extends EditorOptions, Partial<CutCallbacks> {
    * top and bottom of the words in the window. */
   onComment?: OnComment;
   debounceMs?: number;
+  /** For a phone: the keyboard's own spellcheck and autocorrect instead of the app's, no menus
+   * over the text, and the cursor kept clear of the window's edges. */
+  touch?: boolean;
+  /** Called with the formats on where the cursor is, whenever they change, for a toolbar. */
+  onFormats?: (on: Format[]) => void;
+  /** Shows suggestions while typing a link, instead of the list under the cursor. */
+  onSuggestions?: ShowSuggestions;
 }
 
 export class Editor {
@@ -61,6 +69,10 @@ export class Editor {
   private readonly onBackFromBin: (move: number) => void;
   private readonly onMerge: (id: number, choice: Choice) => void;
   private readonly onComment: OnComment;
+  private readonly touch: boolean;
+  private readonly onFormats: ((on: Format[]) => void) | null;
+  private readonly onSuggestions: ShowSuggestions | null;
+  private formatsShown = "";
   // Passages moved to and from the bin in this document, newest last, for Undo and Redo.
   private moves: Move[] = [];
   private lastMove = 0;
@@ -82,12 +94,18 @@ export class Editor {
   // First, so Enter and Escape confirm or cancel a cut before the keymaps see them.
   private readonly cutLine = cutLinePlugin(() => this.cutCallbacks);
   private readonly seam = seamPlugin();
-  private readonly links = linksPlugin(() => this.linkResolver);
+  private readonly links = linksPlugin(
+    () => this.linkResolver,
+    () => this.touch,
+  );
   private readonly highlight = highlightPlugin();
   private readonly merge = mergePlugin(() => this.onMerge);
   private readonly comments = commentsPlugin(() => this.onComment);
   // Before the keymaps, so Enter picks a suggestion instead of splitting the paragraph.
-  private readonly linkSuggest = linkSuggestPlugin(() => this.linkResolver);
+  private readonly linkSuggest = linkSuggestPlugin(
+    () => this.linkResolver,
+    () => this.onSuggestions,
+  );
   private timer: ReturnType<typeof setTimeout> | undefined;
   private seamTimer: ReturnType<typeof setTimeout> | undefined;
   private dirty = false;
@@ -98,6 +116,9 @@ export class Editor {
     this.onBackFromBin = options.onBackFromBin ?? (() => {});
     this.onMerge = options.onMerge ?? (() => {});
     this.onComment = options.onComment ?? (() => {});
+    this.touch = options.touch ?? false;
+    this.onFormats = options.onFormats ?? null;
+    this.onSuggestions = options.onSuggestions ?? null;
     this.cutCallbacks = {
       onCutConfirm: options.onCutConfirm ?? (() => {}),
       onCutCancel: options.onCutCancel ?? (() => {}),
@@ -106,14 +127,21 @@ export class Editor {
     this.typography = { ...defaultTypography, ...options.typography };
     this.view = new EditorView(el, {
       state: this.createState(parseMarkdown(markdown)),
-      // WebKit's own spellchecker is off; see spellcheck.ts.
-      attributes: { class: "needle-prose", spellcheck: "false", lang: "en-US" },
+      // WebKit's own spellchecker is off on the desktop; see spellcheck.ts. A phone's keyboard
+      // checks as you type, which is what's wanted there.
+      attributes: this.touch
+        ? { class: "needle-prose touch", spellcheck: "true", autocorrect: "on", autocapitalize: "sentences", lang: "en-US" }
+        : { class: "needle-prose", spellcheck: "false", lang: "en-US" },
+      // Room for a line or two above the keyboard and the bar.
+      scrollMargin: this.touch ? 48 : 5,
+      scrollThreshold: this.touch ? 48 : 0,
       dispatchTransaction: (tr) => {
         if (this.closeNext && tr.docChanged) {
           closeHistory(tr);
           this.closeNext = false;
         }
         this.view.updateState(this.view.state.apply(tr));
+        this.reportFormats();
         if (tr.docChanged) {
           this.schedule();
           if (isHistoryTransaction(tr)) this.followHistory();
@@ -125,6 +153,7 @@ export class Editor {
           return false;
         },
         contextmenu: (view, event) =>
+          !this.touch &&
           (this.binEnabled && openSelectionMenu(view, event, () => this.cutToBin())) || openSpellMenu(view, event),
       },
     });
@@ -327,6 +356,30 @@ export class Editor {
     this.view.focus();
   }
 
+  /** Lets go of the cursor, which on a phone puts the keyboard away. */
+  blur(): void {
+    (this.view.dom as HTMLElement).blur();
+  }
+
+  /** Runs a formatting bar button. Returns whether it did anything. */
+  format(name: Format): boolean {
+    const command = formatCommands[name];
+    if (!command) return false;
+    const done = command(this.view.state, this.view.dispatch);
+    this.view.focus();
+    return done;
+  }
+
+  /** The formats on where the cursor is. */
+  formats(): Format[] {
+    return activeFormats(this.view.state);
+  }
+
+  /** Takes the `index`th suggestion `onSuggestions` was given. */
+  pickSuggestion(index: number): void {
+    pickSuggestion(this.view, index);
+  }
+
   /** Reports pending changes immediately instead of waiting for the debounce. */
   flush(): void {
     if (!this.dirty) return;
@@ -373,6 +426,15 @@ export class Editor {
     const { back, out } = followHistory(this.moves, this.view.state.doc);
     for (const move of back) this.onBackFromBin(move.id);
     for (const move of out) this.onCutToBin(move.passage, move.id);
+  }
+
+  private reportFormats(): void {
+    if (!this.onFormats) return;
+    const on = activeFormats(this.view.state);
+    const key = on.join(" ");
+    if (key === this.formatsShown) return;
+    this.formatsShown = key;
+    this.onFormats(on);
   }
 
   private createState(doc: Node): EditorState {
