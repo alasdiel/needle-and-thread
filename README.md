@@ -20,6 +20,7 @@ It installs from source for now; packaged downloads come later.
 - A network board: a cork board of characters, places, plot points and threads, with relationships as red string you tie between them, zones of kraft paper, and your own handwritten notes and marker
 - A sewing-pattern look, light or dark
 - Reading on your phone: the outline, scenes, notes, links and search, straight from the vault's GitHub repository (see below)
+- Sharing: a link to a scene, chapter, part or the whole book that readers open in a browser and comment on, always showing the latest snapshot. The text and comments are encrypted with a key that's only in the link. Comments show on their words in the editor, and follow them as you rewrite
 
 ## Install it
 
@@ -37,6 +38,10 @@ Pick a vault on first launch, or try the sample.
 ## On your phone
 
 The phone app reads your vault from the GitHub repository it backs up to; it can't change anything yet. Open it at `https://<you>.github.io/needle-and-thread/` once Pages is on for this repository, and add it to your home screen. It asks for the vault's repository (`you/your-vault`) and a [fine-grained token](https://github.com/settings/personal-access-tokens/new) with access to only that repository and **Contents: read-only**. Both stay on the phone.
+
+## Sharing
+
+Links are made in the Shared panel (the link button in the top bar) and open the reader page, published with the phone app at `https://<you>.github.io/needle-and-thread/read/`. Readers' comments are kept, encrypted, by a small Cloudflare Worker (`crates/worker`); `.github/workflows/worker.yml` deploys it with the repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The links' keys are kept in the vault (`.needle/shares.toml`), so keep the vault's repository private.
 
 ## Work on it
 
@@ -62,6 +67,8 @@ pnpm --dir e2e test
 
 The phone app has its own suite, against a stand-in for GitHub: `trunk serve` in `crates/phone` (port 1421), then `pnpm --dir e2e test:phone`.
 
+The reader page's suite runs against a real Worker on your machine: `pnpm --dir crates/worker install && pnpm --dir crates/worker dev` (port 8787), `trunk serve` in `crates/reader` (port 1422), then `pnpm --dir e2e test:reader`.
+
 ## Layout
 
 | Path | What |
@@ -72,6 +79,8 @@ The phone app has its own suite, against a stand-in for GitHub: `trunk serve` in
 | `crates/index` | The search index (SQLite), a cache kept outside the vault |
 | `crates/desktop` | The Tauri app: Leptos frontend, backend in `src-tauri/` |
 | `crates/phone` | The phone app (Leptos, published to GitHub Pages): reads the vault from GitHub |
+| `crates/reader` | The reader page share links open (Leptos, published with the phone app under `read/`) |
+| `crates/worker` | The sharing Worker (Cloudflare, workers-rs): sealed text and comments |
 | `editor/` | The ProseMirror editor (TypeScript) |
 | `e2e/` | Browser tests of the interface (Playwright), against `trunk serve` |
 | `docs/` | Design document and spike findings |

@@ -10,6 +10,7 @@ mod network;
 mod notes;
 mod search;
 mod settings;
+mod share;
 mod spelling;
 mod state;
 mod timeline;
@@ -115,6 +116,15 @@ fn main() {
             backup::set_backup,
             backup::back_up_now,
             backup::take_in,
+            share::shares,
+            share::make_share,
+            share::revoke_share,
+            share::open_as_author,
+            share::share_comments,
+            share::seen_comments,
+            share::reply_comment,
+            share::resolve_comment,
+            share::delete_comment,
             settings::appearance,
             settings::set_appearance,
             settings::markdown_panel,

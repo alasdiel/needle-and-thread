@@ -17,6 +17,7 @@ mod pattern;
 mod project;
 mod search;
 mod settings;
+mod share;
 mod spell;
 mod status;
 mod tauri;

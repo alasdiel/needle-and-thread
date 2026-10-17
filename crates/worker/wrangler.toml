@@ -1,0 +1,17 @@
+# The sharing Worker (DESIGN §10). `npx wrangler dev` runs it locally with its own KV and D1;
+# .github/workflows/worker.yml deploys it. Without ids, wrangler makes the KV namespace and the
+# D1 database on the first deploy.
+name = "needle-and-thread"
+main = "build/worker/shim.mjs"
+compatibility_date = "2026-10-01"
+
+[build]
+command = "worker-build --release"
+
+[[kv_namespaces]]
+binding = "TEXT"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "needle-and-thread"
+migrations_dir = "migrations"

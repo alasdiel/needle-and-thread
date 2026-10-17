@@ -1,6 +1,7 @@
 # Builds the phone app (crates/phone) and publishes it to GitHub Pages, at
 # https://<owner>.github.io/needle-and-thread/. It holds no vault and no token: those stay on
-# each phone, which reads its own vault's repository straight from GitHub (DESIGN §9).
+# each phone, which reads its own vault's repository straight from GitHub (DESIGN §9). The
+# reader page that share links open (crates/reader, DESIGN §10) goes with it, under read/.
 #
 # Needs Pages turned on once, with "GitHub Actions" as the source (Settings › Pages).
 name: Phone app
@@ -10,6 +11,7 @@ on:
     branches: [main]
     paths:
       - "crates/phone/**"
+      - "crates/reader/**"
       - "crates/core/**"
       - "crates/vault/**"
       - "crates/desktop/assets/fonts/**"
@@ -53,6 +55,13 @@ jobs:
       - name: Build
         run: trunk build --release
         working-directory: crates/phone
+
+      - name: Build the reader page
+        run: trunk build --release
+        working-directory: crates/reader
+
+      - name: Put the reader page under read/
+        run: cp -r crates/reader/dist crates/phone/dist/read
 
       - uses: actions/upload-pages-artifact@v3
         with:

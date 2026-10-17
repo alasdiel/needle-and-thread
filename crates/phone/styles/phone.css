@@ -688,3 +688,19 @@ mark {
   background: var(--raise);
   box-shadow: 0 6px 24px var(--shadow);
 }
+
+/* --- Links shared from the desktop (DESIGN §10) -------------------------------------------- */
+
+.shared-label {
+  margin-top: 22px;
+}
+
+a.row.shared-link {
+  padding: 6px 0;
+  color: var(--text);
+  text-decoration: none;
+}
+
+a.row.shared-link .words {
+  color: var(--blue);
+}

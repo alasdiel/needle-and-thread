@@ -26,6 +26,9 @@ const walk = (dir) => {
   }
 };
 walk(vaultDir);
+// A link made with Share on the desktop, which Settings offers to open as the author.
+const shares = `[[share]]\nid = "AQEBAQEBAQEBAQEBAQEBAQ"\nkey = "${Buffer.alloc(32, 2).toString('base64url')}"\nauthor = "${Buffer.alloc(32, 3).toString('base64url')}"\nname = "Beta readers"\nproject = "tidewater"\ncovers = "book"\ncreated = 1791627360\n`;
+files.set(createHash('sha1').update(`blob ${Buffer.byteLength(shares)}\0${shares}`).digest('hex'), { path: '.needle/shares.toml', text: shares });
 
 let failures = 0;
 const check = (what, ok, detail = '') => {
@@ -179,6 +182,9 @@ await settle();
 await tap('button[aria-label="Settings"]');
 await settle();
 check('settings name the repository', (await page.locator('.repo').textContent()) === 'me/vault');
+check('…and list the links shared from the desktop', (await page.locator('.sheet .shared-link').textContent()).includes('Beta readers · Tidewater'));
+const authorLink = await page.locator('.sheet .shared-link').getAttribute('href');
+check('…each opening the reader page as the author', authorLink === `read/#AQEBAQEBAQEBAQEBAQEBAQ.${Buffer.alloc(32, 2).toString('base64url')}.${Buffer.alloc(32, 3).toString('base64url')}`, authorLink);
 await page.locator('.sheet .danger').tap();
 await page.waitForSelector('form');
 check('Disconnect goes back to setup', (await page.locator('form').count()) === 1);

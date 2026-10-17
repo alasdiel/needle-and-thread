@@ -6,12 +6,15 @@
 // call is kept in window.__calls. Anything else fails the way a real failed command does.
 // window.__emit(event) calls the frontend's listeners for it, and window.__backup is what the
 // backup command answers; take_in brings in window.__incoming, the way the real one does.
-// window.__merges is the clashes still to settle, which settle_merge changes.
+// window.__merges is the clashes still to settle, which settle_merge changes. window.__shares and
+// window.__comments are the project's links and readers' comments, which the share commands change.
 (() => {
   const listeners = {};
   window.__emit = (event, payload) => (listeners[event] ?? []).forEach((handler) => handler({ event, payload }));
   window.__backup = { remote: '', after_snapshot: true, status: { state: 'waiting' } };
   window.__merges = [];
+  window.__shares = [];
+  window.__comments = [];
   // What the open scene says on disk.
   let sceneText = 'The market opened at dusk.';
   const project = { slug: 'tidewater', title: 'Tidewater', kind: 'fiction' };
@@ -148,6 +151,38 @@
       return null;
     },
     bin_items: () => [],
+    shares: () => structuredClone(window.__shares),
+    share_comments: () => structuredClone(window.__comments),
+    make_share: (a) => {
+      const title = { scene: 'The night market', chapter: 'Arrival', part: a.covers.part, book: 'The whole book' }[a.covers.covers];
+      const id = `share${window.__shares.length + 1}`;
+      const made = { id, name: a.name, covers: a.covers, title, link: `https://example.github.io/needle-and-thread/read/#${id}.key`, created: 1, sent: Math.floor(Date.now() / 1000), error: null, comments: 0, fresh: 0 };
+      window.__shares.unshift(made);
+      return structuredClone(made);
+    },
+    revoke_share: (a) => {
+      window.__shares = window.__shares.filter((s) => s.id !== a.id);
+      window.__comments = window.__comments.filter((c) => c.share !== a.id);
+      return null;
+    },
+    open_as_author: () => null,
+    seen_comments: (a) => {
+      for (const c of window.__comments) if (c.share === a.share && c.id <= a.id) c.fresh = false;
+      return null;
+    },
+    reply_comment: (a) => {
+      const head = window.__comments.find((c) => c.id === a.to);
+      window.__comments.push({ ...head, id: 900 + window.__comments.length, name: '', text: a.text, author: true, created: Date.now() / 1000, reply_to: a.to, scene: null, anchor: null, quote: '', fresh: false });
+      return null;
+    },
+    resolve_comment: (a) => {
+      window.__comments.find((c) => c.id === a.id).resolved = a.resolved;
+      return null;
+    },
+    delete_comment: (a) => {
+      window.__comments = window.__comments.filter((c) => c.id !== a.id);
+      return null;
+    },
     // A one-word dictionary: enough for spellcheck to start without a banner in the way.
     spell_dictionary: () => ({ aff: 'SET UTF-8\n', dic: '1\nthe\n', personal_words: [] }),
     project_board: () => structuredClone(board),

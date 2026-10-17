@@ -15,6 +15,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::backup::Backup;
+use crate::share::Sharing;
 use crate::notes;
 use crate::state::{AppState, OpenVault, OrString};
 
@@ -25,6 +26,7 @@ pub struct History {
     repo: Mutex<Repo>,
     scheduler: Mutex<Scheduler>,
     backup: Backup,
+    sharing: Sharing,
 }
 
 impl History {
@@ -36,6 +38,7 @@ impl History {
             repo: Mutex::new(Repo::open_or_init(vault.root()).or_string()?),
             scheduler: Mutex::new(scheduler(settings.snapshots)),
             backup: Backup::new(vault.root().to_owned(), settings.backup.clone()),
+            sharing: Sharing::new(vault.clone()),
         };
         // A snapshot backs up by itself; without one, back up anyway, in case the last try failed.
         // Not backing up after each snapshot, it still looks for snapshots made elsewhere.
@@ -45,11 +48,19 @@ impl History {
         } else if !taken {
             history.backup.push(app);
         }
+        // Links are sent on opening too, in case the text changed while the app was closed.
+        if !taken {
+            history.sharing.after_snapshot(app);
+        }
         Ok(history)
     }
 
     pub fn backup(&self) -> &Backup {
         &self.backup
+    }
+
+    pub fn sharing(&self) -> &Sharing {
+        &self.sharing
     }
 
     pub fn edited(&self) {
@@ -71,6 +82,7 @@ impl History {
         if taken {
             let _ = app.emit(SNAPSHOT_EVENT, ());
             self.backup.after_snapshot(app);
+            self.sharing.after_snapshot(app);
         }
         Ok(taken)
     }
