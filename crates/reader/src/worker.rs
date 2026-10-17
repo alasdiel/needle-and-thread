@@ -14,7 +14,7 @@ pub fn base() -> String {
     });
     from_query
         .or_else(|| option_env!("NEEDLE_WORKER").map(str::to_owned))
-        .unwrap_or_else(|| "https://needle-and-thread.alasdiel.workers.dev".to_owned())
+        .unwrap_or_else(|| "https://needle-and-thread.alex-albinda9.workers.dev".to_owned())
         .trim_end_matches('/')
         .to_owned()
 }

@@ -23,7 +23,7 @@ use tauri::{AppHandle, Emitter, State};
 use crate::state::{AppState, OrString, read_config, write_config};
 
 /// Where the Worker is. `NEEDLE_WORKER` points elsewhere, e.g. at `wrangler dev`.
-const WORKER: &str = "https://needle-and-thread.alasdiel.workers.dev";
+const WORKER: &str = "https://needle-and-thread.alex-albinda9.workers.dev";
 /// Where the reader page is; a link is this, `#`, and the link's id and key.
 const READER: &str = "https://alasdiel.github.io/needle-and-thread/read/";
 /// Tells the window a link was sent, or failed to be.

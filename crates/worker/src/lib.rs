@@ -117,6 +117,11 @@ async fn put_text(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
 
 async fn get_text(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
     let Some(id) = share_id(&ctx) else { return refuse(404, "no such share") };
+    // D1 first: a revoked share's row is gone at once, while KV can serve a deleted value for up
+    // to a minute.
+    if keys(&ctx.env.d1("DB")?, &id).await?.is_none() {
+        return refuse(404, "no such share");
+    }
     let Some(text) = ctx.env.kv("TEXT")?.get(&id).bytes().await? else { return refuse(404, "no such share") };
     let mut response = Response::from_bytes(text)?;
     response.headers_mut().set("Content-Type", "application/octet-stream")?;
